@@ -8,6 +8,18 @@ A lightweight FastAPI server that gives any chatbot superpowers — sandboxed co
 
 ---
 
+## ✨ What It Does (Layman's Terms)
+
+Standard AI chatbots are like brainy conversationalists—they can write and talk, but they cannot perform actions on your computer (like run calculations, browse files, or call web APIs) on their own. **AI Skill Engine** gives your chatbot "hands and feet" by offering ready-to-use capabilities right out of the box:
+
+- **Instant Superpowers (Out-of-the-Box Skills)**: No need to write complex tool integration code. Your chatbot instantly gains modular skills, like checking server diagnostics, querying geolocation info, or running custom Python logic.
+- **Safe Code Playground (Secure Sandboxing)**: When a chatbot needs to write and test code to answer a question, it executes that code safely inside isolated containers (Docker). This protects your host system from malicious or runaway scripts.
+- **Universal Remote (MCP Hub)**: Instantly connect to the growing ecosystem of Model Context Protocol (MCP) servers (like GitHub, Postgres databases, or local filesystems) without coding custom integrations.
+- **Drop-in Upgrade (OpenAI Compatible)**: If your app is already built using standard OpenAI libraries, you can point it to this engine by changing just one URL line. No logic rewrite required.
+- **Admin Dashboard**: A visual control panel to test model settings, view real-time chat playground traces, manage API keys, and audit system logs.
+
+---
+
 ## 📸 Screenshots
 
 <table width="100%">
@@ -38,18 +50,6 @@ A lightweight FastAPI server that gives any chatbot superpowers — sandboxed co
     </td>
   </tr>
 </table>
-
----
-
-## ✨ What It Does
-
-- **OpenAI-compatible API** — point any OpenAI SDK at `http://localhost:8000/api/v1`
-- **Skill Engine** — YAML `SKILL.md` manifests auto-generate LLM tool functions
-- **Dual Sandbox** — tools run in Docker (isolated, CPU/RAM capped) or process fallback
-- **MCP Hub** — connect external MCP servers (GitHub, Filesystem, Postgres, etc.)
-- **Multi-Tenant** — enterprise API key isolation with per-tenant audit logs
-- **Streaming SSE** — live reasoning traces, tool calls, and results streamed in real time
-- **React Dashboard** — full admin UI served on the same port (dark/light mode)
 
 ---
 

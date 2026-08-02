@@ -1,7 +1,7 @@
 #!/bin/bash
 # Helper script to run skill_manager server using python venv
 
-PROJECT_DIR="/Users/apple/Documents/Google Antigravity/ai-skill-runner"
+PROJECT_DIR="/Users/apple/Documents/Google Antigravity/ai-skill-engine"
 cd "$PROJECT_DIR"
 
 if [ ! -d "venv" ]; then
