@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Key, Layers, MessageSquare, Database, Server, ShieldCheck, Cpu, BookOpen, Sun, Moon, Activity, Box, PanelLeftClose, PanelLeftOpen, Menu, Zap, Terminal, FileText, DollarSign } from 'lucide-react';
+import { Key, Layers, MessageSquare, Database, Server, ShieldCheck, Cpu, BookOpen, Sun, Moon, Activity, Box, PanelLeftClose, PanelLeftOpen, Menu, Zap, Terminal, FileText, DollarSign, LogOut, User as UserIcon } from 'lucide-react';
 import TenantManager from './components/TenantManager';
 import SkillCatalog from './components/SkillCatalog';
 import ChatPlayground from './components/ChatPlayground';
@@ -11,6 +11,8 @@ import ApiTester from './components/ApiTester';
 import ApiLogs from './components/ApiLogs';
 import RequestLogs from './components/RequestLogs';
 import UsageSummary from './components/UsageSummary';
+import AuthPages from './components/AuthPages';
+import Profile from './components/Profile';
 
 export default function App() {
   const navItems = [
@@ -23,12 +25,13 @@ export default function App() {
     { id: 'logs', label: 'Sandbox Audit Logs', icon: Database },
     { id: 'apilogs', label: 'API Execution Logs', icon: Activity },
     { id: 'requestlogs', label: 'Request Logs', icon: FileText },
-    { id: 'docs', label: 'API Documentation', icon: BookOpen },
     { id: 'tester', label: 'API Tester', icon: Terminal },
+    { id: 'docs', label: 'API Documentation', icon: BookOpen },
   ];
 
   const getTabFromPath = () => {
     const raw = window.location.pathname.replace(/^\//, '').trim();
+    if (raw === 'profile') return 'profile';
     const valid = navItems.find((n) => n.id === raw);
     return valid ? valid.id : 'playground';
   };
@@ -44,6 +47,30 @@ export default function App() {
     const saved = localStorage.getItem('is_sidebar_open');
     return saved !== null ? JSON.parse(saved) : true;
   });
+
+  const [isAuthenticated, setIsAuthenticated] = useState(null);
+  const [userEmail, setUserEmail] = useState('');
+
+  const checkAuth = async () => {
+    try {
+      const res = await fetch('/api/v1/auth/me');
+      if (res.ok) {
+        const data = await res.json();
+        setIsAuthenticated(true);
+        setUserEmail(data.email);
+      } else {
+        setIsAuthenticated(false);
+      }
+    } catch (e) {
+      setIsAuthenticated(false);
+    }
+  };
+
+  useEffect(() => {
+    if (dbStatus.ready) {
+      checkAuth();
+    }
+  }, [dbStatus.ready]);
 
   // Check database status on mount and poll until ready
   useEffect(() => {
@@ -150,7 +177,9 @@ export default function App() {
     loadStats();
   }, [activeTab, dbStatus.ready]);
 
-  const activeNavItem = navItems.find((n) => n.id === activeTab) || navItems[0];
+  const activeNavItem = activeTab === 'profile'
+    ? { id: 'profile', label: 'User Profile', icon: UserIcon }
+    : (navItems.find((n) => n.id === activeTab) || navItems[0]);
 
   // Render database creation loader screen if DB is not ready
   if (!dbStatus.ready) {
@@ -241,6 +270,36 @@ export default function App() {
         </div>
       </div>
     );
+  }
+
+  if (isAuthenticated === null) {
+    return (
+      <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: '100vw',
+        height: '100vh',
+        background: '#0a0f1d',
+        color: '#f8fafc',
+        fontFamily: 'Inter, system-ui, sans-serif'
+      }}>
+        <div className="spin" style={{
+          width: '40px',
+          height: '40px',
+          border: '3px solid rgba(6, 182, 212, 0.1)',
+          borderTop: '3px solid var(--primary-cyan, #06b6d4)',
+          borderRadius: '50%',
+          marginBottom: '16px'
+        }} />
+        <span style={{ fontSize: '0.9rem', color: '#94a3b8' }}>Verifying Session...</span>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <AuthPages onLoginSuccess={checkAuth} />;
   }
 
   return (
@@ -366,6 +425,22 @@ export default function App() {
               </>
             )}
           </button>
+
+          <button
+            className="btn-outline"
+            onClick={async () => {
+              try {
+                await fetch('/api/v1/auth/logout', { method: 'POST' });
+              } catch (e) {
+                console.error('Logout failed:', e);
+              }
+              setIsAuthenticated(false);
+            }}
+            style={{ width: '100%', justifyContent: 'center', padding: '8px', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '8px', border: '1px solid rgba(239, 68, 68, 0.2)', color: '#fca5a5' }}
+            title="Log Out of your Session"
+          >
+            <LogOut size={16} color="#fca5a5" /> {isSidebarOpen && 'Log Out'}
+          </button>
         </div>
       </aside>
 
@@ -392,8 +467,30 @@ export default function App() {
             </h2>
           </div>
 
-          <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-            Enterprise Skill Execution Gateway & MCP Hub
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+            <div className="header-badge" style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+              Enterprise Skill Execution Gateway & MCP Hub
+            </div>
+            <button
+              onClick={() => handleTabChange('profile')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: '36px',
+                height: '36px',
+                borderRadius: '50%',
+                border: activeTab === 'profile' ? '1px solid var(--primary-violet)' : '1px solid var(--border-subtle)',
+                background: activeTab === 'profile' ? 'rgba(139, 92, 246, 0.15)' : 'var(--bg-input)',
+                color: activeTab === 'profile' ? 'var(--primary-violet)' : 'var(--text-sub)',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+                boxShadow: activeTab === 'profile' ? '0 0 10px rgba(139, 92, 246, 0.2)' : 'none'
+              }}
+              title={`View User Profile (${userEmail})`}
+            >
+              <UserIcon size={18} />
+            </button>
           </div>
         </header>
 
@@ -410,6 +507,7 @@ export default function App() {
           {activeTab === 'requestlogs' && <RequestLogs />}
           {activeTab === 'docs' && <ApiDocs />}
           {activeTab === 'tester' && <ApiTester />}
+          {activeTab === 'profile' && <Profile />}
         </main>
       </div>
     </div>

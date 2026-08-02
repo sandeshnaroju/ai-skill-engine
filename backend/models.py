@@ -4,6 +4,19 @@ from sqlalchemy import Column, String, DateTime, Text, Integer, ForeignKey, Bool
 from sqlalchemy.orm import relationship
 from database import Base
 
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    email = Column(String, unique=True, nullable=False, index=True)
+    hashed_password = Column(String, nullable=False)
+    session_token = Column(String, nullable=True, index=True)
+    reset_token = Column(String, nullable=True)
+    reset_token_expires = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    tenants = relationship("Tenant", back_populates="user", cascade="all, delete-orphan")
+
 class Tenant(Base):
     __tablename__ = "tenants"
 
@@ -11,8 +24,10 @@ class Tenant(Base):
     name = Column(String, nullable=False)
     api_key = Column(String, unique=True, nullable=False, index=True)
     is_active = Column(Boolean, default=True)
+    user_id = Column(String, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
+    user = relationship("User", back_populates="tenants")
     sessions = relationship("ConversationSession", back_populates="tenant", cascade="all, delete-orphan")
     execution_logs = relationship("ExecutionLog", back_populates="tenant", cascade="all, delete-orphan")
     llms = relationship("TenantLLM", back_populates="tenant", cascade="all, delete-orphan")

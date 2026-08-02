@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Send, Bot, User, Terminal, Sparkles, Trash2, Check, Copy, Activity, Code2, Globe, Plus, MessageSquare, Brain, ChevronDown, ChevronUp, Cpu, ShieldCheck, Box, Key, Download, X, History, FileText, Sparkle, Sliders } from 'lucide-react';
+import { Send, Bot, User, Terminal, Sparkles, Trash2, Check, Copy, Activity, Code2, Globe, Plus, MessageSquare, Brain, ChevronDown, ChevronUp, Cpu, ShieldCheck, Box, Key, Download, X, History, FileText, Sparkle, Sliders, Paperclip } from 'lucide-react';
 import AsyncSearchableDropdown from './AsyncSearchableDropdown';
 
 export default function ChatPlayground() {
@@ -24,7 +24,7 @@ export default function ChatPlayground() {
   const [apiKey, setApiKey] = useState('');
   const [selectedAppId, setSelectedAppId] = useState('');
   const [selectedModel, setSelectedModel] = useState('');
-  
+
   // Custom tenant models list
   const [tenantModels, setTenantModels] = useState([]);
 
@@ -35,6 +35,66 @@ export default function ChatPlayground() {
 
   // Collapsible configuration sidebar state
   const [isSettingsOpen, setIsSettingsOpen] = useState(true);
+
+  // File Upload states
+  const fileInputRef = React.useRef(null);
+  const [attachedFiles, setAttachedFiles] = useState([]);
+  const [uploading, setUploading] = useState(false);
+
+  const handleFileChange = async (e) => {
+    const files = Array.from(e.target.files);
+    if (files.length === 0) return;
+    setUploading(true);
+    setLiveThought('Uploading files to sandbox...');
+
+    try {
+      const uploadedList = [];
+      for (const file of files) {
+        const formData = new FormData();
+        formData.append('file', file);
+        
+        const headers = {};
+        if (apiKey.trim()) {
+          headers['X-API-Key'] = apiKey.trim();
+        }
+
+        const res = await fetch('/api/v1/files/upload', {
+          method: 'POST',
+          headers,
+          body: formData
+        });
+        
+        if (!res.ok) throw new Error('File upload failed');
+        const data = await res.json();
+        
+        // Read file to base64 if it's an image
+        let base64 = null;
+        if (file.type.startsWith('image/')) {
+          base64 = await new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onload = () => resolve(reader.result);
+          });
+        }
+
+        uploadedList.push({
+          name: file.name,
+          type: file.type,
+          size: file.size,
+          url: data.url,
+          sandboxPath: data.sandbox_path,
+          base64: base64
+        });
+      }
+      setAttachedFiles(prev => [...prev, ...uploadedList]);
+    } catch (err) {
+      console.error(err);
+      alert('Error uploading files: ' + err.message);
+    } finally {
+      setUploading(false);
+      setLiveThought('');
+    }
+  };
 
   // Modal Popups State
   const [showHistoryModal, setShowHistoryModal] = useState(false);
@@ -274,7 +334,7 @@ export default function ChatPlayground() {
   // LLM Thread Title Generator
   const generateLLMThreadTitle = async (queryText) => {
     try {
-      const headers = { 
+      const headers = {
         'Content-Type': 'application/json',
         'X-Request-Source': 'dashboard'
       };
@@ -310,39 +370,69 @@ export default function ChatPlayground() {
     }
   };
 
-  const handleSend = async (textToSend = null) => {
-    const query = textToSend || input;
-    if (!query.trim() || loading) return;
+    const handleSend = async (textToSend = null) => {
+      const query = textToSend || input;
+      if (!query.trim() || loading) return;
 
-    const currentSessionObj = sessions.find((s) => s.id === activeSessionId);
-    if (currentSessionObj && (currentSessionObj.name.startsWith('New Chat Session') || currentSessionObj.name === 'Developer & Math Session')) {
-      generateLLMThreadTitle(query);
-    }
-
-    const userTime = new Date().toLocaleTimeString();
-    setMessages((prev) => [
-      ...prev,
-      { role: 'user', content: query, timestamp: userTime },
-    ]);
-    if (!textToSend) setInput('');
-    setLoading(true);
-    setLiveThought('Connecting to Skill Gateway...');
-
-    try {
-      const headers = { 
-        'Content-Type': 'application/json',
-        'X-Request-Source': 'dashboard'
-      };
-      if (apiKey.trim()) {
-        headers['X-API-Key'] = apiKey.trim();
+      const currentSessionObj = sessions.find((s) => s.id === activeSessionId);
+      if (currentSessionObj && (currentSessionObj.name.startsWith('New Chat Session') || currentSessionObj.name === 'Developer & Math Session')) {
+        generateLLMThreadTitle(query);
       }
 
-      const payload = {
-        messages: [{ role: 'user', content: query }],
-        session_id: activeSessionId,
-        model: selectedModel,
-        stream: true,
-      };
+      // Construct multimodal content payload
+      let contentPayload = query;
+      let textDescriptionParts = [];
+
+      // Document attachments description
+      const docAttachments = attachedFiles.filter(f => !f.type.startsWith('image/'));
+      if (docAttachments.length > 0) {
+        const descriptions = docAttachments.map(f => `[Attached File: ${f.name} (Path: ${f.sandboxPath})]`).join('\n');
+        textDescriptionParts.push(descriptions);
+      }
+
+      let finalQueryText = query;
+      if (textDescriptionParts.length > 0) {
+        finalQueryText = `${textDescriptionParts.join('\n')}\n\n${query}`;
+      }
+
+      const imageAttachments = attachedFiles.filter(f => f.type.startsWith('image/'));
+      if (imageAttachments.length > 0) {
+        contentPayload = [
+          { type: 'text', text: finalQueryText },
+          ...imageAttachments.map(img => ({
+            type: 'image_url',
+            image_url: { url: img.base64 }
+          }))
+        ];
+      } else {
+        contentPayload = finalQueryText;
+      }
+
+      const userTime = new Date().toLocaleTimeString();
+      setMessages((prev) => [
+        ...prev,
+        { role: 'user', content: contentPayload, timestamp: userTime },
+      ]);
+      if (!textToSend) setInput('');
+      setAttachedFiles([]);
+      setLoading(true);
+      setLiveThought('Connecting to Skill Gateway...');
+
+      try {
+        const headers = {
+          'Content-Type': 'application/json',
+          'X-Request-Source': 'dashboard'
+        };
+        if (apiKey.trim()) {
+          headers['X-API-Key'] = apiKey.trim();
+        }
+
+        const payload = {
+          messages: [{ role: 'user', content: contentPayload }],
+          session_id: activeSessionId,
+          model: selectedModel,
+          stream: true,
+        };
       if (selectedAppId) {
         payload.app_id = selectedAppId;
       }
@@ -378,7 +468,7 @@ export default function ChatPlayground() {
               if (rawData === '[DONE]') continue;
               try {
                 dataJson = JSON.parse(rawData);
-              } catch (e) {}
+              } catch (e) { }
             }
           }
 
@@ -451,6 +541,88 @@ export default function ChatPlayground() {
     downloadAnchor.remove();
   };
 
+  const renderMarkdown = (src) => {
+    if (!src) return '';
+    // 1. Escape HTML
+    let html = src
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+      
+    // 2. Parse Code Blocks ```lang ... ```
+    const codeBlockRegex = /```(\w*)\n([\s\S]*?)```/g;
+    html = html.replace(codeBlockRegex, (match, lang, code) => {
+      return `<pre class="code-block"><div class="code-header">${lang || 'code'}</div><code>${code.trim()}</code></pre>`;
+    });
+
+    // 3. Parse Inline Code `code`
+    html = html.replace(/`([^`\n]+)`/g, '<code class="inline-code">$1</code>');
+
+    // 4. Parse Bold **text**
+    html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+
+    // 5. Parse Italic *text*
+    html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+
+    // 6. Parse Headings (H1 to H6)
+    html = html.replace(/^# (.*?)$/gm, '<h1>$1</h1>');
+    html = html.replace(/^## (.*?)$/gm, '<h2>$1</h2>');
+    html = html.replace(/^### (.*?)$/gm, '<h3>$1</h3>');
+    html = html.replace(/^#### (.*?)$/gm, '<h4>$1</h4>');
+
+    // 7. Parse Bullet lists
+    html = html.replace(/^\s*[-*+]\s+(.*?)$/gm, '<li>$1</li>');
+    html = html.replace(/(<li>[\s\S]*?<\/li>)/g, '<ul>$1</ul>');
+    html = html.replace(/<\/ul>\s*<ul>/g, '');
+
+    // 8. Convert newlines to breaks
+    const paragraphs = html.split('\n\n').map(p => {
+      const trimmed = p.trim();
+      if (!trimmed) return '';
+      if (trimmed.startsWith('<h') || trimmed.startsWith('<pre') || trimmed.startsWith('<ul') || trimmed.startsWith('<li')) {
+        return trimmed;
+      }
+      return `<p>${trimmed.replace(/\n/g, '<br />')}</p>`;
+    });
+
+    return paragraphs.join('\n');
+  };
+
+  const renderMessageContent = (content) => {
+    if (typeof content === 'string') {
+      return <div className="markdown-body" dangerouslySetInnerHTML={{ __html: renderMarkdown(content) }} />;
+    }
+    if (Array.isArray(content)) {
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          {content.map((block, idx) => {
+            if (block.type === 'text') {
+              return <div key={idx} className="markdown-body" dangerouslySetInnerHTML={{ __html: renderMarkdown(block.text) }} />;
+            }
+            if (block.type === 'image_url') {
+              return (
+                <img
+                  key={idx}
+                  src={block.image_url.url}
+                  alt="Multimodal Attachment"
+                  style={{
+                    maxWidth: '100%',
+                    maxHeight: '260px',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border-subtle)',
+                    marginTop: '4px'
+                  }}
+                />
+              );
+            }
+            return null;
+          })}
+        </div>
+      );
+    }
+    return '';
+  };
+
   const activeSessionObj = sessions.find((s) => s.id === activeSessionId) || sessions[0];
 
   return (
@@ -495,10 +667,10 @@ export default function ChatPlayground() {
 
         {/* Outer Split Container */}
         <div style={{ display: 'flex', flex: 1, minHeight: 0, width: '100%' }}>
-          
+
           {/* LEFT SECTION: Message Area (Takes up remaining flex space) */}
           <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, height: '100%' }}>
-            
+
             {/* Quick Presets Bar */}
             <div style={{ padding: '8px 18px', borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-input)', display: 'flex', gap: '8px', overflowX: 'auto', flexShrink: 0 }}>
               {presets.map((p, idx) => {
@@ -554,7 +726,7 @@ export default function ChatPlayground() {
                           whiteSpace: 'pre-wrap',
                         }}
                       >
-                        {m.content}
+                        {renderMessageContent(m.content)}
                       </div>
 
                       {/* Reasoning & Execution Traces Accordion */}
@@ -626,23 +798,86 @@ export default function ChatPlayground() {
 
             {/* Input Bar */}
             <div style={{ padding: '16px', borderTop: '1px solid var(--border-subtle)', background: 'var(--bg-panel)', flexShrink: 0 }}>
+              {/* File previews */}
+              {attachedFiles.length > 0 && (
+                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '12px' }}>
+                  {attachedFiles.map((file, idx) => (
+                    <div key={idx} style={{
+                      position: 'relative',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      background: 'rgba(255, 255, 255, 0.04)',
+                      border: '1px solid var(--border-subtle)',
+                      borderRadius: '8px',
+                      padding: '6px 12px 6px 8px',
+                      fontSize: '0.8rem',
+                      color: 'var(--text-sub)'
+                    }}>
+                      {file.type.startsWith('image/') ? (
+                        <img src={file.url} alt={file.name} style={{ width: '24px', height: '24px', borderRadius: '4px', objectFit: 'cover' }} />
+                      ) : (
+                        <FileText size={16} color="var(--text-muted)" />
+                      )}
+                      <span style={{ maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {file.name}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAttachedFiles(prev => prev.filter((_, i) => i !== idx));
+                        }}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: '#fca5a5',
+                          cursor: 'pointer',
+                          padding: '2px',
+                          display: 'flex',
+                          alignItems: 'center'
+                        }}
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               <form
                 onSubmit={(e) => {
                   e.preventDefault();
                   handleSend();
                 }}
-                style={{ display: 'flex', gap: '10px' }}
+                style={{ display: 'flex', gap: '10px', alignItems: 'center' }}
               >
                 <input
+                  type="file"
+                  multiple
+                  ref={fileInputRef}
+                  onChange={handleFileChange}
+                  style={{ display: 'none' }}
+                />
+                <button
+                  type="button"
+                  className="btn-outline"
+                  onClick={() => fileInputRef.current.click()}
+                  disabled={loading || uploading}
+                  style={{ padding: '12px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  title="Attach images or documents"
+                >
+                  <Paperclip size={18} />
+                </button>
+                <input
                   type="text"
-                  placeholder={tenantModels.length === 0 ? "Please configure a model for this tenant first..." : "Ask a question (e.g. calculate compound interest in Python or check uptime)..."}
+                  placeholder="Ask a question (e.g. calculate compound interest in Python or check uptime)..."
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  disabled={loading || !selectedModel}
+                  disabled={loading}
                   style={{ flex: 1 }}
                 />
-                <button type="submit" className="btn-gradient" disabled={loading || !input.trim() || !selectedModel}>
-                  <Send size={16} /> Send
+                <button type="submit" className="btn-gradient" disabled={loading || (!input.trim() && attachedFiles.length === 0) || uploading}>
+                  {uploading ? 'Uploading...' : <><Send size={16} /> Send</>}
                 </button>
               </form>
             </div>
@@ -705,7 +940,7 @@ export default function ChatPlayground() {
                   fetchOptions={async (searchTerm) => {
                     if (!apiKey) return [];
                     const url = `/api/v1/tenant/llms?search=${encodeURIComponent(searchTerm || '')}&page_size=10&page=1`;
-                    const res = await fetch(url, { headers: { 'X-API-Key': apiKey }});
+                    const res = await fetch(url, { headers: { 'X-API-Key': apiKey } });
                     const data = await res.json();
                     return (data.items || []).map(m => ({
                       value: m.model_name,
@@ -755,7 +990,7 @@ export default function ChatPlayground() {
                 <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '2px', letterSpacing: '0.5px' }}>
                   Session Utilities
                 </label>
-                
+
                 <button
                   className="btn-outline"
                   onClick={() => {
@@ -776,17 +1011,17 @@ export default function ChatPlayground() {
                   <Terminal size={15} color="var(--primary-emerald)" /> Audit Traces ({executedTools.length})
                 </button>
 
-                <button 
-                  className="btn-outline" 
-                  onClick={exportTranscript} 
+                <button
+                  className="btn-outline"
+                  onClick={exportTranscript}
                   style={{ justifyContent: 'center', width: '100%' }}
                 >
                   <Download size={14} /> Export Transcript
                 </button>
 
-                <button 
-                  className="btn-outline" 
-                  onClick={() => setMessages([])} 
+                <button
+                  className="btn-outline"
+                  onClick={() => setMessages([])}
                   style={{ justifyContent: 'center', width: '100%', color: 'var(--accent-rose)' }}
                 >
                   <Trash2 size={14} /> Clear Console
