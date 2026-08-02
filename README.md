@@ -8,7 +8,7 @@ A lightweight FastAPI server that gives any chatbot superpowers — sandboxed co
 
 ---
 
-## ✨ What It Does (Layman's Terms)
+## ✨ What It Does ?
 
 Standard AI chatbots are like brainy conversationalists—they can write and talk, but they cannot perform actions on your computer (like run calculations, browse files, or call web APIs) on their own. **AI Skill Engine** gives your chatbot "hands and feet" by offering ready-to-use capabilities right out of the box:
 
