@@ -1,14 +1,16 @@
 import os
 from typing import Optional, List
-from fastapi import FastAPI, Depends, HTTPException, Header
+from fastapi import FastAPI, Depends, HTTPException, Header, Response, Cookie, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+import datetime as dt
 
 from database import init_db, get_db
-from models import Tenant, ExecutionLog, ChatRequest
-from auth import get_current_tenant, generate_api_key
+from models import Tenant, ExecutionLog, ChatRequest, User
+from auth import get_current_tenant, generate_api_key, hash_password, verify_password, get_current_user
 from skill_registry import skill_registry
 from skill_engine import skill_engine
 
@@ -95,7 +97,186 @@ class TenantLlmCreate(BaseModel):
     api_key: str
     base_url: Optional[str] = None
 
+class UserRegister(BaseModel):
+    email: str
+    password: str
+
+class UserLogin(BaseModel):
+    email: str
+    password: str
+
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
+
 # --- Endpoints ---
+
+@app.post("/api/v1/auth/register")
+def register_user(payload: UserRegister, db: Session = Depends(get_db)):
+    email_clean = payload.email.strip().lower()
+    if not email_clean or "@" not in email_clean:
+        raise HTTPException(status_code=400, detail="Invalid email address")
+    if len(payload.password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+    
+    existing = db.query(User).filter(User.email == email_clean).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Email already registered")
+        
+    hashed = hash_password(payload.password)
+    user = User(email=email_clean, hashed_password=hashed)
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    
+    # Auto-create default tenant for the new user
+    tenant = Tenant(
+        name=f"Default Workspace",
+        api_key=generate_api_key("sk_usr_"),
+        is_active=True,
+        user_id=user.id
+    )
+    db.add(tenant)
+    db.commit()
+    
+    return {"message": "User registered successfully"}
+
+@app.post("/api/v1/auth/login")
+def login_user(payload: UserLogin, response: Response, db: Session = Depends(get_db)):
+    email_clean = payload.email.strip().lower()
+    user = db.query(User).filter(User.email == email_clean).first()
+    if not user or not verify_password(payload.password, user.hashed_password):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+        
+    session_token = generate_api_key("session_")
+    user.session_token = session_token
+    db.commit()
+    
+    # Set secure HTTP-only cookie
+    response.set_cookie(
+        key="session_token",
+        value=session_token,
+        httponly=True,
+        max_age=86400 * 30, # 30 days
+        samesite="lax",
+        secure=False # Set to True in production with HTTPS
+    )
+    return {"message": "Logged in successfully", "email": user.email}
+
+@app.post("/api/v1/auth/logout")
+def logout_user(response: Response, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    current_user.session_token = None
+    db.commit()
+    response.delete_cookie(key="session_token")
+    return {"message": "Logged out successfully"}
+
+@app.get("/api/v1/auth/me")
+def get_me(current_user: User = Depends(get_current_user)):
+    return {
+        "id": current_user.id,
+        "email": current_user.email,
+        "created_at": current_user.created_at.isoformat() if current_user.created_at else None
+    }
+
+@app.post("/api/v1/auth/forgot-password")
+def forgot_password(payload: ForgotPasswordRequest, db: Session = Depends(get_db)):
+    email_clean = payload.email.strip().lower()
+    user = db.query(User).filter(User.email == email_clean).first()
+    if not user:
+        # Avoid user enumeration by returning generic success message
+        return {"message": "If the email exists, a reset link has been generated."}
+        
+    reset_token = generate_api_key("reset_")
+    user.reset_token = reset_token
+    user.reset_token_expires = dt.datetime.utcnow() + dt.timedelta(hours=1)
+    db.commit()
+    
+    # In local development mode, output the password reset link to terminal console
+    reset_link = f"http://localhost:8000/reset-password?token={reset_token}"
+    print("\n" + "="*80)
+    print(f" PASSWORD RESET REQUEST FOR: {user.email}")
+    print(f" RESET LINK: {reset_link}")
+    print("="*80 + "\n")
+    
+    return {
+        "message": "If the email exists, a reset link has been generated.",
+        "debug_reset_link": reset_link # Exposed in development mode response for easier UI testing!
+    }
+
+@app.post("/api/v1/auth/reset-password")
+def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db)):
+    if len(payload.new_password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+        
+    user = db.query(User).filter(
+        User.reset_token == payload.token,
+        User.reset_token_expires > dt.datetime.utcnow()
+    ).first()
+    
+    if not user:
+        raise HTTPException(status_code=400, detail="Invalid or expired reset token")
+        
+    user.hashed_password = hash_password(payload.new_password)
+    user.reset_token = None
+    user.reset_token_expires = None
+    user.session_token = None # Invalidate current sessions on password change
+    db.commit()
+    
+    return {"message": "Password reset successfully"}
+
+UPLOAD_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "sandbox", "uploads"))
+
+@app.post("/api/v1/files/upload")
+def upload_file(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user)
+):
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
+    
+    # Clean filename to avoid path traversal
+    safe_filename = "".join(c for c in file.filename if c.isalnum() or c in (".", "_", "-")).strip()
+    if not safe_filename:
+        import secrets
+        safe_filename = f"upload_{secrets.token_hex(8)}"
+        
+    # Append unique ID prefix to filename to prevent collisions
+    import uuid
+    unique_filename = f"{uuid.uuid4().hex}_{safe_filename}"
+    file_path = os.path.join(UPLOAD_DIR, unique_filename)
+    
+    try:
+        with open(file_path, "wb") as f:
+            f.write(file.file.read())
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to write file: {str(e)}")
+        
+    # Determine local serve URL and absolute path inside sandbox
+    file_url = f"/api/v1/files/download/{unique_filename}"
+    sandbox_path = f"sandbox/uploads/{unique_filename}" # relative path from execution workspace root
+    
+    return {
+        "filename": unique_filename,
+        "original_name": file.filename,
+        "content_type": file.content_type,
+        "size": os.path.getsize(file_path),
+        "url": file_url,
+        "sandbox_path": sandbox_path
+    }
+
+@app.get("/api/v1/files/download/{filename}")
+def download_file(filename: str):
+    file_path = os.path.abspath(os.path.join(UPLOAD_DIR, filename))
+    # Security check: ensure path is under UPLOAD_DIR
+    if not file_path.startswith(UPLOAD_DIR):
+        raise HTTPException(status_code=403, detail="Access denied")
+        
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="File not found")
+        
+    return FileResponse(file_path)
 
 @app.get("/api/v1/apps")
 def list_apps(db: Session = Depends(get_db), page: Optional[int] = None, page_size: int = 10, search: Optional[str] = None):
@@ -619,8 +800,16 @@ def get_session_messages(
     }
 
 @app.get("/api/v1/tenants")
-def get_tenants(db: Session = Depends(get_db), page: Optional[int] = None, page_size: int = 10, search: Optional[str] = None):
+def get_tenants(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    page: Optional[int] = None,
+    page_size: int = 10,
+    search: Optional[str] = None
+):
     query = db.query(Tenant)
+    if current_user.id != "system":
+        query = query.filter(Tenant.user_id == current_user.id)
     if search:
         query = query.filter(Tenant.name.ilike(f"%{search}%"))
     query = query.order_by(Tenant.created_at.desc())
@@ -636,11 +825,16 @@ def get_tenants(db: Session = Depends(get_db), page: Optional[int] = None, page_
     return get_paginated_response(query, page, page_size, serialize)
 
 @app.post("/api/v1/tenants")
-def create_tenant(payload: TenantCreate, db: Session = Depends(get_db)):
+def create_tenant(
+    payload: TenantCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     tenant = Tenant(
         name=payload.name,
         api_key=generate_api_key(),
-        is_active=True
+        is_active=True,
+        user_id=current_user.id if current_user.id != "system" else None
     )
     db.add(tenant)
     db.commit()
@@ -653,8 +847,15 @@ def create_tenant(payload: TenantCreate, db: Session = Depends(get_db)):
     }
 
 @app.delete("/api/v1/tenants/{tenant_id}")
-def delete_tenant(tenant_id: str, db: Session = Depends(get_db)):
-    tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
+def delete_tenant(
+    tenant_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    query = db.query(Tenant).filter(Tenant.id == tenant_id)
+    if current_user.id != "system":
+        query = query.filter(Tenant.user_id == current_user.id)
+    tenant = query.first()
     if not tenant:
         raise HTTPException(status_code=404, detail="Tenant not found")
     db.delete(tenant)

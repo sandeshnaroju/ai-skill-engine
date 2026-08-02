@@ -1,21 +1,75 @@
 import secrets
-from fastapi import Header, HTTPException, Depends, Security
+import bcrypt
+from typing import Optional
+from fastapi import Header, HTTPException, Depends, Security, Cookie
 from fastapi.security import APIKeyHeader
 from sqlalchemy.orm import Session
 from database import get_db
-from models import Tenant
+from models import Tenant, User
 
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 def generate_api_key(prefix: str = "sk_mgr_") -> str:
     return f"{prefix}{secrets.token_urlsafe(24)}"
 
+def hash_password(password: str) -> str:
+    salt = bcrypt.gensalt()
+    return bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
+
+def verify_password(password: str, hashed_password: str) -> bool:
+    try:
+        return bcrypt.checkpw(password.encode('utf-8'), hashed_password.encode('utf-8'))
+    except Exception:
+        return False
+
+def get_current_user(
+    session_token: Optional[str] = Cookie(None),
+    db: Session = Depends(get_db)
+) -> User:
+    if not session_token:
+        # First-run: if no user is registered yet, provide a mock user
+        if db.query(User).first() is None:
+            return User(id="system", email="playground@local")
+        raise HTTPException(status_code=401, detail="Authentication required")
+    
+    user = db.query(User).filter(User.session_token == session_token).first()
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid session or logged out")
+    return user
+
 def get_current_tenant(
-    x_api_key: str = Security(api_key_header),
+    x_api_key: Optional[str] = Security(api_key_header),
+    session_token: Optional[str] = Cookie(None),
     db: Session = Depends(get_db)
 ) -> Tenant:
-    if not x_api_key:
-        # Default fallback tenant for local playground testing if no key header provided
+    # 1. API Key Auth (External API client calls)
+    if x_api_key:
+        tenant = db.query(Tenant).filter(Tenant.api_key == x_api_key, Tenant.is_active == True).first()
+        if not tenant:
+            raise HTTPException(status_code=401, detail="Invalid or inactive API Key")
+        return tenant
+
+    # 2. Session Cookie Auth (Dashboard frontend calls)
+    if session_token:
+        user = db.query(User).filter(User.session_token == session_token).first()
+        if user:
+            # Retrieve the user's tenant (or create a default one if none exists)
+            tenant = db.query(Tenant).filter(Tenant.user_id == user.id, Tenant.is_active == True).first()
+            if not tenant:
+                tenant = Tenant(
+                    name=f"{user.email}'s Workspace",
+                    api_key=generate_api_key("sk_usr_"),
+                    is_active=True,
+                    user_id=user.id
+                )
+                db.add(tenant)
+                db.commit()
+                db.refresh(tenant)
+            return tenant
+
+    # 3. First-run Fallback / Empty DB playground access
+    has_users = db.query(User).first() is not None
+    if not has_users:
         default_tenant = db.query(Tenant).filter(Tenant.name == "Default Playground Tenant").first()
         if not default_tenant:
             default_tenant = Tenant(
@@ -28,7 +82,4 @@ def get_current_tenant(
             db.refresh(default_tenant)
         return default_tenant
 
-    tenant = db.query(Tenant).filter(Tenant.api_key == x_api_key, Tenant.is_active == True).first()
-    if not tenant:
-        raise HTTPException(status_code=401, detail="Invalid or inactive API Key")
-    return tenant
+    raise HTTPException(status_code=401, detail="Authentication required or invalid credentials")
