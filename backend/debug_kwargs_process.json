@@ -1,0 +1,516 @@
+
+--- Turn 1 ---
+{
+  "model": "gemini-3.5-flash",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are skill_manager, an enterprise server assistant equipped with business skills and tools.\n\nActive Available Skills:\n\n### Skill: ip_info (Source: file)\nDescription: Lookup network info, country, city, and ISP for an IP address via external REST API.\nInstructions:\n# IP Info REST API Skill\nUse this skill when users ask about IP address details, location, or network provider.\n\n### Skill: sample_api (Source: file)\nDescription: Skill for calling external enterprise REST webhooks and APIs.\nInstructions:\n# Sample REST API Skill\nUse this skill to fetch inspiration messages from GitHub REST API.\n\n### Skill: system_diagnostics (Source: file)\nDescription: Skill for checking server disk space, memory, uptime, and system status using shell tools.\nInstructions:\n# System Diagnostics Skill\nUse this skill when users ask questions about system health, server uptime, disk space, or running processes.\nAlways provide a concise summary of the command outputs to the user.\n\n### Skill: code_interpreter (Source: file)\nDescription: Skill for running custom Python code scripts safely inside an isolated sandbox environment.\nInstructions:\n# Code Interpreter Skill\nUse this skill when users request mathematical calculations, data processing, string formatting, algorithms, or complex logic that benefits from running Python code in a sandbox.\n"
+    },
+    {
+      "role": "user",
+      "content": "Check disk space usage using system_diagnostics."
+    }
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "ip_info__get_ip_geolocation",
+        "description": "Fetch location and ISP info for an IP address using public REST API.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "sample_api__get_github_zen",
+        "description": "Fetch a design philosophy message from GitHub REST API.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "system_diagnostics__check_disk_usage",
+        "description": "Check filesystem disk usage.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "system_diagnostics__check_system_uptime",
+        "description": "Check server uptime and system load.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "system_diagnostics__check_active_processes",
+        "description": "List current running processes.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "code_interpreter__execute_python_code",
+        "description": "Execute custom Python code inside the sandbox environment and return output.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "description": "Python code to run in sandbox."
+            }
+          },
+          "required": [
+            "code"
+          ]
+        }
+      }
+    }
+  ]
+}
+
+--- Turn 2 ---
+{
+  "model": "gemini-3.5-flash",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are skill_manager, an enterprise server assistant equipped with business skills and tools.\n\nActive Available Skills:\n\n### Skill: ip_info (Source: file)\nDescription: Lookup network info, country, city, and ISP for an IP address via external REST API.\nInstructions:\n# IP Info REST API Skill\nUse this skill when users ask about IP address details, location, or network provider.\n\n### Skill: sample_api (Source: file)\nDescription: Skill for calling external enterprise REST webhooks and APIs.\nInstructions:\n# Sample REST API Skill\nUse this skill to fetch inspiration messages from GitHub REST API.\n\n### Skill: system_diagnostics (Source: file)\nDescription: Skill for checking server disk space, memory, uptime, and system status using shell tools.\nInstructions:\n# System Diagnostics Skill\nUse this skill when users ask questions about system health, server uptime, disk space, or running processes.\nAlways provide a concise summary of the command outputs to the user.\n\n### Skill: code_interpreter (Source: file)\nDescription: Skill for running custom Python code scripts safely inside an isolated sandbox environment.\nInstructions:\n# Code Interpreter Skill\nUse this skill when users request mathematical calculations, data processing, string formatting, algorithms, or complex logic that benefits from running Python code in a sandbox.\n"
+    },
+    {
+      "role": "user",
+      "content": "Check disk space usage using system_diagnostics."
+    },
+    {
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "kfw4vob1",
+          "type": "function",
+          "function": {
+            "name": "system_diagnostics__check_disk_usage",
+            "arguments": "{}"
+          },
+          "extra_content": {
+            "google": {
+              "thought_signature": "EsYDCsMDARFNMg9PwR41BaFQPP82XXiWUDjoh7Nqxmn6znpkMh9yq0SeJVm/NouPsv7KUzzBnnT83fY9fWuDZaNmEPU8/IrdqKVmRq5JXbGwBzmz/4p4MDj2d2BjDTMWFJRSIawpiWE+LnUa8K7Crb5dhilwBuYfl5E2gLquoTrTKuQDpeo2rlqjSEqZS0i0wNYTQHuHQN1j9gVmnJn1pbpqP/iG+Ttq53/1+t/SNz0xa8xk0df6C+VohBJfmDJCWSp4wPHFNM0mFw60Wu11oThFpsXyeGfRTZ8Tiluytch46x5EwLvYl9QJwK7gC/bbD+4jBaQRpdS9VgjZKysQovv+94iigPMsaGG2SUL3QLzqrPgFHE6r8gqSW5J1Teo/5RWDRKuPC55tEGFoH6iFkjakJOQV8GZBNrHlwmu56LFslW7oag8MJVTwuXtAvFYLD2f5mU4JaXzcNYW4m1nf2qUoXuP/mInLPgCHI+GNP0arBOVgvgjZ92g4Ml64eZb5T3M5AkvheyGeogEBfvJzkzAIg6XbbbuklIrulkWOY81N1i+6RhPSPKrkdGK7BKPqutHVvMm/yyltWskoA3oZMsAjwcB6CvSmkw=="
+            }
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "kfw4vob1",
+      "content": "Filesystem        Size    Used   Avail Capacity iused ifree %iused  Mounted on\n/dev/disk1s1s1   233Gi    12Gi    88Gi    13%    404k  925M    0%   /\ndevfs            192Ki   192Ki     0Bi   100%     664     0  100%   /dev\n/dev/disk1s3     233Gi   4.0Gi    88Gi     5%    1.9k  925M    0%   /System/Volumes/Preboot\n/dev/disk1s5     233Gi   2.0Gi    88Gi     3%       2  925M    0%   /System/Volumes/VM\n/dev/disk1s6     233Gi    66Mi    88Gi     1%     867  925M    0%   /System/Volumes/Update\n/dev/disk1s2     233Gi   125Gi    88Gi    59%    2.3M  925M    0%   /System/Volumes/Data\nmap auto_home      0Bi     0Bi     0Bi   100%       0     0     -   /System/Volumes/Data/home\n/dev/disk1s1     233Gi    12Gi    88Gi    13%    406k  925M    0%   /System/Volumes/Update/mnt1\n"
+    }
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "ip_info__get_ip_geolocation",
+        "description": "Fetch location and ISP info for an IP address using public REST API.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "sample_api__get_github_zen",
+        "description": "Fetch a design philosophy message from GitHub REST API.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "system_diagnostics__check_disk_usage",
+        "description": "Check filesystem disk usage.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "system_diagnostics__check_system_uptime",
+        "description": "Check server uptime and system load.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "system_diagnostics__check_active_processes",
+        "description": "List current running processes.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "code_interpreter__execute_python_code",
+        "description": "Execute custom Python code inside the sandbox environment and return output.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "description": "Python code to run in sandbox."
+            }
+          },
+          "required": [
+            "code"
+          ]
+        }
+      }
+    }
+  ]
+}
+
+--- Turn 1 ---
+{
+  "model": "gemini-3.5-flash",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are skill_manager, an enterprise server assistant equipped with business skills and tools.\n\nActive Available Skills:\n\n### Skill: ip_info (Source: file)\nDescription: Lookup network info, country, city, and ISP for an IP address via external REST API.\nInstructions:\n# IP Info REST API Skill\nUse this skill when users ask about IP address details, location, or network provider.\n\n### Skill: sample_api (Source: file)\nDescription: Skill for calling external enterprise REST webhooks and APIs.\nInstructions:\n# Sample REST API Skill\nUse this skill to fetch inspiration messages from GitHub REST API.\n\n### Skill: system_diagnostics (Source: file)\nDescription: Skill for checking server disk space, memory, uptime, and system status using shell tools.\nInstructions:\n# System Diagnostics Skill\nUse this skill when users ask questions about system health, server uptime, disk space, or running processes.\nAlways provide a concise summary of the command outputs to the user.\n\n### Skill: code_interpreter (Source: file)\nDescription: Skill for running custom Python code scripts safely inside an isolated sandbox environment.\nInstructions:\n# Code Interpreter Skill\nUse this skill when users request mathematical calculations, data processing, string formatting, algorithms, or complex logic that benefits from running Python code in a sandbox.\n"
+    },
+    {
+      "role": "user",
+      "content": "Check disk space and system uptime."
+    }
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "ip_info__get_ip_geolocation",
+        "description": "Fetch location and ISP info for an IP address using public REST API.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "sample_api__get_github_zen",
+        "description": "Fetch a design philosophy message from GitHub REST API.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "system_diagnostics__check_disk_usage",
+        "description": "Check filesystem disk usage.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "system_diagnostics__check_system_uptime",
+        "description": "Check server uptime and system load.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "system_diagnostics__check_active_processes",
+        "description": "List current running processes.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "code_interpreter__execute_python_code",
+        "description": "Execute custom Python code inside the sandbox environment and return output.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "description": "Python code to run in sandbox."
+            }
+          },
+          "required": [
+            "code"
+          ]
+        }
+      }
+    }
+  ]
+}
+
+--- Turn 2 ---
+{
+  "model": "gemini-3.5-flash",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are skill_manager, an enterprise server assistant equipped with business skills and tools.\n\nActive Available Skills:\n\n### Skill: ip_info (Source: file)\nDescription: Lookup network info, country, city, and ISP for an IP address via external REST API.\nInstructions:\n# IP Info REST API Skill\nUse this skill when users ask about IP address details, location, or network provider.\n\n### Skill: sample_api (Source: file)\nDescription: Skill for calling external enterprise REST webhooks and APIs.\nInstructions:\n# Sample REST API Skill\nUse this skill to fetch inspiration messages from GitHub REST API.\n\n### Skill: system_diagnostics (Source: file)\nDescription: Skill for checking server disk space, memory, uptime, and system status using shell tools.\nInstructions:\n# System Diagnostics Skill\nUse this skill when users ask questions about system health, server uptime, disk space, or running processes.\nAlways provide a concise summary of the command outputs to the user.\n\n### Skill: code_interpreter (Source: file)\nDescription: Skill for running custom Python code scripts safely inside an isolated sandbox environment.\nInstructions:\n# Code Interpreter Skill\nUse this skill when users request mathematical calculations, data processing, string formatting, algorithms, or complex logic that benefits from running Python code in a sandbox.\n"
+    },
+    {
+      "role": "user",
+      "content": "Check disk space and system uptime."
+    },
+    {
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "z1volwb7",
+          "type": "function",
+          "function": {
+            "name": "system_diagnostics__check_disk_usage",
+            "arguments": "{}"
+          },
+          "extra_content": {
+            "google": {
+              "thought_signature": "EqICCp8CARFNMg/gDJisSTQgMZRT96XCHwOKBgk63L8XfUKk56fPnU0qHy0QZmPMTFl3jsyuh4ppSAevQbzDOWPNfL5lW8CJOuUjy0DjkrCyxbyyNNWCKnWs45k4LMSOQV3UWGPuo/98KGa8Qr2s0SOeICnXQ1cRBHRf90/GEBXt6EGvPDP4ZaWuGNhEdUD582/6KNhnQcIQssNbCJtI5a+DMFh5uN+GlnBvMn3NlDhd9tS9cPCyB54eOpnRIcC5LiNaQRmVQL9XPIB7w2XgP4t9AmWCdJa8DpHsPIjzdyvnDy45q7ZgQU+ARlh0yxhaLg3+sdOeD+qVCWVp5aDAHGN8SmW3jql+oQRq+11tzpeISqIcPt/QiTt5E5UigabQyf7IwDs="
+            }
+          }
+        },
+        {
+          "id": "96d4p3bc",
+          "type": "function",
+          "function": {
+            "name": "system_diagnostics__check_system_uptime",
+            "arguments": "{}"
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "z1volwb7",
+      "content": "Filesystem        Size    Used   Avail Capacity iused ifree %iused  Mounted on\n/dev/disk1s1s1   233Gi    12Gi    88Gi    13%    404k  925M    0%   /\ndevfs            192Ki   192Ki     0Bi   100%     664     0  100%   /dev\n/dev/disk1s3     233Gi   4.0Gi    88Gi     5%    1.9k  925M    0%   /System/Volumes/Preboot\n/dev/disk1s5     233Gi   2.0Gi    88Gi     3%       2  925M    0%   /System/Volumes/VM\n/dev/disk1s6     233Gi    66Mi    88Gi     1%     867  925M    0%   /System/Volumes/Update\n/dev/disk1s2     233Gi   125Gi    88Gi    59%    2.3M  925M    0%   /System/Volumes/Data\nmap auto_home      0Bi     0Bi     0Bi   100%       0     0     -   /System/Volumes/Data/home\n/dev/disk1s1     233Gi    12Gi    88Gi    13%    406k  925M    0%   /System/Volumes/Update/mnt1\n"
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "96d4p3bc",
+      "content": "11:55  up  1:59, 1 user, load averages: 5.40 4.01 3.90\n"
+    }
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "ip_info__get_ip_geolocation",
+        "description": "Fetch location and ISP info for an IP address using public REST API.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "sample_api__get_github_zen",
+        "description": "Fetch a design philosophy message from GitHub REST API.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "system_diagnostics__check_disk_usage",
+        "description": "Check filesystem disk usage.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "system_diagnostics__check_system_uptime",
+        "description": "Check server uptime and system load.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "system_diagnostics__check_active_processes",
+        "description": "List current running processes.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "code_interpreter__execute_python_code",
+        "description": "Execute custom Python code inside the sandbox environment and return output.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "description": "Python code to run in sandbox."
+            }
+          },
+          "required": [
+            "code"
+          ]
+        }
+      }
+    }
+  ]
+}
+
+--- Turn 1 ---
+{
+  "model": "gemini-3.5-flash",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are skill_manager, an enterprise server assistant equipped with business skills and tools.\n\nActive Available Skills:\n\n### Skill: ip_info (Source: file)\nDescription: Lookup network info, country, city, and ISP for an IP address via external REST API.\nInstructions:\n# IP Info REST API Skill\nUse this skill when users ask about IP address details, location, or network provider.\n\n### Skill: sample_api (Source: file)\nDescription: Skill for calling external enterprise REST webhooks and APIs.\nInstructions:\n# Sample REST API Skill\nUse this skill to fetch inspiration messages from GitHub REST API.\n\n### Skill: system_diagnostics (Source: file)\nDescription: Skill for checking server disk space, memory, uptime, and system status using shell tools.\nInstructions:\n# System Diagnostics Skill\nUse this skill when users ask questions about system health, server uptime, disk space, or running processes.\nAlways provide a concise summary of the command outputs to the user.\n\n### Skill: code_interpreter (Source: file)\nDescription: Skill for running custom Python code scripts safely inside an isolated sandbox environment.\nInstructions:\n# Code Interpreter Skill\nUse this skill when users request mathematical calculations, data processing, string formatting, algorithms, or complex logic that benefits from running Python code in a sandbox.\n"
+    },
+    {
+      "role": "user",
+      "content": "Generate a concise, 3-5 word title summarizing a chat starting with user query: \"Fetch a design philosophy quote using the sample_api skill.\". Return ONLY the title string, no quotes or markdown."
+    }
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "ip_info__get_ip_geolocation",
+        "description": "Fetch location and ISP info for an IP address using public REST API.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "sample_api__get_github_zen",
+        "description": "Fetch a design philosophy message from GitHub REST API.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "system_diagnostics__check_disk_usage",
+        "description": "Check filesystem disk usage.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "system_diagnostics__check_system_uptime",
+        "description": "Check server uptime and system load.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "system_diagnostics__check_active_processes",
+        "description": "List current running processes.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "code_interpreter__execute_python_code",
+        "description": "Execute custom Python code inside the sandbox environment and return output.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "description": "Python code to run in sandbox."
+            }
+          },
+          "required": [
+            "code"
+          ]
+        }
+      }
+    }
+  ]
+}

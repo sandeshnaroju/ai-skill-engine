@@ -1,0 +1,14 @@
+# Python & Virtualenv
+venv/
+__pycache__/
+*.pyc
+.env
+
+# Database & Sandbox scratch workspace
+skill_manager.db
+sandbox/
+
+# Frontend Build & Node Modules
+frontend/node_modules/
+frontend/dist/
+.DS_Store

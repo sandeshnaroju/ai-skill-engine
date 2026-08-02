@@ -1,0 +1,31 @@
+#!/bin/bash
+# Helper script to run skill_manager server using python venv
+
+PROJECT_DIR="/Users/apple/Documents/Google Antigravity/ai-skill-runner"
+cd "$PROJECT_DIR"
+
+if [ ! -d "venv" ]; then
+    echo "Creating python virtual environment..."
+    python3 -m venv venv
+    ./venv/bin/pip install -r backend/requirements.txt
+fi
+
+echo "Activating virtual environment..."
+source venv/bin/activate
+
+# Automatically load .env if present
+if [ -f .env ]; then
+    echo "Loading environment variables from .env file..."
+    set -a
+    source .env
+    set +a
+fi
+
+if [ -z "$GEMINI_API_KEY" ] && [ -z "$OPENAI_API_KEY" ] && [ -z "$LLM_API_KEY" ]; then
+    echo "WARNING: Neither GEMINI_API_KEY nor OPENAI_API_KEY is set in your environment."
+    echo "Please set GEMINI_API_KEY in your .env file or run: export GEMINI_API_KEY='your-key'"
+fi
+
+echo "Starting Skill Manager Server on http://localhost:8000 ..."
+cd "$PROJECT_DIR/backend"
+../venv/bin/python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload
