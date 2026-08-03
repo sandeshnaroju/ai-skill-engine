@@ -22,6 +22,8 @@ PyPDF2>=3.0.0
 PyMuPDF>=1.22.0
 weasyprint>=60.0
 xhtml2pdf>=0.2.11
+python-multipart>=0.0.6
+
 
 
 
