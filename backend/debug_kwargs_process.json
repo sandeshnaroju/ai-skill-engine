@@ -605,3 +605,1211 @@
     }
   ]
 }
+
+--- Turn 1 ---
+{
+  "model": "gemini-3.5-flash",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are skill_manager, an enterprise server assistant equipped with business skills and tools.\n\nActive Available Skills:\n\n### Skill: ip_info (Source: file)\nDescription: Lookup network info, country, city, and ISP for an IP address via external REST API.\nInstructions:\n# IP Info REST API Skill\nUse this skill when users ask about IP address details, location, or network provider.\n\n### Skill: sample_api (Source: file)\nDescription: Skill for calling external enterprise REST webhooks and APIs.\nInstructions:\n# Sample REST API Skill\nUse this skill to fetch inspiration messages from GitHub REST API.\n\n### Skill: system_diagnostics (Source: file)\nDescription: Skill for checking server disk space, memory, uptime, and system status using shell tools.\nInstructions:\n# System Diagnostics Skill\nUse this skill when users ask questions about system health, server uptime, disk space, or running processes.\nAlways provide a concise summary of the command outputs to the user.\n\n### Skill: code_interpreter (Source: file)\nDescription: Skill for running custom Python code scripts safely inside an isolated sandbox environment.\nInstructions:\n# Code Interpreter Skill\nUse this skill when users request mathematical calculations, data processing, string formatting, algorithms, or complex logic that benefits from running Python code in a sandbox.\n"
+    },
+    {
+      "role": "user",
+      "content": "Generate a concise, 3-5 word title summarizing a chat starting with user query: \"Explain this pdf please\". Return ONLY the title string, no quotes or markdown."
+    },
+    {
+      "role": "assistant",
+      "content": "PDF Document Explanation"
+    },
+    {
+      "role": "user",
+      "content": "Generate a concise, 3-5 word title summarizing a chat starting with user query: \"Fetch a design philosophy quote using the sample_api skill.\". Return ONLY the title string, no quotes or markdown."
+    },
+    {
+      "role": "assistant",
+      "content": "Fetch Design Philosophy Quote"
+    },
+    {
+      "role": "user",
+      "content": "Generate a concise, 3-5 word title summarizing a chat starting with user query: \"if i invest 10,000 rupees for 15 years at interest of 8% a year, what is my total accumulated amount after the time period\". Return ONLY the title string, no quotes or markdown."
+    },
+    {
+      "role": "assistant",
+      "content": "Investment Growth Calculation"
+    },
+    {
+      "role": "user",
+      "content": "Generate a concise, 3-5 word title summarizing a chat starting with user query: \"What is this pdf contain, explain it\". Return ONLY the title string, no quotes or markdown."
+    },
+    {
+      "role": "assistant",
+      "content": "PDF Document Content Summary"
+    },
+    {
+      "role": "user",
+      "content": "Generate a concise, 3-5 word title summarizing a chat starting with user query: \"Can you generate a pdf file with 5 animal names ?\". Return ONLY the title string, no quotes or markdown."
+    }
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "ip_info__get_ip_geolocation",
+        "description": "Fetch location and ISP info for an IP address using public REST API.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "sample_api__get_github_zen",
+        "description": "Fetch a design philosophy message from GitHub REST API.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "system_diagnostics__check_disk_usage",
+        "description": "Check filesystem disk usage.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "system_diagnostics__check_system_uptime",
+        "description": "Check server uptime and system load.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "system_diagnostics__check_active_processes",
+        "description": "List current running processes.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "code_interpreter__execute_python_code",
+        "description": "Execute custom Python code inside the sandbox environment and return output.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "description": "Python code to run in sandbox."
+            }
+          },
+          "required": [
+            "code"
+          ]
+        }
+      }
+    }
+  ]
+}
+
+--- Turn 1 ---
+{
+  "model": "gemini-3.5-flash",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are skill_manager, an enterprise server assistant equipped with business skills and tools.\n\nActive Available Skills:\n\n### Skill: ip_info (Source: file)\nDescription: Lookup network info, country, city, and ISP for an IP address via external REST API.\nInstructions:\n# IP Info REST API Skill\nUse this skill when users ask about IP address details, location, or network provider.\n\n### Skill: sample_api (Source: file)\nDescription: Skill for calling external enterprise REST webhooks and APIs.\nInstructions:\n# Sample REST API Skill\nUse this skill to fetch inspiration messages from GitHub REST API.\n\n### Skill: system_diagnostics (Source: file)\nDescription: Skill for checking server disk space, memory, uptime, and system status using shell tools.\nInstructions:\n# System Diagnostics Skill\nUse this skill when users ask questions about system health, server uptime, disk space, or running processes.\nAlways provide a concise summary of the command outputs to the user.\n\n### Skill: code_interpreter (Source: file)\nDescription: Skill for running custom Python code scripts safely inside an isolated sandbox environment.\nInstructions:\n# Code Interpreter Skill\nUse this skill when users request mathematical calculations, data processing, string formatting, algorithms, or complex logic that benefits from running Python code in a sandbox.\n"
+    },
+    {
+      "role": "user",
+      "content": "Generate a concise, 3-5 word title summarizing a chat starting with user query: \"Explain this pdf please\". Return ONLY the title string, no quotes or markdown."
+    },
+    {
+      "role": "assistant",
+      "content": "PDF Document Explanation"
+    },
+    {
+      "role": "user",
+      "content": "Generate a concise, 3-5 word title summarizing a chat starting with user query: \"Fetch a design philosophy quote using the sample_api skill.\". Return ONLY the title string, no quotes or markdown."
+    },
+    {
+      "role": "assistant",
+      "content": "Fetch Design Philosophy Quote"
+    },
+    {
+      "role": "user",
+      "content": "Generate a concise, 3-5 word title summarizing a chat starting with user query: \"if i invest 10,000 rupees for 15 years at interest of 8% a year, what is my total accumulated amount after the time period\". Return ONLY the title string, no quotes or markdown."
+    },
+    {
+      "role": "assistant",
+      "content": "Investment Growth Calculation"
+    },
+    {
+      "role": "user",
+      "content": "Generate a concise, 3-5 word title summarizing a chat starting with user query: \"What is this pdf contain, explain it\". Return ONLY the title string, no quotes or markdown."
+    },
+    {
+      "role": "assistant",
+      "content": "PDF Document Content Summary"
+    },
+    {
+      "role": "user",
+      "content": "Generate a concise, 3-5 word title summarizing a chat starting with user query: \"Can you generate a pdf file with 5 animal names ?\". Return ONLY the title string, no quotes or markdown."
+    },
+    {
+      "role": "assistant",
+      "content": "Generate Animal Names PDF"
+    },
+    {
+      "role": "user",
+      "content": "Generate a concise, 3-5 word title summarizing a chat starting with user query: \"grab the data in the pdf and create another pdf in breif\". Return ONLY the title string, no quotes or markdown."
+    }
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "ip_info__get_ip_geolocation",
+        "description": "Fetch location and ISP info for an IP address using public REST API.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "sample_api__get_github_zen",
+        "description": "Fetch a design philosophy message from GitHub REST API.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "system_diagnostics__check_disk_usage",
+        "description": "Check filesystem disk usage.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "system_diagnostics__check_system_uptime",
+        "description": "Check server uptime and system load.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "system_diagnostics__check_active_processes",
+        "description": "List current running processes.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "code_interpreter__execute_python_code",
+        "description": "Execute custom Python code inside the sandbox environment and return output.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "description": "Python code to run in sandbox."
+            }
+          },
+          "required": [
+            "code"
+          ]
+        }
+      }
+    }
+  ]
+}
+
+--- Turn 1 ---
+{
+  "model": "gemini-3.5-flash",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are skill_manager, an enterprise server assistant equipped with business skills and tools.\n\nActive Available Skills:\n\n### Skill: ip_info (Source: file)\nDescription: Lookup network info, country, city, and ISP for an IP address via external REST API.\nInstructions:\n# IP Info REST API Skill\nUse this skill when users ask about IP address details, location, or network provider.\n\n### Skill: sample_api (Source: file)\nDescription: Skill for calling external enterprise REST webhooks and APIs.\nInstructions:\n# Sample REST API Skill\nUse this skill to fetch inspiration messages from GitHub REST API.\n\n### Skill: system_diagnostics (Source: file)\nDescription: Skill for checking server disk space, memory, uptime, and system status using shell tools.\nInstructions:\n# System Diagnostics Skill\nUse this skill when users ask questions about system health, server uptime, disk space, or running processes.\nAlways provide a concise summary of the command outputs to the user.\n\n### Skill: code_interpreter (Source: file)\nDescription: Skill for running custom Python code scripts safely inside an isolated sandbox environment.\nInstructions:\n# Code Interpreter Skill\nUse this skill when users request mathematical calculations, data processing, string formatting, algorithms, or complex logic that benefits from running Python code in a sandbox.\n"
+    },
+    {
+      "role": "user",
+      "content": "Generate a concise, 3-5 word title summarizing a chat starting with user query: \"Explain this pdf please\". Return ONLY the title string, no quotes or markdown."
+    },
+    {
+      "role": "assistant",
+      "content": "PDF Document Explanation"
+    },
+    {
+      "role": "user",
+      "content": "Generate a concise, 3-5 word title summarizing a chat starting with user query: \"Fetch a design philosophy quote using the sample_api skill.\". Return ONLY the title string, no quotes or markdown."
+    },
+    {
+      "role": "assistant",
+      "content": "Fetch Design Philosophy Quote"
+    },
+    {
+      "role": "user",
+      "content": "Generate a concise, 3-5 word title summarizing a chat starting with user query: \"if i invest 10,000 rupees for 15 years at interest of 8% a year, what is my total accumulated amount after the time period\". Return ONLY the title string, no quotes or markdown."
+    },
+    {
+      "role": "assistant",
+      "content": "Investment Growth Calculation"
+    },
+    {
+      "role": "user",
+      "content": "Generate a concise, 3-5 word title summarizing a chat starting with user query: \"What is this pdf contain, explain it\". Return ONLY the title string, no quotes or markdown."
+    },
+    {
+      "role": "assistant",
+      "content": "PDF Document Content Summary"
+    },
+    {
+      "role": "user",
+      "content": "Generate a concise, 3-5 word title summarizing a chat starting with user query: \"Can you generate a pdf file with 5 animal names ?\". Return ONLY the title string, no quotes or markdown."
+    },
+    {
+      "role": "assistant",
+      "content": "Generate Animal Names PDF"
+    },
+    {
+      "role": "user",
+      "content": "Generate a concise, 3-5 word title summarizing a chat starting with user query: \"grab the data in the pdf and create another pdf in breif\". Return ONLY the title string, no quotes or markdown."
+    },
+    {
+      "role": "assistant",
+      "content": "Summarize and Recreate PDF"
+    },
+    {
+      "role": "user",
+      "content": "Generate a concise, 3-5 word title summarizing a chat starting with user query: \"Read the  pdf and create another pdf with better design and briefed data\". Return ONLY the title string, no quotes or markdown."
+    }
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "ip_info__get_ip_geolocation",
+        "description": "Fetch location and ISP info for an IP address using public REST API.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "sample_api__get_github_zen",
+        "description": "Fetch a design philosophy message from GitHub REST API.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "system_diagnostics__check_disk_usage",
+        "description": "Check filesystem disk usage.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "system_diagnostics__check_system_uptime",
+        "description": "Check server uptime and system load.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "system_diagnostics__check_active_processes",
+        "description": "List current running processes.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "code_interpreter__execute_python_code",
+        "description": "Execute custom Python code inside the sandbox environment and return output.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "description": "Python code to run in sandbox."
+            }
+          },
+          "required": [
+            "code"
+          ]
+        }
+      }
+    }
+  ]
+}
+
+--- Turn 1 ---
+{
+  "model": "gemini-3.5-flash",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are skill_manager, an enterprise server assistant equipped with business skills and tools.\n\nActive Available Skills:\n\n### Skill: ip_info (Source: file)\nDescription: Lookup network info, country, city, and ISP for an IP address via external REST API.\nInstructions:\n# IP Info REST API Skill\nUse this skill when users ask about IP address details, location, or network provider.\n\n### Skill: sample_api (Source: file)\nDescription: Skill for calling external enterprise REST webhooks and APIs.\nInstructions:\n# Sample REST API Skill\nUse this skill to fetch inspiration messages from GitHub REST API.\n\n### Skill: system_diagnostics (Source: file)\nDescription: Skill for checking server disk space, memory, uptime, and system status using shell tools.\nInstructions:\n# System Diagnostics Skill\nUse this skill when users ask questions about system health, server uptime, disk space, or running processes.\nAlways provide a concise summary of the command outputs to the user.\n\n### Skill: code_interpreter (Source: file)\nDescription: Skill for running custom Python code scripts safely inside an isolated sandbox environment.\nInstructions:\n# Code Interpreter Skill\nUse this skill when users request mathematical calculations, data processing, string formatting, algorithms, or complex logic that benefits from running Python code in a sandbox.\n"
+    },
+    {
+      "role": "user",
+      "content": "Generate a concise, 3-5 word title summarizing a chat starting with user query: \"Explain this pdf please\". Return ONLY the title string, no quotes or markdown."
+    },
+    {
+      "role": "assistant",
+      "content": "PDF Document Explanation"
+    },
+    {
+      "role": "user",
+      "content": "Generate a concise, 3-5 word title summarizing a chat starting with user query: \"Fetch a design philosophy quote using the sample_api skill.\". Return ONLY the title string, no quotes or markdown."
+    },
+    {
+      "role": "assistant",
+      "content": "Fetch Design Philosophy Quote"
+    },
+    {
+      "role": "user",
+      "content": "Generate a concise, 3-5 word title summarizing a chat starting with user query: \"if i invest 10,000 rupees for 15 years at interest of 8% a year, what is my total accumulated amount after the time period\". Return ONLY the title string, no quotes or markdown."
+    },
+    {
+      "role": "assistant",
+      "content": "Investment Growth Calculation"
+    },
+    {
+      "role": "user",
+      "content": "Generate a concise, 3-5 word title summarizing a chat starting with user query: \"What is this pdf contain, explain it\". Return ONLY the title string, no quotes or markdown."
+    },
+    {
+      "role": "assistant",
+      "content": "PDF Document Content Summary"
+    },
+    {
+      "role": "user",
+      "content": "Generate a concise, 3-5 word title summarizing a chat starting with user query: \"Can you generate a pdf file with 5 animal names ?\". Return ONLY the title string, no quotes or markdown."
+    },
+    {
+      "role": "assistant",
+      "content": "Generate Animal Names PDF"
+    },
+    {
+      "role": "user",
+      "content": "Generate a concise, 3-5 word title summarizing a chat starting with user query: \"grab the data in the pdf and create another pdf in breif\". Return ONLY the title string, no quotes or markdown."
+    },
+    {
+      "role": "assistant",
+      "content": "Summarize and Recreate PDF"
+    },
+    {
+      "role": "user",
+      "content": "Generate a concise, 3-5 word title summarizing a chat starting with user query: \"Read the  pdf and create another pdf with better design and briefed data\". Return ONLY the title string, no quotes or markdown."
+    },
+    {
+      "role": "assistant",
+      "content": "Redesign and Summarize PDF"
+    },
+    {
+      "role": "user",
+      "content": "Generate a concise, 3-5 word title summarizing a chat starting with user query: \"read and explain\". Return ONLY the title string, no quotes or markdown."
+    }
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "ip_info__get_ip_geolocation",
+        "description": "Fetch location and ISP info for an IP address using public REST API.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "sample_api__get_github_zen",
+        "description": "Fetch a design philosophy message from GitHub REST API.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "system_diagnostics__check_disk_usage",
+        "description": "Check filesystem disk usage.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "system_diagnostics__check_system_uptime",
+        "description": "Check server uptime and system load.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "system_diagnostics__check_active_processes",
+        "description": "List current running processes.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "code_interpreter__execute_python_code",
+        "description": "Execute custom Python code inside the sandbox environment and return output.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "description": "Python code to run in sandbox."
+            }
+          },
+          "required": [
+            "code"
+          ]
+        }
+      }
+    }
+  ]
+}
+
+--- Turn 1 ---
+{
+  "model": "gemini-3.5-flash",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are skill_manager, an enterprise server assistant equipped with business skills and tools.\n\nActive Available Skills:\n\n### Skill: ip_info (Source: file)\nDescription: Lookup network info, country, city, and ISP for an IP address via external REST API.\nInstructions:\n# IP Info REST API Skill\nUse this skill when users ask about IP address details, location, or network provider.\n\n### Skill: sample_api (Source: file)\nDescription: Skill for calling external enterprise REST webhooks and APIs.\nInstructions:\n# Sample REST API Skill\nUse this skill to fetch inspiration messages from GitHub REST API.\n\n### Skill: system_diagnostics (Source: file)\nDescription: Skill for checking server disk space, memory, uptime, and system status using shell tools.\nInstructions:\n# System Diagnostics Skill\nUse this skill when users ask questions about system health, server uptime, disk space, or running processes.\nAlways provide a concise summary of the command outputs to the user.\n\n### Skill: code_interpreter (Source: file)\nDescription: Skill for running custom Python code scripts safely inside an isolated sandbox environment.\nInstructions:\n# Code Interpreter Skill\nUse this skill when users request mathematical calculations, data processing, string formatting, algorithms, or complex logic that benefits from running Python code in a sandbox.\n"
+    },
+    {
+      "role": "user",
+      "content": "Generate a concise, 3-5 word title summarizing a chat starting with user query: \"Explain this pdf please\". Return ONLY the title string, no quotes or markdown."
+    },
+    {
+      "role": "assistant",
+      "content": "PDF Document Explanation"
+    },
+    {
+      "role": "user",
+      "content": "Generate a concise, 3-5 word title summarizing a chat starting with user query: \"Fetch a design philosophy quote using the sample_api skill.\". Return ONLY the title string, no quotes or markdown."
+    },
+    {
+      "role": "assistant",
+      "content": "Fetch Design Philosophy Quote"
+    },
+    {
+      "role": "user",
+      "content": "Generate a concise, 3-5 word title summarizing a chat starting with user query: \"if i invest 10,000 rupees for 15 years at interest of 8% a year, what is my total accumulated amount after the time period\". Return ONLY the title string, no quotes or markdown."
+    },
+    {
+      "role": "assistant",
+      "content": "Investment Growth Calculation"
+    },
+    {
+      "role": "user",
+      "content": "Generate a concise, 3-5 word title summarizing a chat starting with user query: \"What is this pdf contain, explain it\". Return ONLY the title string, no quotes or markdown."
+    },
+    {
+      "role": "assistant",
+      "content": "PDF Document Content Summary"
+    },
+    {
+      "role": "user",
+      "content": "Generate a concise, 3-5 word title summarizing a chat starting with user query: \"Can you generate a pdf file with 5 animal names ?\". Return ONLY the title string, no quotes or markdown."
+    },
+    {
+      "role": "assistant",
+      "content": "Generate Animal Names PDF"
+    },
+    {
+      "role": "user",
+      "content": "Generate a concise, 3-5 word title summarizing a chat starting with user query: \"grab the data in the pdf and create another pdf in breif\". Return ONLY the title string, no quotes or markdown."
+    },
+    {
+      "role": "assistant",
+      "content": "Summarize and Recreate PDF"
+    },
+    {
+      "role": "user",
+      "content": "Generate a concise, 3-5 word title summarizing a chat starting with user query: \"Read the  pdf and create another pdf with better design and briefed data\". Return ONLY the title string, no quotes or markdown."
+    },
+    {
+      "role": "assistant",
+      "content": "Redesign and Summarize PDF"
+    },
+    {
+      "role": "user",
+      "content": "Generate a concise, 3-5 word title summarizing a chat starting with user query: \"read and explain\". Return ONLY the title string, no quotes or markdown."
+    },
+    {
+      "role": "assistant",
+      "content": "Read and Explain Document"
+    },
+    {
+      "role": "user",
+      "content": "Generate a concise, 3-5 word title summarizing a chat starting with user query: \"read and explain\". Return ONLY the title string, no quotes or markdown."
+    }
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "ip_info__get_ip_geolocation",
+        "description": "Fetch location and ISP info for an IP address using public REST API.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "sample_api__get_github_zen",
+        "description": "Fetch a design philosophy message from GitHub REST API.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "system_diagnostics__check_disk_usage",
+        "description": "Check filesystem disk usage.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "system_diagnostics__check_system_uptime",
+        "description": "Check server uptime and system load.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "system_diagnostics__check_active_processes",
+        "description": "List current running processes.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "code_interpreter__execute_python_code",
+        "description": "Execute custom Python code inside the sandbox environment and return output.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "description": "Python code to run in sandbox."
+            }
+          },
+          "required": [
+            "code"
+          ]
+        }
+      }
+    }
+  ]
+}
+
+--- Turn 1 ---
+{
+  "model": "gemini-3.5-flash",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are skill_manager, an enterprise server assistant equipped with business skills and tools.\n\nActive Available Skills:\n\n### Skill: ip_info (Source: file)\nDescription: Lookup network info, country, city, and ISP for an IP address via external REST API.\nInstructions:\n# IP Info REST API Skill\nUse this skill when users ask about IP address details, location, or network provider.\n\n### Skill: sample_api (Source: file)\nDescription: Skill for calling external enterprise REST webhooks and APIs.\nInstructions:\n# Sample REST API Skill\nUse this skill to fetch inspiration messages from GitHub REST API.\n\n### Skill: system_diagnostics (Source: file)\nDescription: Skill for checking server disk space, memory, uptime, and system status using shell tools.\nInstructions:\n# System Diagnostics Skill\nUse this skill when users ask questions about system health, server uptime, disk space, or running processes.\nAlways provide a concise summary of the command outputs to the user.\n\n### Skill: code_interpreter (Source: file)\nDescription: Skill for running custom Python code scripts safely inside an isolated sandbox environment.\nInstructions:\n# Code Interpreter Skill\nUse this skill when users request mathematical calculations, data processing, string formatting, algorithms, or complex logic that benefits from running Python code in a sandbox.\n"
+    },
+    {
+      "role": "user",
+      "content": "Generate a concise, 3-5 word title summarizing a chat starting with user query: \"Explain this pdf please\". Return ONLY the title string, no quotes or markdown."
+    },
+    {
+      "role": "assistant",
+      "content": "PDF Document Explanation"
+    },
+    {
+      "role": "user",
+      "content": "Generate a concise, 3-5 word title summarizing a chat starting with user query: \"Fetch a design philosophy quote using the sample_api skill.\". Return ONLY the title string, no quotes or markdown."
+    },
+    {
+      "role": "assistant",
+      "content": "Fetch Design Philosophy Quote"
+    },
+    {
+      "role": "user",
+      "content": "Generate a concise, 3-5 word title summarizing a chat starting with user query: \"if i invest 10,000 rupees for 15 years at interest of 8% a year, what is my total accumulated amount after the time period\". Return ONLY the title string, no quotes or markdown."
+    },
+    {
+      "role": "assistant",
+      "content": "Investment Growth Calculation"
+    },
+    {
+      "role": "user",
+      "content": "Generate a concise, 3-5 word title summarizing a chat starting with user query: \"What is this pdf contain, explain it\". Return ONLY the title string, no quotes or markdown."
+    },
+    {
+      "role": "assistant",
+      "content": "PDF Document Content Summary"
+    },
+    {
+      "role": "user",
+      "content": "Generate a concise, 3-5 word title summarizing a chat starting with user query: \"Can you generate a pdf file with 5 animal names ?\". Return ONLY the title string, no quotes or markdown."
+    },
+    {
+      "role": "assistant",
+      "content": "Generate Animal Names PDF"
+    },
+    {
+      "role": "user",
+      "content": "Generate a concise, 3-5 word title summarizing a chat starting with user query: \"grab the data in the pdf and create another pdf in breif\". Return ONLY the title string, no quotes or markdown."
+    },
+    {
+      "role": "assistant",
+      "content": "Summarize and Recreate PDF"
+    },
+    {
+      "role": "user",
+      "content": "Generate a concise, 3-5 word title summarizing a chat starting with user query: \"Read the  pdf and create another pdf with better design and briefed data\". Return ONLY the title string, no quotes or markdown."
+    },
+    {
+      "role": "assistant",
+      "content": "Redesign and Summarize PDF"
+    },
+    {
+      "role": "user",
+      "content": "Generate a concise, 3-5 word title summarizing a chat starting with user query: \"read and explain\". Return ONLY the title string, no quotes or markdown."
+    },
+    {
+      "role": "assistant",
+      "content": "Read and Explain Document"
+    },
+    {
+      "role": "user",
+      "content": "Generate a concise, 3-5 word title summarizing a chat starting with user query: \"read and explain\". Return ONLY the title string, no quotes or markdown."
+    },
+    {
+      "role": "assistant",
+      "content": "Read and Explain Document"
+    },
+    {
+      "role": "user",
+      "content": "Generate a concise, 3-5 word title summarizing a chat starting with user query: \"read and explain this pdf\". Return ONLY the title string, no quotes or markdown."
+    }
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "ip_info__get_ip_geolocation",
+        "description": "Fetch location and ISP info for an IP address using public REST API.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "sample_api__get_github_zen",
+        "description": "Fetch a design philosophy message from GitHub REST API.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "system_diagnostics__check_disk_usage",
+        "description": "Check filesystem disk usage.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "system_diagnostics__check_system_uptime",
+        "description": "Check server uptime and system load.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "system_diagnostics__check_active_processes",
+        "description": "List current running processes.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "code_interpreter__execute_python_code",
+        "description": "Execute custom Python code inside the sandbox environment and return output.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "description": "Python code to run in sandbox."
+            }
+          },
+          "required": [
+            "code"
+          ]
+        }
+      }
+    }
+  ]
+}
+
+--- Turn 1 ---
+{
+  "model": "gemini-3.5-flash",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are skill_manager, an enterprise server assistant equipped with business skills and tools.\n\nActive Available Skills:\n\n### Skill: ip_info (Source: file)\nDescription: Lookup network info, country, city, and ISP for an IP address via external REST API.\nInstructions:\n# IP Info REST API Skill\nUse this skill when users ask about IP address details, location, or network provider.\n\n### Skill: sample_api (Source: file)\nDescription: Skill for calling external enterprise REST webhooks and APIs.\nInstructions:\n# Sample REST API Skill\nUse this skill to fetch inspiration messages from GitHub REST API.\n\n### Skill: system_diagnostics (Source: file)\nDescription: Skill for checking server disk space, memory, uptime, and system status using shell tools.\nInstructions:\n# System Diagnostics Skill\nUse this skill when users ask questions about system health, server uptime, disk space, or running processes.\nAlways provide a concise summary of the command outputs to the user.\n\n### Skill: code_interpreter (Source: file)\nDescription: Skill for running custom Python code scripts safely inside an isolated sandbox environment.\nInstructions:\n# Code Interpreter Skill\nUse this skill when users request mathematical calculations, data processing, string formatting, algorithms, or complex logic that benefits from running Python code in a sandbox.\n"
+    },
+    {
+      "role": "user",
+      "content": "Generate a concise, 3-5 word title summarizing a chat starting with user query: \"Explain this pdf please\". Return ONLY the title string, no quotes or markdown."
+    },
+    {
+      "role": "assistant",
+      "content": "PDF Document Explanation"
+    },
+    {
+      "role": "user",
+      "content": "Generate a concise, 3-5 word title summarizing a chat starting with user query: \"Fetch a design philosophy quote using the sample_api skill.\". Return ONLY the title string, no quotes or markdown."
+    },
+    {
+      "role": "assistant",
+      "content": "Fetch Design Philosophy Quote"
+    },
+    {
+      "role": "user",
+      "content": "Generate a concise, 3-5 word title summarizing a chat starting with user query: \"if i invest 10,000 rupees for 15 years at interest of 8% a year, what is my total accumulated amount after the time period\". Return ONLY the title string, no quotes or markdown."
+    },
+    {
+      "role": "assistant",
+      "content": "Investment Growth Calculation"
+    },
+    {
+      "role": "user",
+      "content": "Generate a concise, 3-5 word title summarizing a chat starting with user query: \"What is this pdf contain, explain it\". Return ONLY the title string, no quotes or markdown."
+    },
+    {
+      "role": "assistant",
+      "content": "PDF Document Content Summary"
+    },
+    {
+      "role": "user",
+      "content": "Generate a concise, 3-5 word title summarizing a chat starting with user query: \"Can you generate a pdf file with 5 animal names ?\". Return ONLY the title string, no quotes or markdown."
+    },
+    {
+      "role": "assistant",
+      "content": "Generate Animal Names PDF"
+    },
+    {
+      "role": "user",
+      "content": "Generate a concise, 3-5 word title summarizing a chat starting with user query: \"grab the data in the pdf and create another pdf in breif\". Return ONLY the title string, no quotes or markdown."
+    },
+    {
+      "role": "assistant",
+      "content": "Summarize and Recreate PDF"
+    },
+    {
+      "role": "user",
+      "content": "Generate a concise, 3-5 word title summarizing a chat starting with user query: \"Read the  pdf and create another pdf with better design and briefed data\". Return ONLY the title string, no quotes or markdown."
+    },
+    {
+      "role": "assistant",
+      "content": "Redesign and Summarize PDF"
+    },
+    {
+      "role": "user",
+      "content": "Generate a concise, 3-5 word title summarizing a chat starting with user query: \"read and explain\". Return ONLY the title string, no quotes or markdown."
+    },
+    {
+      "role": "assistant",
+      "content": "Read and Explain Document"
+    },
+    {
+      "role": "user",
+      "content": "Generate a concise, 3-5 word title summarizing a chat starting with user query: \"read and explain\". Return ONLY the title string, no quotes or markdown."
+    },
+    {
+      "role": "assistant",
+      "content": "Read and Explain Document"
+    },
+    {
+      "role": "user",
+      "content": "Generate a concise, 3-5 word title summarizing a chat starting with user query: \"read and explain this pdf\". Return ONLY the title string, no quotes or markdown."
+    },
+    {
+      "role": "assistant",
+      "content": "Read and Explain PDF"
+    },
+    {
+      "role": "user",
+      "content": "Generate a concise, 3-5 word title summarizing a chat starting with user query: \"read and explain\". Return ONLY the title string, no quotes or markdown."
+    }
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "ip_info__get_ip_geolocation",
+        "description": "Fetch location and ISP info for an IP address using public REST API.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "sample_api__get_github_zen",
+        "description": "Fetch a design philosophy message from GitHub REST API.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "system_diagnostics__check_disk_usage",
+        "description": "Check filesystem disk usage.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "system_diagnostics__check_system_uptime",
+        "description": "Check server uptime and system load.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "system_diagnostics__check_active_processes",
+        "description": "List current running processes.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "code_interpreter__execute_python_code",
+        "description": "Execute custom Python code inside the sandbox environment and return output.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "description": "Python code to run in sandbox."
+            }
+          },
+          "required": [
+            "code"
+          ]
+        }
+      }
+    }
+  ]
+}
+
+--- Turn 1 ---
+{
+  "model": "gemini-3.5-flash",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are skill_manager, an enterprise server assistant equipped with business skills and tools.\n\nActive Available Skills:\n\n### Skill: ip_info (Source: file)\nDescription: Lookup network info, country, city, and ISP for an IP address via external REST API.\nInstructions:\n# IP Info REST API Skill\nUse this skill when users ask about IP address details, location, or network provider.\n\n### Skill: sample_api (Source: file)\nDescription: Skill for calling external enterprise REST webhooks and APIs.\nInstructions:\n# Sample REST API Skill\nUse this skill to fetch inspiration messages from GitHub REST API.\n\n### Skill: system_diagnostics (Source: file)\nDescription: Skill for checking server disk space, memory, uptime, and system status using shell tools.\nInstructions:\n# System Diagnostics Skill\nUse this skill when users ask questions about system health, server uptime, disk space, or running processes.\nAlways provide a concise summary of the command outputs to the user.\n\n### Skill: code_interpreter (Source: file)\nDescription: Skill for running custom Python code scripts safely inside an isolated sandbox environment.\nInstructions:\n# Code Interpreter Skill\nUse this skill when users request mathematical calculations, data processing, string formatting, algorithms, or complex logic that benefits from running Python code in a sandbox.\n"
+    },
+    {
+      "role": "user",
+      "content": "Generate a concise, 3-5 word title summarizing a chat starting with user query: \"Explain this pdf please\". Return ONLY the title string, no quotes or markdown."
+    },
+    {
+      "role": "assistant",
+      "content": "PDF Document Explanation"
+    },
+    {
+      "role": "user",
+      "content": "Generate a concise, 3-5 word title summarizing a chat starting with user query: \"Fetch a design philosophy quote using the sample_api skill.\". Return ONLY the title string, no quotes or markdown."
+    },
+    {
+      "role": "assistant",
+      "content": "Fetch Design Philosophy Quote"
+    },
+    {
+      "role": "user",
+      "content": "Generate a concise, 3-5 word title summarizing a chat starting with user query: \"if i invest 10,000 rupees for 15 years at interest of 8% a year, what is my total accumulated amount after the time period\". Return ONLY the title string, no quotes or markdown."
+    },
+    {
+      "role": "assistant",
+      "content": "Investment Growth Calculation"
+    },
+    {
+      "role": "user",
+      "content": "Generate a concise, 3-5 word title summarizing a chat starting with user query: \"What is this pdf contain, explain it\". Return ONLY the title string, no quotes or markdown."
+    },
+    {
+      "role": "assistant",
+      "content": "PDF Document Content Summary"
+    },
+    {
+      "role": "user",
+      "content": "Generate a concise, 3-5 word title summarizing a chat starting with user query: \"Can you generate a pdf file with 5 animal names ?\". Return ONLY the title string, no quotes or markdown."
+    },
+    {
+      "role": "assistant",
+      "content": "Generate Animal Names PDF"
+    },
+    {
+      "role": "user",
+      "content": "Generate a concise, 3-5 word title summarizing a chat starting with user query: \"grab the data in the pdf and create another pdf in breif\". Return ONLY the title string, no quotes or markdown."
+    },
+    {
+      "role": "assistant",
+      "content": "Summarize and Recreate PDF"
+    },
+    {
+      "role": "user",
+      "content": "Generate a concise, 3-5 word title summarizing a chat starting with user query: \"Read the  pdf and create another pdf with better design and briefed data\". Return ONLY the title string, no quotes or markdown."
+    },
+    {
+      "role": "assistant",
+      "content": "Redesign and Summarize PDF"
+    },
+    {
+      "role": "user",
+      "content": "Generate a concise, 3-5 word title summarizing a chat starting with user query: \"read and explain\". Return ONLY the title string, no quotes or markdown."
+    },
+    {
+      "role": "assistant",
+      "content": "Read and Explain Document"
+    },
+    {
+      "role": "user",
+      "content": "Generate a concise, 3-5 word title summarizing a chat starting with user query: \"read and explain\". Return ONLY the title string, no quotes or markdown."
+    },
+    {
+      "role": "assistant",
+      "content": "Read and Explain Document"
+    },
+    {
+      "role": "user",
+      "content": "Generate a concise, 3-5 word title summarizing a chat starting with user query: \"read and explain this pdf\". Return ONLY the title string, no quotes or markdown."
+    },
+    {
+      "role": "assistant",
+      "content": "Read and Explain PDF"
+    },
+    {
+      "role": "user",
+      "content": "Generate a concise, 3-5 word title summarizing a chat starting with user query: \"read and explain\". Return ONLY the title string, no quotes or markdown."
+    },
+    {
+      "role": "assistant",
+      "content": "Read and Explain Document"
+    },
+    {
+      "role": "user",
+      "content": "Generate a concise, 3-5 word title summarizing a chat starting with user query: \"What is the rank of naroju nandini \". Return ONLY the title string, no quotes or markdown."
+    }
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "ip_info__get_ip_geolocation",
+        "description": "Fetch location and ISP info for an IP address using public REST API.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "sample_api__get_github_zen",
+        "description": "Fetch a design philosophy message from GitHub REST API.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "system_diagnostics__check_disk_usage",
+        "description": "Check filesystem disk usage.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "system_diagnostics__check_system_uptime",
+        "description": "Check server uptime and system load.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "system_diagnostics__check_active_processes",
+        "description": "List current running processes.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "code_interpreter__execute_python_code",
+        "description": "Execute custom Python code inside the sandbox environment and return output.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "description": "Python code to run in sandbox."
+            }
+          },
+          "required": [
+            "code"
+          ]
+        }
+      }
+    }
+  ]
+}

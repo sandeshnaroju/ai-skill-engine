@@ -42,7 +42,7 @@ class SkillEngine:
         session_id: str,
         user_message: str,
         app_id: str = None,
-        max_turns: int = 5,
+        max_turns: int = 25,
         model_name: str = None,
         request_source: str = "api"
     ) -> dict:
@@ -278,6 +278,13 @@ class SkillEngine:
                                 exec_res = sandbox_manager.execute(command=command, code=code)
 
                             tool_result = exec_res.get("stdout") or exec_res.get("stderr") or "Execution completed cleanly with no output."
+                            generated_files = exec_res.get("generated_files", [])
+                            if generated_files:
+                                files_str = "\n\nGenerated files:\n" + "\n".join(
+                                    f"- {f['original_name']} (URL: {f['url']}, Sandbox Path: {f['sandbox_path']})"
+                                    for f in generated_files
+                                )
+                                tool_result += files_str
 
                         return tc, skill_name, fn_name, args, command, exec_res, tool_result
 
@@ -313,7 +320,8 @@ class SkillEngine:
                             "stdout": log_entry.stdout,
                             "stderr": log_entry.stderr,
                             "exit_code": log_entry.exit_code,
-                            "execution_time_ms": log_entry.execution_time_ms
+                            "execution_time_ms": log_entry.execution_time_ms,
+                            "generated_files": exec_res.get("generated_files", [])
                         })
 
                         messages.append({
@@ -395,7 +403,7 @@ class SkillEngine:
         user_message: str,
         app_id: str = None,
         model_name: str = "gemini-2.5-flash",
-        max_turns: int = 5,
+        max_turns: int = 25,
         request_source: str = "api"
     ):
         start_time = time.time()
@@ -708,6 +716,13 @@ class SkillEngine:
                                 exec_res = sandbox_manager.execute(command=command, code=code)
 
                             tool_result = exec_res.get("stdout") or exec_res.get("stderr") or "Execution completed cleanly with no output."
+                            generated_files = exec_res.get("generated_files", [])
+                            if generated_files:
+                                files_str = "\n\nGenerated files:\n" + "\n".join(
+                                    f"- {f['original_name']} (URL: {f['url']}, Sandbox Path: {f['sandbox_path']})"
+                                    for f in generated_files
+                                )
+                                tool_result += files_str
 
                         return tc, skill_name, fn_name, args, command, exec_res, tool_result
 
@@ -766,7 +781,8 @@ class SkillEngine:
                                 "tool_name": fn_name,
                                 "skill_name": skill_name,
                                 "exit_code": exec_res.get("exit_code"),
-                                "execution_time_ms": exec_res.get("execution_time_ms")
+                                "execution_time_ms": exec_res.get("execution_time_ms"),
+                                "generated_files": exec_res.get("generated_files", [])
                             })
 
                             tool_end_chunk = {
@@ -785,7 +801,8 @@ class SkillEngine:
                                             "stderr": exec_res.get("stderr"),
                                             "sandbox_type": exec_res.get("sandbox_type"),
                                             "execution_time_ms": exec_res.get("execution_time_ms"),
-                                            "exit_code": exec_res.get("exit_code")
+                                            "exit_code": exec_res.get("exit_code"),
+                                            "generated_files": exec_res.get("generated_files", [])
                                         }
                                     },
                                     "finish_reason": None
