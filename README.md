@@ -9,14 +9,20 @@ A lightweight FastAPI server that gives any chatbot superpowers — sandboxed co
 ---
 
 ## ✨ What It Does ?
+Standard AI chatbots are like brainy conversationalists—they can write and talk, but they cannot perform actions on your server (like run calculations, browse files, or call web APIs) on their own. **AI Skill Engine** gives your chatbot "hands and feet" by offering ready-to-use capabilities.
 
-Standard AI chatbots are like brainy conversationalists—they can write and talk, but they cannot perform actions on your computer (like run calculations, browse files, or call web APIs) on their own. **AI Skill Engine** gives your chatbot "hands and feet" by offering ready-to-use capabilities right out of the box:
+Here is what your chatbot can now do for your business right out of the box:
 
-- **Instant Superpowers (Out-of-the-Box Skills)**: No need to write complex tool integration code. Your chatbot instantly gains modular skills, like checking server diagnostics, querying geolocation info, or running custom Python logic.
-- **Safe Code Playground (Secure Sandboxing)**: When a chatbot needs to write and test code to answer a question, it executes that code safely inside isolated containers (Docker). This protects your host system from malicious or runaway scripts.
-- **Universal Remote (MCP Hub)**: Instantly connect to the growing ecosystem of Model Context Protocol (MCP) servers (like GitHub, Postgres databases, or local filesystems) without coding custom integrations.
-- **Drop-in Upgrade (OpenAI Compatible)**: If your app is already built using standard OpenAI libraries, you can point it to this engine by changing just one URL line. No logic rewrite required.
-- **Admin Dashboard**: A visual control panel to test model settings, view real-time chat playground traces, manage API keys, and audit system logs.
+1. **Read & Analyze Uploaded Documents**: Instantly read, search, and extract key details from uploaded contracts, receipts, or PDF files.
+2. **Connect to Web APIs**: Retrieve live information, query third-party services, and trigger external API requests automatically.
+3. **Generate Reports & Convert HTML**: Draft and render print-ready PDF reports or convert web-style HTML templates into polished documents.
+4. **Compute Math & Chart Data Visually**: Parse spreadsheets (Excel/CSV), run complex calculations, and plot charts for presentations.
+5. **Deep Problem Solving (Up to 25 turns)**: Execute long-running multi-turn logical steps and diagnostics without getting interrupted.
+6. **No-Code Tool Customization**: Extend your chatbot's abilities by adding, editing, or enabling new capabilities (Skills) directly from a visual dashboard catalog.
+7. **Secure, Sandboxed Execution**: Run calculations and custom scripts inside safe, isolated containers to keep your servers and business data protected.
+8. **Universal Remote (MCP Hub)**: Connect your chatbot directly to databases, GitHub, or filesystems using standard Model Context Protocol.
+9. **OpenAI Drop-in Upgrade**: Supercharge your existing AI application instantly by pointing its API URL to this engine.
+10. **Stunning Dashboard & Timeline Audits**: View chatbot thoughts, tool triggers, and sandbox console logs in a visual turn-by-turn timeline.
 
 ---
 
