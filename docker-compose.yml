@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ai_skill_engine
+    ports:
+      - "8080:8000"
+    environment:
+      - HOST_SANDBOX_DIR=${PWD}/sandbox
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./sandbox:/app/sandbox
+      - ./skills:/app/skills
+      - ./skill_manager.db:/app/skill_manager.db
+      - ./.env:/app/.env
+    restart: unless-stopped

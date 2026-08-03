@@ -49,10 +49,19 @@ class DockerRunner:
             # Pre-create the subdirectories inside the host's temp_dir to prevent Docker volume mount failures
             os.makedirs(os.path.join(temp_dir, "sandbox", "uploads"), exist_ok=True)
 
+            # If running inside a container, translate container paths to host paths for sibling containers
+            host_sandbox_dir = os.environ.get("HOST_SANDBOX_DIR")
+            if host_sandbox_dir:
+                host_temp_dir = temp_dir.replace(self.base_sandbox_dir, host_sandbox_dir)
+                host_uploads_dir = os.path.join(host_sandbox_dir, "uploads")
+            else:
+                host_temp_dir = temp_dir
+                host_uploads_dir = os.path.join(self.base_sandbox_dir, "uploads")
+
             docker_cmd = [
                 "docker", "run", "--rm",
-                "-v", f"{temp_dir}:/workspace:rw",
-                "-v", f"{os.path.join(self.base_sandbox_dir, 'uploads')}:/workspace/sandbox/uploads:ro",
+                "-v", f"{host_temp_dir}:/workspace:rw",
+                "-v", f"{host_uploads_dir}:/workspace/sandbox/uploads:ro",
                 "-w", "/workspace",
                 "--network", "none",
                 "--memory", "512m",
