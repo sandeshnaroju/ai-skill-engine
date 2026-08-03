@@ -106,6 +106,7 @@ This lets you register different models for different tenants independently.
 
 ---
 
+
 ## 🌐 API Usage
 
 ```http
