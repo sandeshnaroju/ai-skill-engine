@@ -13,6 +13,9 @@ if [ ! -f .env ]; then
     echo "GEMINI_API_KEY=" > .env
 fi
 
+# Shut down any running containers first to prevent port conflicts or cached state
+docker compose down
+
 # Build and start services in detached mode
 docker compose up --build -d
 
