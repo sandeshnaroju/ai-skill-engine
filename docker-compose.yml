@@ -7,9 +7,10 @@ services:
       dockerfile: Dockerfile
     container_name: ai_skill_engine
     ports:
-      - "8000:8000"
+      - "2704:2704"
     environment:
       - HOST_SANDBOX_DIR=${PWD}/sandbox
+      - DATABASE_URL=${DATABASE_URL}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./sandbox:/app/sandbox

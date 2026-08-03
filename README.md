@@ -63,7 +63,7 @@ Here is what your chatbot can now do for your business right out of the box:
 
 ### 🐳 Option A: Run with Docker (Recommended)
 
-Running with Docker compiles the React frontend and packages the FastAPI server into a single container. It maps port `8000` and links the host's Docker socket to support sandboxed code runs.
+Running with Docker compiles the React frontend and packages the FastAPI server into a single container. It maps port `2704` and links the host's Docker socket to support sandboxed code runs.
 
 1. **Clone the repository**:
    ```bash
@@ -78,7 +78,7 @@ Running with Docker compiles the React frontend and packages the FastAPI server 
    *This script pre-creates persistent files, compiles the multi-stage image, and starts the container in the background.*
 
 3. **Access the application**:
-   Open **http://localhost:8000** in your browser.
+   Open **http://localhost:2704** in your browser.
    - To check container logs: `docker compose logs -f`
    - To stop the application: `docker compose down`
 
@@ -111,11 +111,11 @@ Running with Docker compiles the React frontend and packages the FastAPI server 
    ```bash
    ./run_server.sh
    # or manually:
-   cd backend && uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+   cd backend && uvicorn main:app --host 0.0.0.0 --port 2704 --reload
    ```
 
 5. **Access the application**:
-   Open **http://localhost:8000** in your browser.
+   Open **http://localhost:2704** in your browser.
 
 ## 🔑 Configuring Models
 
@@ -167,7 +167,7 @@ The OpenAI SDK doesn't natively support `session_id` / `app_id`, so pass them vi
 from openai import OpenAI
 
 client = OpenAI(
-    base_url="http://localhost:8000/api/v1",
+    base_url="http://localhost:2704/api/v1",
     api_key="sk_asr_YOUR_TENANT_KEY"
 )
 
@@ -188,7 +188,7 @@ for chunk in stream:
 ### From cURL
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/chat/completions \
+curl -X POST http://localhost:2704/api/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "X-API-Key: sk_asr_YOUR_TENANT_KEY" \
   -d '{

@@ -32,8 +32,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get update && apt-get install -y --no-install-recommends docker-ce-cli \
     && rm -rf /var/lib/apt/lists/*
 
-# Pre-create standard sandbox mounting points inside the container
-RUN mkdir -p /app/sandbox /app/skills
+# Pre-create standard sandbox directory, and copy skills folder directly into the image
+RUN mkdir -p /app/sandbox
+COPY skills/ ./skills
 
 # Copy and install backend requirements
 COPY backend/requirements.txt ./backend/requirements.txt
@@ -46,7 +47,7 @@ COPY backend/ ./backend
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 
 # Expose backend port
-EXPOSE 8000
+EXPOSE 2704
 
 # Start server using production uvicorn parameters
-CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
+CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "2704", "--workers", "2"]
