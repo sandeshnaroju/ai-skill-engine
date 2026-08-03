@@ -11,15 +11,39 @@ touch skill_manager.db
 if [ ! -f .env ]; then
     echo "Creating default .env file..."
     echo "GEMINI_API_KEY=" > .env
+    echo "# To use PostgreSQL instead of local SQLite, uncomment and configure:" >> .env
+    echo "# DATABASE_URL=postgresql://user:password@localhost:5432/dbname" >> .env
 fi
 
-# Shut down any running containers first to prevent port conflicts or cached state
-docker compose down
+# Load environment variables from .env if present
+if [ -f .env ]; then
+    export $(grep -v '^#' .env | xargs 2>/dev/null) || true
+fi
 
-# Build and start services in detached mode
-docker compose up --build -d
+# Stop and remove any running container with the same name to prevent conflicts
+echo "Cleaning up existing container..."
+docker stop ai_skill_engine >/dev/null 2>&1 || true
+docker rm ai_skill_engine >/dev/null 2>&1 || true
 
-echo "🚀 AI Skill Engine container stack started successfully!"
-echo "Dashboard UI & APIs are available at: http://localhost:8000"
-echo "To view logs, run: docker compose logs -f"
-echo "To stop the stack, run: docker compose down"
+# Build the Docker image
+echo "Building Docker image..."
+docker build -t ai-skill-engine-app .
+
+# Start the container
+echo "Starting container..."
+docker run -d \
+  --name ai_skill_engine \
+  -p 2704:2704 \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v "$(pwd)/sandbox:/app/sandbox" \
+  -v "$(pwd)/skill_manager.db:/app/skill_manager.db" \
+  -v "$(pwd)/.env:/app/.env" \
+  -e HOST_SANDBOX_DIR="$(pwd)/sandbox" \
+  -e DATABASE_URL="$DATABASE_URL" \
+  --restart unless-stopped \
+  ai-skill-engine-app
+
+echo "🚀 AI Skill Engine container started successfully!"
+echo "Dashboard UI & APIs are available at: http://localhost:2704"
+echo "To view logs, run: docker logs -f ai_skill_engine"
+echo "To stop the container, run: docker stop ai_skill_engine"

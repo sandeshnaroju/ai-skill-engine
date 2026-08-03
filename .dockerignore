@@ -1,0 +1,21 @@
+# Local dev assets
+venv/
+.git/
+.gitignore
+README.md
+
+# Dynamic databases and logs
+skill_manager.db
+backend/skill_manager.db
+
+# Sandbox runtime outputs & scratch workspaces
+sandbox/uploads/
+sandbox/outputs/
+sandbox/docker_sb_*/
+
+# Cache and modules
+**/__pycache__/
+**/*.pyc
+node_modules/
+frontend/node_modules/
+frontend/dist/
