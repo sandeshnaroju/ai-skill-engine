@@ -61,7 +61,31 @@ Here is what your chatbot can now do for your business right out of the box:
 
 ## 🚀 Quick Start
 
-### 🐳 Option A: Run with Docker (Recommended)
+### 🚀 Option A: Run directly from Docker Hub (Zero-Clone)
+
+You can run the pre-built image directly from Docker Hub without cloning the source code.
+
+1. **Start the container**:
+   ```bash
+   docker run -d \
+     --name ai_skill_engine \
+     -p 2704:2704 \
+     -v /var/run/docker.sock:/var/run/docker.sock \
+     -v "$(pwd)/sandbox:/app/sandbox" \
+     -v "$(pwd)/skill_manager.db:/app/skill_manager.db" \
+     -e HOST_SANDBOX_DIR="$(pwd)/sandbox" \
+     --restart unless-stopped \
+     sandeshnaroju/ai-skill-engine:latest
+   ```
+
+2. **Access the application**:
+   Open **http://localhost:2704** in your browser.
+   - To check logs: `docker logs -f ai_skill_engine`
+   - To stop: `docker stop ai_skill_engine`
+
+---
+
+### 🐳 Option B: Build and Run locally with Docker
 
 Running with Docker compiles the React frontend and packages the FastAPI server into a single container. It maps port `2704` and links the host's Docker socket to support sandboxed code runs.
 
@@ -79,12 +103,12 @@ Running with Docker compiles the React frontend and packages the FastAPI server 
 
 3. **Access the application**:
    Open **http://localhost:2704** in your browser.
-   - To check container logs: `docker compose logs -f`
-   - To stop the application: `docker compose down`
+   - To check container logs: `docker logs -f ai_skill_engine`
+   - To stop the application: `docker stop ai_skill_engine`
 
 ---
 
-### 💻 Option B: Run without Docker (Local Setup)
+### 💻 Option C: Run locally without Docker (Local Setup)
 
 1. **Clone the repository**:
    ```bash
