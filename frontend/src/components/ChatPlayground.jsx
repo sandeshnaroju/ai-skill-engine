@@ -3,19 +3,26 @@ import { Send, Bot, User, Terminal, Sparkles, Trash2, Check, Copy, Activity, Cod
 import AsyncSearchableDropdown from './AsyncSearchableDropdown';
 
 export default function ChatPlayground() {
-  const [sessions, setSessions] = useState([
-    { id: 'session_demo', name: 'Developer & Math Session', lastTime: 'Just now' },
-  ]);
-  const [activeSessionId, setActiveSessionId] = useState('session_demo');
+  const [initialSessionId] = useState(() => `session_${Math.floor(1000 + Math.random() * 9000)}`);
+  const [sessions, setSessions] = useState([]);
+  const [activeSessionId, setActiveSessionId] = useState('');
 
-  const [messages, setMessages] = useState([
-    {
-      role: 'assistant',
-      content: 'Welcome to `AI Skill Engine` Enterprise Simulator! Select an App scope or API key, then ask any question requiring system diagnostics, sandboxed Python code execution, or MCP tool calls.',
-      timestamp: new Date().toLocaleTimeString(),
-      reasoning: 'Gateway initialized with active skills & MCP drivers.',
-    },
-  ]);
+  const [messages, setMessages] = useState([]);
+
+  useEffect(() => {
+    if (initialSessionId) {
+      setSessions([{ id: initialSessionId, name: 'New Chat Session #1', lastTime: 'Just now' }]);
+      setActiveSessionId(initialSessionId);
+      setMessages([
+        {
+          role: 'assistant',
+          content: 'Welcome to `AI Skill Engine` Enterprise Simulator! Select an App scope or API key, then ask any question requiring system diagnostics, sandboxed Python code execution, or MCP tool calls.',
+          timestamp: new Date().toLocaleTimeString(),
+          reasoning: 'Gateway initialized with active skills & MCP drivers.',
+        }
+      ]);
+    }
+  }, [initialSessionId]);
 
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -167,6 +174,71 @@ export default function ChatPlayground() {
     }
   };
 
+  const processLoadedMessages = (rawMessages) => {
+    const processed = [];
+    let pendingReasoning = [];
+    
+    rawMessages.forEach((m) => {
+      if (m.role === 'user') {
+        processed.push({
+          role: 'user',
+          content: m.content || '',
+          timestamp: m.timestamp || new Date().toLocaleTimeString(),
+        });
+      } else if (m.role === 'tool') {
+        const contentStr = m.content || '';
+        pendingReasoning.push(`💭 Tool execution completed.`);
+        pendingReasoning.push(`⚡ Executed tool\nOutput: ${contentStr}`);
+      } else if (m.role === 'assistant') {
+        let toolCalls = [];
+        if (m.tool_calls) {
+          try {
+            toolCalls = typeof m.tool_calls === 'string' ? JSON.parse(m.tool_calls) : m.tool_calls;
+          } catch (e) {}
+        }
+        
+        if (toolCalls && toolCalls.length > 0) {
+          pendingReasoning.push(`💭 Consulting LLM model (Turn)...`);
+          toolCalls.forEach(tc => {
+            const name = tc.function?.name || tc.name || 'tool';
+            const args = typeof tc.function?.arguments === 'string' 
+              ? tc.function.arguments 
+              : JSON.stringify(tc.function?.arguments || tc.arguments || {});
+            pendingReasoning.push(`💭 Invoking tool ${name}...`);
+            pendingReasoning.push(`🛠️ Invoking Tool: ${name}\nArgs: ${args}`);
+          });
+        }
+        
+        if (m.content && m.content.trim()) {
+          processed.push({
+            role: 'assistant',
+            content: m.content,
+            timestamp: m.timestamp || new Date().toLocaleTimeString(),
+            reasoning: pendingReasoning.length > 0 ? pendingReasoning.join('\n\n') : null
+          });
+          pendingReasoning = [];
+        }
+      } else {
+        processed.push({
+          role: m.role,
+          content: m.content || '',
+          timestamp: m.timestamp || new Date().toLocaleTimeString(),
+        });
+      }
+    });
+    
+    if (pendingReasoning.length > 0) {
+      processed.push({
+        role: 'assistant',
+        content: 'No response content emitted.',
+        timestamp: new Date().toLocaleTimeString(),
+        reasoning: pendingReasoning.join('\n\n')
+      });
+    }
+    
+    return processed;
+  };
+
   const fetchSessionMessages = async (sessionId, activeKey) => {
     try {
       const headers = {};
@@ -177,11 +249,7 @@ export default function ChatPlayground() {
       if (res.ok) {
         const data = await res.json();
         if (data && data.length > 0) {
-          const loadedMsgs = data.map((m) => ({
-            role: m.role,
-            content: m.content || '',
-            timestamp: m.timestamp || new Date().toLocaleTimeString(),
-          }));
+          const loadedMsgs = processLoadedMessages(data);
           setMessages(loadedMsgs);
         } else {
           setMessages([
@@ -271,20 +339,12 @@ export default function ChatPlayground() {
       if (res.ok) {
         const data = await res.json();
         if (data && data.items !== undefined) {
-          const loadedMsgs = data.items.map((m) => ({
-            role: m.role,
-            content: m.content || '',
-            timestamp: m.timestamp || new Date().toLocaleTimeString(),
-          }));
+          const loadedMsgs = processLoadedMessages(data.items);
           setPreviewMessages(loadedMsgs);
           setPreviewTotalPages(data.pages || 1);
           setPreviewTotalItems(data.total || 0);
         } else {
-          const loadedMsgs = data.map((m) => ({
-            role: m.role,
-            content: m.content || '',
-            timestamp: m.timestamp || new Date().toLocaleTimeString(),
-          }));
+          const loadedMsgs = processLoadedMessages(data);
           setPreviewMessages(loadedMsgs);
           setPreviewTotalPages(1);
           setPreviewTotalItems(data.length);
@@ -448,6 +508,7 @@ export default function ChatPlayground() {
       let buffer = '';
       let reasoningTraces = [];
       let finalContent = '';
+      let turnGeneratedFiles = [];
 
       while (true) {
         const { value, done } = await reader.read();
@@ -486,6 +547,9 @@ export default function ChatPlayground() {
               setLiveThought(`Tool ${delta.tool_result.tool_name} finished in ${delta.tool_result.execution_time_ms}ms.`);
               reasoningTraces.push(`⚡ Executed in ${delta.tool_result.sandbox_type} sandbox (${delta.tool_result.execution_time_ms}ms, Exit: ${delta.tool_result.exit_code})\nOutput: ${(delta.tool_result.stdout || delta.tool_result.stderr || '').trim()}`);
               setExecutedTools((prev) => [...prev, delta.tool_result]);
+              if (delta.tool_result.generated_files && delta.tool_result.generated_files.length > 0) {
+                turnGeneratedFiles.push(...delta.tool_result.generated_files);
+              }
             }
             if (delta.content) {
               finalContent += delta.content;
@@ -501,6 +565,7 @@ export default function ChatPlayground() {
           content: finalContent || 'No response content emitted.',
           timestamp: new Date().toLocaleTimeString(),
           reasoning: reasoningTraces.join('\n\n'),
+          generatedFiles: turnGeneratedFiles,
         },
       ]);
 
@@ -564,6 +629,9 @@ export default function ChatPlayground() {
     // 5. Parse Italic *text*
     html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
 
+    // 5.5 Parse Links [text](url)
+    html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" style="color: var(--primary-violet); text-decoration: underline; font-weight: 500;">$1</a>');
+
     // 6. Parse Headings (H1 to H6)
     html = html.replace(/^# (.*?)$/gm, '<h1>$1</h1>');
     html = html.replace(/^## (.*?)$/gm, '<h2>$1</h2>');
@@ -586,6 +654,59 @@ export default function ChatPlayground() {
     });
 
     return paragraphs.join('\n');
+  };
+
+  const extractGeneratedFiles = (message) => {
+    const list = [];
+    if (message.generatedFiles) {
+      list.push(...message.generatedFiles);
+    }
+    if (typeof message.content === 'string') {
+      const linkRegex = /\[([^\]]+)\]\(\/api\/v1\/files\/download\/([^)]+)\)/g;
+      let match;
+      while ((match = linkRegex.exec(message.content)) !== null) {
+        if (!list.some(f => f.filename === match[2])) {
+          list.push({
+            original_name: match[1],
+            filename: match[2],
+            url: `/api/v1/files/download/${match[2]}`
+          });
+        }
+      }
+    }
+    return list;
+  };
+
+  const parseReasoning = (reasoning) => {
+    if (Array.isArray(reasoning)) return reasoning;
+    if (!reasoning || typeof reasoning !== 'string') return [];
+    
+    const blocks = reasoning.split('\n\n');
+    const traces = [];
+    
+    blocks.forEach(block => {
+      const trimmed = block.trim();
+      if (trimmed.startsWith('💭')) {
+        traces.push({ type: 'thought', content: trimmed.replace(/^💭\s*/, '') });
+      } else if (trimmed.startsWith('🛠️')) {
+        const lines = trimmed.split('\n');
+        const title = lines[0].replace(/^🛠️\s*/, '');
+        const argsLine = lines.slice(1).join('\n').replace(/^Args:\s*/, '');
+        traces.push({ type: 'tool_call', name: title, arguments: argsLine });
+      } else if (trimmed.startsWith('⚡')) {
+        const lines = trimmed.split('\n');
+        const title = lines[0].replace(/^⚡\s*/, '');
+        let outputContent = lines.slice(1).join('\n').trim();
+        if (outputContent.startsWith('Output:')) {
+          outputContent = outputContent.substring(7).trim();
+        }
+        traces.push({ type: 'tool_result', title: title, output: outputContent || 'No stdout/stderr was produced.' });
+      } else if (trimmed) {
+        traces.push({ type: 'text', content: trimmed });
+      }
+    });
+    
+    return traces;
   };
 
   const renderMessageContent = (content) => {
@@ -727,6 +848,62 @@ export default function ChatPlayground() {
                         }}
                       >
                         {renderMessageContent(m.content)}
+                        {(() => {
+                          const genFiles = extractGeneratedFiles(m);
+                          if (genFiles.length === 0) return null;
+                          return (
+                            <div style={{ marginTop: '12px', borderTop: '1px solid var(--border-subtle)', paddingTop: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                              <div style={{ fontSize: '0.78rem', fontWeight: '600', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <Download size={13} /> Generated Files
+                              </div>
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                                {genFiles.map((file, fidx) => {
+                                  const isImage = /\.(png|jpe?g|gif|webp|svg)$/i.test(file.original_name);
+                                  return (
+                                    <div key={fidx} style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                      <a
+                                        href={file.url}
+                                        download={file.original_name}
+                                        style={{
+                                          display: 'inline-flex',
+                                          alignItems: 'center',
+                                          gap: '8px',
+                                          background: 'var(--bg-card)',
+                                          border: '1px solid var(--border-subtle)',
+                                          borderRadius: '8px',
+                                          padding: '6px 12px',
+                                          fontSize: '0.82rem',
+                                          color: 'var(--text-main)',
+                                          textDecoration: 'none',
+                                          cursor: 'pointer',
+                                          transition: 'all 0.2s',
+                                        }}
+                                        onMouseEnter={(e) => e.currentTarget.style.borderColor = 'var(--primary-violet)'}
+                                        onMouseLeave={(e) => e.currentTarget.style.borderColor = 'var(--border-subtle)'}
+                                      >
+                                        <Download size={14} color="var(--primary-violet)" />
+                                        <span>{file.original_name}</span>
+                                      </a>
+                                      {isImage && (
+                                        <img
+                                          src={file.url}
+                                          alt={file.original_name}
+                                          style={{
+                                            maxWidth: '240px',
+                                            maxHeight: '180px',
+                                            borderRadius: '6px',
+                                            border: '1px solid var(--border-subtle)',
+                                            marginTop: '4px',
+                                          }}
+                                        />
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        })()}
                       </div>
 
                       {/* Reasoning & Execution Traces Accordion */}
@@ -755,8 +932,60 @@ export default function ChatPlayground() {
                           </button>
 
                           {isExpanded && (
-                            <div style={{ padding: '10px 14px', borderTop: '1px solid rgba(139, 92, 246, 0.15)', fontFamily: 'var(--font-mono)', fontSize: '0.78rem', color: 'var(--text-sub)', whiteSpace: 'pre-wrap', lineHeight: '1.5' }}>
-                              {m.reasoning}
+                            <div style={{ padding: '16px', borderTop: '1px solid rgba(139, 92, 246, 0.15)', display: 'flex', flexDirection: 'column', gap: '14px', background: 'var(--bg-panel)' }}>
+                              {parseReasoning(m.reasoning).map((step, sidx) => {
+                                if (step.type === 'thought') {
+                                  return (
+                                    <div key={sidx} style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                                      <div style={{ background: 'rgba(139, 92, 246, 0.12)', padding: '6px', borderRadius: '50%', color: 'var(--primary-violet)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                        <Sparkles size={13} />
+                                      </div>
+                                      <div style={{ flex: 1 }}>
+                                        <div style={{ fontSize: '0.7rem', fontWeight: '700', color: 'var(--primary-violet)', letterSpacing: '0.05em', marginBottom: '2px' }}>AI THOUGHT</div>
+                                        <div style={{ fontSize: '0.8rem', color: 'var(--text-main)', lineHeight: '1.5' }}>{step.content}</div>
+                                      </div>
+                                    </div>
+                                  );
+                                }
+                                if (step.type === 'tool_call') {
+                                  return (
+                                    <div key={sidx} style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                                      <div style={{ background: 'rgba(16, 185, 129, 0.12)', padding: '6px', borderRadius: '50%', color: 'var(--primary-emerald)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                        <Terminal size={13} />
+                                      </div>
+                                      <div style={{ flex: 1, minWidth: 0 }}>
+                                        <div style={{ fontSize: '0.7rem', fontWeight: '700', color: 'var(--primary-emerald)', letterSpacing: '0.05em', marginBottom: '2px' }}>TOOL INVOCATION</div>
+                                        <div style={{ fontSize: '0.8rem', color: 'var(--text-main)', fontWeight: '600' }}>{step.name}</div>
+                                        {step.arguments && (
+                                          <pre style={{ margin: '6px 0 0 0', padding: '8px 12px', background: 'var(--bg-input)', border: '1px solid var(--border-subtle)', borderRadius: '6px', fontSize: '0.76rem', color: 'var(--text-sub)', overflowX: 'auto', fontFamily: 'var(--font-mono)' }}>
+                                            {step.arguments}
+                                          </pre>
+                                        )}
+                                      </div>
+                                    </div>
+                                  );
+                                }
+                                if (step.type === 'tool_result') {
+                                  return (
+                                    <div key={sidx} style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                                      <div style={{ background: 'rgba(245, 158, 11, 0.12)', padding: '6px', borderRadius: '50%', color: 'var(--primary-amber)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                        <Code2 size={13} />
+                                      </div>
+                                      <div style={{ flex: 1, minWidth: 0 }}>
+                                        <div style={{ fontSize: '0.7rem', fontWeight: '700', color: 'var(--primary-amber)', letterSpacing: '0.05em', marginBottom: '2px' }}>EXECUTION LOGS ({step.title})</div>
+                                        <pre style={{ margin: '6px 0 0 0', padding: '10px 14px', background: '#0b0f19', border: '1px solid #1e293b', borderRadius: '8px', fontSize: '0.76rem', color: '#38bdf8', overflowX: 'auto', fontFamily: 'var(--font-mono)', whiteSpace: 'pre-wrap', maxHeight: '200px', overflowY: 'auto' }}>
+                                          {step.output}
+                                        </pre>
+                                      </div>
+                                    </div>
+                                  );
+                                }
+                                return (
+                                  <div key={sidx} style={{ fontSize: '0.8rem', color: 'var(--text-sub)' }}>
+                                    {step.content}
+                                  </div>
+                                );
+                              })}
                             </div>
                           )}
                         </div>

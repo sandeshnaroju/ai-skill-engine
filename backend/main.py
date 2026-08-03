@@ -228,6 +228,7 @@ def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db))
     return {"message": "Password reset successfully"}
 
 UPLOAD_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "sandbox", "uploads"))
+OUTPUT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "sandbox", "outputs"))
 
 @app.post("/api/v1/files/upload")
 def upload_file(
@@ -268,15 +269,16 @@ def upload_file(
 
 @app.get("/api/v1/files/download/{filename}")
 def download_file(filename: str):
+    # Security check: prevent directory traversal by normalizing path
     file_path = os.path.abspath(os.path.join(UPLOAD_DIR, filename))
-    # Security check: ensure path is under UPLOAD_DIR
-    if not file_path.startswith(UPLOAD_DIR):
-        raise HTTPException(status_code=403, detail="Access denied")
+    if file_path.startswith(UPLOAD_DIR) and os.path.exists(file_path):
+        return FileResponse(file_path)
         
-    if not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail="File not found")
+    output_file_path = os.path.abspath(os.path.join(OUTPUT_DIR, filename))
+    if output_file_path.startswith(OUTPUT_DIR) and os.path.exists(output_file_path):
+        return FileResponse(output_file_path)
         
-    return FileResponse(file_path)
+    raise HTTPException(status_code=404, detail="File not found")
 
 @app.get("/api/v1/apps")
 def list_apps(db: Session = Depends(get_db), page: Optional[int] = None, page_size: int = 10, search: Optional[str] = None):
@@ -767,6 +769,7 @@ def get_session_messages(
                 "id": m.id,
                 "role": m.role,
                 "content": m.content,
+                "tool_calls": m.tool_calls,
                 "timestamp": m.created_at.strftime("%H:%M:%S") if m.created_at else ""
             }
             for m in msgs
@@ -789,6 +792,7 @@ def get_session_messages(
                 "id": m.id,
                 "role": m.role,
                 "content": m.content,
+                "tool_calls": m.tool_calls,
                 "timestamp": m.created_at.strftime("%H:%M:%S") if m.created_at else ""
             }
             for m in items_asc

@@ -6,7 +6,7 @@ __pycache__/
 
 # Database & Sandbox scratch workspace
 skill_manager.db
-sandbox/
+/sandbox/
 
 # Frontend Build & Node Modules
 frontend/node_modules/
