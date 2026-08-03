@@ -61,37 +61,61 @@ Here is what your chatbot can now do for your business right out of the box:
 
 ## 🚀 Quick Start
 
-### Prerequisites
-- Python 3.10+
-- Node.js 18+
-- Docker *(optional, for sandboxed execution)*
+### 🐳 Option A: Run with Docker (Recommended)
 
-### 1. Clone & Install
+Running with Docker compiles the React frontend and packages the FastAPI server into a single container. It maps port `8000` and links the host's Docker socket to support sandboxed code runs.
 
-```bash
-git clone https://github.com/sandeshnaroju/ai-skill-engine.git
-cd ai-skill-engine
+1. **Clone the repository**:
+   ```bash
+   git clone https://github.com/sandeshnaroju/ai-skill-engine.git
+   cd ai-skill-engine
+   ```
 
-# Backend
-cd backend && pip install -r requirements.txt && cd ..
+2. **Start the stack**:
+   ```bash
+   ./run_docker.sh
+   ```
+   *This script pre-creates persistent files, compiles the multi-stage image, and starts the container in the background.*
 
-# Frontend
-cd frontend && npm install && npm run build && cd ..
-```
-
-### 2. Start the Server
-
-```bash
-./run_server.sh
-# or manually:
-cd backend && uvicorn main:app --host 0.0.0.0 --port 8000 --reload
-```
-
-Open **http://localhost:8000** — the dashboard loads automatically.
-
-> **First run:** A default tenant and sample skills are seeded automatically.
+3. **Access the application**:
+   Open **http://localhost:8000** in your browser.
+   - To check container logs: `docker compose logs -f`
+   - To stop the application: `docker compose down`
 
 ---
+
+### 💻 Option B: Run without Docker (Local Setup)
+
+1. **Clone the repository**:
+   ```bash
+   git clone https://github.com/sandeshnaroju/ai-skill-engine.git
+   cd ai-skill-engine
+   ```
+
+2. **Setup Backend**:
+   ```bash
+   cd backend
+   pip install -r requirements.txt
+   cd ..
+   ```
+
+3. **Build Frontend**:
+   ```bash
+   cd frontend
+   npm install
+   npm run build
+   cd ..
+   ```
+
+4. **Start Server**:
+   ```bash
+   ./run_server.sh
+   # or manually:
+   cd backend && uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+   ```
+
+5. **Access the application**:
+   Open **http://localhost:8000** in your browser.
 
 ## 🔑 Configuring Models
 
