@@ -17,6 +17,6 @@ fi
 docker compose up --build -d
 
 echo "🚀 AI Skill Engine container stack started successfully!"
-echo "Dashboard UI & APIs are available at: http://localhost:8080"
+echo "Dashboard UI & APIs are available at: http://localhost:8000"
 echo "To view logs, run: docker compose logs -f"
 echo "To stop the stack, run: docker compose down"

@@ -7,7 +7,7 @@ services:
       dockerfile: Dockerfile
     container_name: ai_skill_engine
     ports:
-      - "8080:8000"
+      - "8000:8000"
     environment:
       - HOST_SANDBOX_DIR=${PWD}/sandbox
     volumes:
