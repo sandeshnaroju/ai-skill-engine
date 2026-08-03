@@ -2,8 +2,6 @@ name: Build and Publish Docker Image
 
 on:
   push:
-    branches:
-      - production
     tags:
       - 'v*'
 
@@ -37,7 +35,7 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
             type=sha,prefix=sha-
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/production' }}
+            type=raw,value=latest
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
