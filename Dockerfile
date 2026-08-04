@@ -49,5 +49,4 @@ COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 # Expose backend port
 EXPOSE 2704
 
-# Start server using production uvicorn parameters
-CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "2704", "--workers", "2"]
+CMD ["sh", "-c", "python -c 'from database import init_db; init_db()' && uvicorn backend.main:app --host 0.0.0.0 --port 2704 --workers 2"]

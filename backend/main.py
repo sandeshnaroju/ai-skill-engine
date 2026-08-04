@@ -14,7 +14,7 @@ from auth import get_current_tenant, generate_api_key, hash_password, verify_pas
 from skill_registry import skill_registry
 from skill_engine import skill_engine
 
-# Initialize database tables on start
+# Initialize/Verify database tables on startup
 init_db()
 
 app = FastAPI(
@@ -482,7 +482,13 @@ def test_storage_config(
     return {"success": True, "message": "Local storage is always available — no connection required."}
 
 @app.get("/api/v1/apps")
-def list_apps(db: Session = Depends(get_db), page: Optional[int] = None, page_size: int = 10, search: Optional[str] = None):
+def list_apps(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    page: Optional[int] = None,
+    page_size: int = 10,
+    search: Optional[str] = None
+):
     from models import AppModel
     query = db.query(AppModel)
     if search:
@@ -509,7 +515,11 @@ def list_apps(db: Session = Depends(get_db), page: Optional[int] = None, page_si
     return get_paginated_response(query, page, page_size, serialize)
 
 @app.post("/api/v1/apps")
-def create_app(payload: AppCreate, db: Session = Depends(get_db)):
+def create_app(
+    payload: AppCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     from models import AppModel, AppSkillMapping
     clean_name = payload.name.strip()
     app_obj = db.query(AppModel).filter(AppModel.name == clean_name).first()
@@ -535,7 +545,11 @@ def create_app(payload: AppCreate, db: Session = Depends(get_db)):
     return {"status": "created", "app_id": app_obj.id, "name": app_obj.name}
 
 @app.delete("/api/v1/apps/{app_id}")
-def delete_app(app_id: str, db: Session = Depends(get_db)):
+def delete_app(
+    app_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     from models import AppModel
     app_obj = db.query(AppModel).filter(AppModel.id == app_id).first()
     if not app_obj:
@@ -549,7 +563,13 @@ def health_check():
     return {"status": "ok", "service": "skill_manager"}
 
 @app.get("/api/v1/skills")
-def list_skills(db: Session = Depends(get_db), page: Optional[int] = None, page_size: int = 10, search: Optional[str] = None):
+def list_skills(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    page: Optional[int] = None,
+    page_size: int = 10,
+    search: Optional[str] = None
+):
     skill_registry.reload_skills(db=db)
     all_skills = skill_registry.list_skills()
     if search:
@@ -568,7 +588,11 @@ def list_skills(db: Session = Depends(get_db), page: Optional[int] = None, page_
         return res
 
 @app.post("/api/v1/skills")
-def create_skill(payload: SkillSaveRequest, db: Session = Depends(get_db)):
+def create_skill(
+    payload: SkillSaveRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     clean_name = payload.skill_name.strip().lower().replace(" ", "_")
     from models import CustomSkill
     
@@ -589,7 +613,11 @@ def create_skill(payload: SkillSaveRequest, db: Session = Depends(get_db)):
     return {"status": "created", "skill_name": clean_name, "source": "database"}
 
 @app.get("/api/v1/skills/{skill_name}")
-def get_skill_content(skill_name: str, db: Session = Depends(get_db)):
+def get_skill_content(
+    skill_name: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     skill_registry.reload_skills(db=db)
     skill_data = skill_registry.skills.get(skill_name)
     if not skill_data:
@@ -605,7 +633,12 @@ def get_skill_content(skill_name: str, db: Session = Depends(get_db)):
     raise HTTPException(status_code=404, detail="Skill file content not available")
 
 @app.put("/api/v1/skills/{skill_name}")
-def update_skill(skill_name: str, payload: SkillSaveRequest, db: Session = Depends(get_db)):
+def update_skill(
+    skill_name: str,
+    payload: SkillSaveRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     from models import CustomSkill
     clean_name = skill_name.strip().lower().replace(" ", "_")
     
@@ -628,7 +661,11 @@ def update_skill(skill_name: str, payload: SkillSaveRequest, db: Session = Depen
     return {"status": "updated", "skill_name": clean_name, "source": "database"}
 
 @app.delete("/api/v1/skills/{skill_name}")
-def delete_skill(skill_name: str, db: Session = Depends(get_db)):
+def delete_skill(
+    skill_name: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     from models import CustomSkill
     clean_name = skill_name.strip().lower().replace(" ", "_")
     
@@ -742,6 +779,7 @@ def openai_chat_completions(
 @app.get("/api/v1/requests")
 def list_chat_requests(
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
     page: Optional[int] = None,
     page_size: int = 20,
     request_source: Optional[str] = None,
@@ -784,7 +822,11 @@ def list_chat_requests(
     return get_paginated_response(query, page, page_size, serialize)
 
 @app.get("/api/v1/requests/{request_id}")
-def get_chat_request(request_id: str, db: Session = Depends(get_db)):
+def get_chat_request(
+    request_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     r = db.query(ChatRequest).filter(ChatRequest.id == request_id).first()
     if not r:
         raise HTTPException(status_code=404, detail="Request not found")
@@ -832,7 +874,8 @@ def get_usage_summary(
     request_source: Optional[str] = None,
     page: Optional[int] = None,
     page_size: int = 10,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     from models import Tenant
     from sqlalchemy import func
@@ -1081,7 +1124,12 @@ def delete_tenant(
     return {"status": "deleted", "tenant_id": tenant_id}
 
 @app.get("/api/v1/logs/filters")
-def get_logs_filters(db: Session = Depends(get_db), search_tenant: Optional[str] = None, search_model: Optional[str] = None):
+def get_logs_filters(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    search_tenant: Optional[str] = None,
+    search_model: Optional[str] = None
+):
     from models import Tenant
     t_query = db.query(Tenant.name).join(ExecutionLog).distinct()
     if search_tenant:
@@ -1101,6 +1149,7 @@ def get_logs_filters(db: Session = Depends(get_db), search_tenant: Optional[str]
 @app.get("/api/v1/logs")
 def get_logs(
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
     page: Optional[int] = None,
     page_size: int = 20,
     request_source: Optional[str] = None,
@@ -1153,7 +1202,13 @@ class McpServerCreate(BaseModel):
     env: Optional[str] = None
 
 @app.get("/api/v1/mcp_servers")
-def list_mcp_servers(db: Session = Depends(get_db), page: Optional[int] = None, page_size: int = 10, search: Optional[str] = None):
+def list_mcp_servers(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    page: Optional[int] = None,
+    page_size: int = 10,
+    search: Optional[str] = None
+):
     from models import McpServer
     from mcp_manager import mcp_manager
     query = db.query(McpServer)
@@ -1177,7 +1232,11 @@ def list_mcp_servers(db: Session = Depends(get_db), page: Optional[int] = None, 
     return get_paginated_response(query, page, page_size, serialize)
 
 @app.post("/api/v1/mcp_servers")
-def create_mcp_server(payload: McpServerCreate, db: Session = Depends(get_db)):
+def create_mcp_server(
+    payload: McpServerCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     from models import McpServer
     clean_name = payload.name.strip().lower().replace(" ", "_")
     srv = db.query(McpServer).filter(McpServer.name == clean_name).first()
@@ -1203,7 +1262,11 @@ def create_mcp_server(payload: McpServerCreate, db: Session = Depends(get_db)):
     return {"status": "created", "server_id": srv.id, "name": srv.name}
 
 @app.delete("/api/v1/mcp_servers/{server_id}")
-def delete_mcp_server(server_id: str, db: Session = Depends(get_db)):
+def delete_mcp_server(
+    server_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     from models import McpServer
     srv = db.query(McpServer).filter(McpServer.id == server_id).first()
     if not srv:
@@ -1217,6 +1280,7 @@ def delete_mcp_server(server_id: str, db: Session = Depends(get_db)):
 def list_tenant_llms(
     tenant: Tenant = Depends(get_current_tenant),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
     page: Optional[int] = None,
     page_size: int = 10,
     search: Optional[str] = None
@@ -1241,7 +1305,8 @@ def list_tenant_llms(
 def create_tenant_llm(
     payload: TenantLlmCreate,
     tenant: Tenant = Depends(get_current_tenant),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     from models import TenantLLM
     from encryption_utils import encrypt_key
@@ -1279,7 +1344,8 @@ def create_tenant_llm(
 def delete_tenant_llm(
     llm_id: str,
     tenant: Tenant = Depends(get_current_tenant),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     from models import TenantLLM
     llm = db.query(TenantLLM).filter(
