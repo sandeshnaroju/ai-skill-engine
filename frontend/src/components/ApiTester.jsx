@@ -11,15 +11,69 @@ export default function ApiTester() {
   const [message, setMessage] = useState('Check disk space and system uptime');
   const [stream, setStream] = useState(true);
   
+  // File upload state for testing
+  const [uploading, setUploading] = useState(false);
+  const [uploadedFile, setUploadedFile] = useState(null); // null | { name, url, sandboxPath, type }
+  const [attachMode, setAttachMode] = useState('text'); // 'text' | 'image'
+  
   // Custom tenant models list
   const [tenantModels, setTenantModels] = useState([]);
   
   const [loading, setLoading] = useState(false);
   const [copiedKey, setCopiedKey] = useState(false);
   const [activeTab, setActiveTab] = useState('response'); // 'request' or 'response'
+  const [consoleViewMode, setConsoleViewMode] = useState('formatted'); // 'formatted' | 'raw'
+  
+  // Parsed real-time stream data
+  const [streamContent, setStreamContent] = useState('');
+  const [streamReasoning, setStreamReasoning] = useState([]);
+  const [streamTools, setStreamTools] = useState([]);
   
   // Terminal log output
   const [logs, setLogs] = useState([]);
+
+  const logText = (text) => {
+    setLogs((prev) => [...prev, `[${new Date().toLocaleTimeString()}] ${text}`]);
+  };
+
+  const handleFileUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setUploading(true);
+    logText(`Uploading file '${file.name}' to storage...`);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      
+      const headers = {};
+      if (selectedTenantKey) {
+        headers['X-API-Key'] = selectedTenantKey.trim();
+      }
+      
+      const res = await fetch('/api/v1/files/upload', {
+        method: 'POST',
+        headers,
+        body: formData
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setUploadedFile({
+          name: file.name,
+          url: data.url,
+          sandboxPath: data.sandbox_path,
+          type: file.type
+        });
+        logText(`File uploaded successfully! URL: ${data.url}`);
+      } else {
+        const errText = await res.text();
+        logText(`Upload failed: ${errText}`);
+      }
+    } catch (err) {
+      logText(`Upload exception: ${err.message}`);
+    } finally {
+      setUploading(false);
+    }
+  };
 
   const loadMetaData = async () => {
     try {
@@ -75,11 +129,11 @@ export default function ApiTester() {
     if (loading) return;
     setLoading(false);
     setLogs([]);
+    setStreamContent('');
+    setStreamReasoning([]);
+    setStreamTools([]);
     
     const startTime = Date.now();
-    const logText = (text) => {
-      setLogs((prev) => [...prev, `[${new Date().toLocaleTimeString()}] ${text}`]);
-    };
     
     logText(`Preparing API request to POST /api/v1/chat/completions`);
     setLoading(true);
@@ -90,8 +144,20 @@ export default function ApiTester() {
       'X-Request-Source': 'api'
     };
 
+    let requestMessageContent = message;
+    if (uploadedFile) {
+      if (attachMode === 'text') {
+        requestMessageContent = `[Attached File: ${uploadedFile.name} (URL: ${uploadedFile.url})]\n\n${message}`;
+      } else if (attachMode === 'image') {
+        requestMessageContent = [
+          { type: 'text', text: message },
+          { type: 'image_url', image_url: { url: uploadedFile.url } }
+        ];
+      }
+    }
+
     const payload = {
-      messages: [{ role: 'user', content: message }],
+      messages: [{ role: 'user', content: requestMessageContent }],
       model: model.trim(),
       stream: stream
     };
@@ -136,11 +202,31 @@ export default function ApiTester() {
               if (line.startsWith('data: ')) {
                 const rawData = line.replace('data: ', '').trim();
                 logText(`data: ${rawData}`);
+                
+                if (rawData !== '[DONE]') {
+                  try {
+                    const dataJson = JSON.parse(rawData);
+                    if (dataJson.choices && dataJson.choices[0] && dataJson.choices[0].delta) {
+                      const delta = dataJson.choices[0].delta;
+                      if (delta.reasoning) {
+                        setStreamReasoning(prev => [...prev, delta.reasoning]);
+                      }
+                      if (delta.tool_call) {
+                        setStreamTools(prev => [...prev, { type: 'call', ...delta.tool_call }]);
+                      }
+                      if (delta.tool_result) {
+                        setStreamTools(prev => [...prev, { type: 'result', ...delta.tool_result }]);
+                      }
+                      if (delta.content) {
+                        setStreamContent(prev => prev + delta.content);
+                      }
+                    }
+                  } catch (e) {}
+                }
               }
             }
           }
         }
-        // Flush remaining decoder buffer
         const rest = decoder.decode();
         if (rest.trim()) {
           logText(`data: ${rest.trim()}`);
@@ -149,6 +235,17 @@ export default function ApiTester() {
       } else {
         const data = await res.json();
         logText(`Response JSON:\n${JSON.stringify(data, null, 2)}`);
+        
+        const assistantMessage = data.choices?.[0]?.message;
+        if (assistantMessage) {
+          setStreamContent(assistantMessage.content || '');
+        }
+        if (data.reasoning) {
+          setStreamReasoning([data.reasoning]);
+        }
+        if (data.executed_tools) {
+          setStreamTools(data.executed_tools.map(t => ({ type: 'result', ...t })));
+        }
         logText(`Request finished. Duration: ${Date.now() - startTime}ms`);
       }
 
@@ -160,8 +257,20 @@ export default function ApiTester() {
   };
 
   // Build current cURL command representation
+  let curlContent = message;
+  if (uploadedFile) {
+    if (attachMode === 'text') {
+      curlContent = `[Attached File: ${uploadedFile.name} (URL: ${uploadedFile.url})]\n\n${message}`;
+    } else if (attachMode === 'image') {
+      curlContent = [
+        { type: 'text', text: message },
+        { type: 'image_url', image_url: { url: uploadedFile.url } }
+      ];
+    }
+  }
+
   const requestPayload = {
-    messages: [{ role: 'user', content: message }],
+    messages: [{ role: 'user', content: curlContent }],
     model: model,
     stream: stream,
     ...(appId && { app_id: appId })
@@ -287,6 +396,72 @@ export default function ApiTester() {
             </button>
           </div>
 
+          {/* File Upload Section */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', border: '1px dashed var(--border-subtle)', padding: '12px', borderRadius: '10px', background: 'rgba(255,255,255,0.02)' }}>
+            <label style={{ fontSize: '0.76rem', color: 'var(--text-sub)', fontWeight: '600' }}>Attach File to API Call</label>
+            
+            {!uploadedFile ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <input
+                  type="file"
+                  id="api-tester-file-upload"
+                  onChange={handleFileUpload}
+                  style={{ display: 'none' }}
+                  disabled={uploading}
+                />
+                <label
+                  htmlFor="api-tester-file-upload"
+                  className="btn-outline"
+                  style={{ padding: '6px 12px', fontSize: '0.8rem', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                >
+                  {uploading ? 'Uploading...' : 'Choose File'}
+                </label>
+                {uploading && <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>Syncing with cloud...</span>}
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.8rem', color: 'var(--text-main)', background: 'rgba(255,255,255,0.04)', padding: '6px 10px', borderRadius: '6px' }}>
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '80%' }}>
+                    📎 {uploadedFile.name}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setUploadedFile(null)}
+                    style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: '0.76rem' }}
+                  >
+                    Remove
+                  </button>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <label style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: '600' }}>Attachment Mode</label>
+                  <div style={{ display: 'flex', gap: '12px' }}>
+                    <label style={{ fontSize: '0.76rem', color: 'var(--text-sub)', display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
+                      <input
+                        type="radio"
+                        name="attachMode"
+                        value="text"
+                        checked={attachMode === 'text'}
+                        onChange={() => setAttachMode('text')}
+                      />
+                      Inject URL in Prompt
+                    </label>
+                    <label style={{ fontSize: '0.76rem', color: 'var(--text-sub)', display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
+                      <input
+                        type="radio"
+                        name="attachMode"
+                        value="image"
+                        checked={attachMode === 'image'}
+                        onChange={() => setAttachMode('image')}
+                      />
+                      Multimodal Image Block
+                    </label>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
             <label style={{ fontSize: '0.76rem', color: 'var(--text-sub)', fontWeight: '600' }}>Prompt / Query</label>
             <textarea
@@ -352,53 +527,153 @@ export default function ApiTester() {
               Request cURL / Body
             </button>
           </div>
-
-          {/* Response Console Display */}
           {activeTab === 'response' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', flex: 1 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: '600' }}>
-                  RAW TERMINAL STREAM OUTPUT
-                </span>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button
+                    onClick={() => setConsoleViewMode('formatted')}
+                    className={consoleViewMode === 'formatted' ? 'btn-gradient' : 'btn-outline'}
+                    style={{ padding: '4px 10px', fontSize: '0.74rem', border: '1px solid var(--border-subtle)', borderRadius: '6px', cursor: 'pointer' }}
+                  >
+                    Formatted View
+                  </button>
+                  <button
+                    onClick={() => setConsoleViewMode('raw')}
+                    className={consoleViewMode === 'raw' ? 'btn-gradient' : 'btn-outline'}
+                    style={{ padding: '4px 10px', fontSize: '0.74rem', border: '1px solid var(--border-subtle)', borderRadius: '6px', cursor: 'pointer' }}
+                  >
+                    Raw SSE Stream
+                  </button>
+                </div>
                 <button
                   className="btn-outline"
-                  onClick={() => setLogs([])}
-                  style={{ padding: '2px 8px', fontSize: '0.72rem' }}
+                  onClick={() => {
+                    setLogs([]);
+                    setStreamContent('');
+                    setStreamReasoning([]);
+                    setStreamTools([]);
+                  }}
+                  style={{ padding: '4px 10px', fontSize: '0.74rem', border: '1px solid var(--border-subtle)', borderRadius: '6px', cursor: 'pointer' }}
                 >
                   Clear Console
                 </button>
               </div>
 
-              <div
-                style={{
-                  background: '#04070e',
-                  border: '1px solid var(--border-subtle)',
-                  borderRadius: '12px',
-                  padding: '16px',
-                  flex: 1,
-                  minHeight: '380px',
-                  maxHeight: '480px',
-                  overflowY: 'auto',
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: '0.76rem',
-                  color: '#34d399',
-                  whiteSpace: 'pre-wrap',
-                  lineHeight: '1.5',
-                  boxShadow: 'inset 0 2px 10px rgba(0, 0, 0, 0.9)'
-                }}
-              >
-                {logs.length === 0 ? (
-                  <span style={{ color: 'var(--text-muted)' }}>
-                    Terminal idle. Set your configs and click "Execute Request" to stream logs.
-                  </span>
-                ) : (
-                  logs.map((log, idx) => (
-                    <div key={idx} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.02)', paddingBottom: '4px', marginBottom: '4px' }}>
-                      {log}
+              {consoleViewMode === 'raw' ? (
+                <div
+                  style={{
+                    background: '#04070e',
+                    border: '1px solid var(--border-subtle)',
+                    borderRadius: '12px',
+                    padding: '16px',
+                    flex: 1,
+                    minHeight: '380px',
+                    maxHeight: '480px',
+                    overflowY: 'auto',
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: '0.76rem',
+                    color: '#34d399',
+                    whiteSpace: 'pre-wrap',
+                    lineHeight: '1.5',
+                    boxShadow: 'inset 0 2px 10px rgba(0, 0, 0, 0.9)'
+                  }}
+                >
+                  {logs.length === 0 ? (
+                    <span style={{ color: 'var(--text-muted)' }}>
+                      Terminal idle. Set your configs and click "Execute Request" to stream logs.
+                    </span>
+                  ) : (
+                    logs.map((log, idx) => (
+                      <div key={idx} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.02)', paddingBottom: '4px', marginBottom: '4px' }}>
+                        {log}
+                      </div>
+                    ))
+                  )}
+                </div>
+              ) : (
+                <div
+                  style={{
+                    background: 'var(--bg-panel)',
+                    border: '1px solid var(--border-subtle)',
+                    borderRadius: '12px',
+                    padding: '16px',
+                    flex: 1,
+                    minHeight: '380px',
+                    maxHeight: '480px',
+                    overflowY: 'auto',
+                    fontSize: '0.84rem',
+                    color: 'var(--text-main)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '12px',
+                    boxShadow: 'var(--shadow-card)'
+                  }}
+                >
+                  {/* Reasoning thoughts & tool calls */}
+                  {(streamReasoning.length > 0 || streamTools.length > 0) && (
+                    <div style={{ background: 'rgba(139, 92, 246, 0.04)', border: '1px solid rgba(139, 92, 246, 0.2)', borderRadius: '10px', padding: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <div style={{ fontSize: '0.74rem', fontWeight: '700', color: 'var(--primary-violet)', letterSpacing: '0.05em', borderBottom: '1px solid rgba(139, 92, 246, 0.15)', paddingBottom: '4px', marginBottom: '4px' }}>
+                        ENGINE TRACES & REASONING
+                      </div>
+                      {streamReasoning.map((thought, idx) => (
+                        <div key={`thought-${idx}`} style={{ fontSize: '0.78rem', color: 'var(--text-sub)', fontStyle: 'italic', marginBottom: '4px' }}>
+                          💭 {typeof thought === 'object' ? JSON.stringify(thought) : String(thought)}
+                        </div>
+                      ))}
+                      {streamTools.map((tool, idx) => {
+                        if (tool.type === 'call') {
+                          const renderArgs = typeof tool.arguments === 'object' 
+                            ? JSON.stringify(tool.arguments, null, 2) 
+                            : String(tool.arguments || '');
+                          return (
+                            <div key={`call-${idx}`} style={{ fontSize: '0.78rem', color: 'var(--primary-emerald)', fontFamily: 'var(--font-mono)', marginBottom: '4px' }}>
+                              🛠️ Calling Tool: <strong>{tool.name || 'unknown'}</strong>
+                              {renderArgs && renderArgs !== '{}' && (
+                                <pre style={{ margin: '4px 0 0 0', padding: '6px 10px', background: 'var(--bg-input)', border: '1px solid var(--border-subtle)', borderRadius: '6px', fontSize: '0.72rem', color: 'var(--text-sub)', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                                  {renderArgs}
+                                </pre>
+                              )}
+                            </div>
+                          );
+                        }
+                        if (tool.type === 'result') {
+                          const toolName = tool.tool_name || tool.toolName || tool.title || 'unknown';
+                          const outputVal = tool.stdout || tool.output || '';
+                          const renderOutput = typeof outputVal === 'object' 
+                            ? JSON.stringify(outputVal, null, 2) 
+                            : String(outputVal || 'No output.');
+                          return (
+                            <div key={`result-${idx}`} style={{ fontSize: '0.78rem', color: 'var(--primary-amber)', fontFamily: 'var(--font-mono)', marginBottom: '4px' }}>
+                              ⚡ Tool <strong>{toolName}</strong> Finished ({tool.execution_time_ms || tool.executionTimeMs || 0}ms, Exit: {tool.exit_code ?? 0}) Output:
+                              <pre style={{ margin: '4px 0 0 0', padding: '6px 10px', background: 'var(--bg-input)', border: '1px solid var(--border-subtle)', borderRadius: '6px', fontSize: '0.72rem', color: 'var(--text-sub)', whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: '120px', overflowY: 'auto' }}>
+                                {renderOutput}
+                              </pre>
+                            </div>
+                          );
+                        }
+                        return null;
+                      })}
                     </div>
-                  ))
-                )}
-              </div>
+                  )}
+
+                  {/* Final text response content */}
+                  <div>
+                    <div style={{ fontSize: '0.74rem', fontWeight: '700', color: 'var(--primary-cyan)', letterSpacing: '0.05em', borderBottom: '1px solid rgba(6, 182, 212, 0.15)', paddingBottom: '4px', marginBottom: '8px' }}>
+                      FINAL RESPONSE CONTENT
+                    </div>
+                    {streamContent ? (
+                      <div style={{ whiteSpace: 'pre-wrap', lineHeight: '1.6', fontSize: '0.9rem', color: 'var(--text-main)' }}>
+                        {streamContent}
+                      </div>
+                    ) : (
+                      <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+                        {loading ? 'Assistant is typing...' : 'Console idle. Run request to see output.'}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

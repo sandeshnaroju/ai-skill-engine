@@ -52,6 +52,9 @@ class SkillEngine:
         persist = (request_source == "dashboard")
         session_obj = None
 
+        import json
+        user_message_db = json.dumps(user_message) if not isinstance(user_message, str) else user_message
+
         # --- Create ChatRequest log entry (all sources) ---
         chat_req = ChatRequest(
             tenant_id=tenant.id,
@@ -59,7 +62,7 @@ class SkillEngine:
             app_id=app_id,
             model_name=model_name,
             request_source=request_source,
-            user_message=user_message,
+            user_message=user_message_db,
             status="pending"
         )
         db.add(chat_req)
@@ -84,7 +87,7 @@ class SkillEngine:
                     db.refresh(session_obj)
 
                 # Save user message
-                db.add(ChatMessage(session_id=session_obj.id, role="user", content=user_message))
+                db.add(ChatMessage(session_id=session_obj.id, role="user", content=user_message_db))
                 db.commit()
 
             # Resolve allowed skills if app_id provided
@@ -121,9 +124,15 @@ class SkillEngine:
                                 "content": msg.content or ""
                             })
                         else:
+                            content_val = msg.content or ""
+                            if isinstance(content_val, str) and (content_val.startswith("[") or content_val.startswith("{")):
+                                try:
+                                    content_val = json.loads(content_val)
+                                except Exception:
+                                    pass
                             msgs.append({
                                 "role": msg.role,
-                                "content": msg.content or ""
+                                "content": content_val
                             })
                 else:
                     msgs.append({"role": "user", "content": user_message})
@@ -155,14 +164,9 @@ class SkillEngine:
                 if available_tools:
                     kwargs["tools"] = available_tools
 
-                with open("debug_kwargs_process.json", "a") as f:
-                    f.write(f"\n--- Turn {turn+1} ---\n{json.dumps(kwargs, indent=2)}\n")
-
                 try:
                     response = llm.chat.completions.create(**kwargs)
                 except openai.BadRequestError as e:
-                    with open("debug_error.log", "a") as f:
-                        f.write(f"process_chat Turn {turn+1} BadRequestError: {str(e)}\n")
                     if persist and session_obj:
                         db.query(ChatMessage).filter(ChatMessage.session_id == session_obj.id).delete()
                         db.commit()
@@ -275,7 +279,18 @@ class SkillEngine:
                             else:
                                 command = tool_def.get("command", "")
                                 code = args.get("code") if tool_type == "code" else None
-                                exec_res = sandbox_manager.execute(command=command, code=code)
+                                tenant_name = tenant.name if tenant else "default"
+                                
+                                # Intercept explicit cloud & HTTP skills to run on host instead of isolated offline sandbox
+                                if fn_name == "cloud_storage__upload_to_storage":
+                                    exec_res = run_upload_to_storage_tool(db, args, tenant)
+                                elif fn_name == "cloud_storage__download_from_storage":
+                                    exec_res = run_download_from_storage_tool(db, args, tenant)
+                                elif fn_name == "http_fetcher__download_public_file":
+                                    exec_res = run_download_public_file_tool(db, args, tenant)
+                                else:
+                                    exec_res = sandbox_manager.execute(command=command, code=code)
+                                    exec_res = map_local_generated_files_to_tenant(exec_res, tenant_name=tenant_name)
 
                             tool_result = exec_res.get("stdout") or exec_res.get("stderr") or "Execution completed cleanly with no output."
                             generated_files = exec_res.get("generated_files", [])
@@ -340,6 +355,7 @@ class SkillEngine:
 
                 else:
                     final_answer = response_msg.content or ""
+                    
                     if persist and session_obj:
                         db.add(ChatMessage(
                             session_id=session_obj.id,
@@ -424,6 +440,9 @@ class SkillEngine:
             if not tenant:
                 tenant = tenant_incoming
 
+            import json
+            user_message_db = json.dumps(user_message) if not isinstance(user_message, str) else user_message
+
             # --- Create ChatRequest log entry ---
             chat_req = ChatRequest(
                 tenant_id=tenant.id,
@@ -431,7 +450,7 @@ class SkillEngine:
                 app_id=app_id,
                 model_name=model_name,
                 request_source=request_source,
-                user_message=user_message,
+                user_message=user_message_db,
                 status="pending"
             )
             db.add(chat_req)
@@ -457,7 +476,7 @@ class SkillEngine:
                     db.commit()
                     db.refresh(session_obj)
 
-                db.add(ChatMessage(session_id=session_obj.id, role="user", content=user_message))
+                db.add(ChatMessage(session_id=session_obj.id, role="user", content=user_message_db))
                 db.commit()
 
             # Resolve allowed skills if app_id provided
@@ -507,9 +526,15 @@ class SkillEngine:
                                 "content": msg.content or ""
                             })
                         else:
+                            content_val = msg.content or ""
+                            if isinstance(content_val, str) and (content_val.startswith("[") or content_val.startswith("{")):
+                                try:
+                                    content_val = json.loads(content_val)
+                                except Exception:
+                                    pass
                             msgs.append({
                                 "role": msg.role,
-                                "content": msg.content or ""
+                                "content": content_val
                             })
                 else:
                     msgs.append({"role": "user", "content": user_message})
@@ -552,13 +577,9 @@ class SkillEngine:
                 }
                 yield f"data: {json.dumps(turn_reasoning)}\n\n"
 
-                with open("debug_kwargs_stream.json", "a") as f:
-                    f.write(f"\n--- Turn {turn+1} ---\n{json.dumps(kwargs, indent=2)}\n")
                 try:
                     response_stream = llm.chat.completions.create(**kwargs)
                 except openai.BadRequestError as e:
-                    with open("debug_error.log", "a") as f:
-                        f.write(f"stream_openai_chat Turn {turn+1} BadRequestError: {str(e)}\n")
                     if persist and session_obj:
                         db.query(ChatMessage).filter(ChatMessage.session_id == session_obj.id).delete()
                         db.commit()
@@ -713,7 +734,18 @@ class SkillEngine:
                             else:
                                 command = tool_def.get("command", "")
                                 code = args.get("code") if tool_type == "code" else None
-                                exec_res = sandbox_manager.execute(command=command, code=code)
+                                tenant_name = tenant.name if tenant else "default"
+                                
+                                # Intercept explicit cloud & HTTP skills to run on host instead of isolated offline sandbox
+                                if fn_name == "cloud_storage__upload_to_storage":
+                                    exec_res = run_upload_to_storage_tool(db, args, tenant)
+                                elif fn_name == "cloud_storage__download_from_storage":
+                                    exec_res = run_download_from_storage_tool(db, args, tenant)
+                                elif fn_name == "http_fetcher__download_public_file":
+                                    exec_res = run_download_public_file_tool(db, args, tenant)
+                                else:
+                                    exec_res = sandbox_manager.execute(command=command, code=code)
+                                    exec_res = map_local_generated_files_to_tenant(exec_res, tenant_name=tenant_name)
 
                             tool_result = exec_res.get("stdout") or exec_res.get("stderr") or "Execution completed cleanly with no output."
                             generated_files = exec_res.get("generated_files", [])
@@ -878,5 +910,151 @@ class SkillEngine:
             yield "data: [DONE]\n\n"
         finally:
             db.close()
+
+def run_upload_to_storage_tool(db, args: dict, tenant) -> dict:
+    filename = args.get("filename")
+    if not filename:
+        return {"stdout": "", "stderr": "Error: filename is required.", "exit_code": 1, "execution_time_ms": 0, "sandbox_type": "host"}
+        
+    import os
+    import time
+    from storage import get_storage_backend, OUTPUT_DIR, UPLOAD_DIR
+    
+    start_time = time.time()
+    tenant_name = tenant.name if tenant else "default"
+    
+    local_path = None
+    for directory in (OUTPUT_DIR, UPLOAD_DIR):
+        p = os.path.join(directory, tenant_name, filename)
+        if os.path.exists(p):
+            local_path = p
+            break
+        for folder in ("", "default"):
+            p = os.path.join(directory, folder, filename) if folder else os.path.join(directory, filename)
+            if os.path.exists(p):
+                local_path = p
+                break
+        if local_path:
+            break
+            
+    if not local_path or not os.path.exists(local_path):
+        return {"stdout": "", "stderr": f"Error: File '{filename}' not found.", "exit_code": 1, "execution_time_ms": int((time.time() - start_time) * 1000), "sandbox_type": "host"}
+        
+    try:
+        backend = get_storage_backend(db)
+        with open(local_path, "rb") as f:
+            data = f.read()
+        cloud_url = backend.upload(filename, data, "application/octet-stream", tenant_name=tenant_name)
+        elapsed_ms = int((time.time() - start_time) * 1000)
+        return {
+            "stdout": f"File '{filename}' successfully uploaded to storage. URL: {cloud_url}",
+            "stderr": "",
+            "exit_code": 0,
+            "execution_time_ms": elapsed_ms,
+            "sandbox_type": "host",
+            "generated_files": [{
+                "filename": filename,
+                "original_name": filename,
+                "url": cloud_url,
+                "sandbox_path": f"sandbox/outputs/{tenant_name}/{filename}"
+            }]
+        }
+    except Exception as e:
+        return {"stdout": "", "stderr": f"Error uploading file: {str(e)}", "exit_code": 1, "execution_time_ms": int((time.time() - start_time) * 1000), "sandbox_type": "host"}
+
+def run_download_from_storage_tool(db, args: dict, tenant) -> dict:
+    filename = args.get("filename")
+    if not filename:
+        return {"stdout": "", "stderr": "Error: filename is required.", "exit_code": 1, "execution_time_ms": 0, "sandbox_type": "host"}
+        
+    import os
+    import time
+    from storage import get_storage_backend, UPLOAD_DIR
+    
+    start_time = time.time()
+    tenant_name = tenant.name if tenant else "default"
+    local_path = os.path.join(UPLOAD_DIR, tenant_name, filename)
+    
+    try:
+        backend = get_storage_backend(db)
+        if not hasattr(backend, "download"):
+            return {"stdout": "", "stderr": "Error: Active backend does not support download.", "exit_code": 1, "execution_time_ms": int((time.time() - start_time) * 1000), "sandbox_type": "host"}
+            
+        data = backend.download(filename, tenant_name=tenant_name)
+        if not data:
+            return {"stdout": "", "stderr": f"Error: File '{filename}' not found in cloud storage.", "exit_code": 1, "execution_time_ms": int((time.time() - start_time) * 1000), "sandbox_type": "host"}
+            
+        tenant_upload_dir = os.path.join(UPLOAD_DIR, tenant_name)
+        os.makedirs(tenant_upload_dir, exist_ok=True)
+        with open(local_path, "wb") as f:
+            f.write(data)
+            
+        elapsed_ms = int((time.time() - start_time) * 1000)
+        return {
+            "stdout": f"File '{filename}' successfully downloaded to local sandbox path sandbox/uploads/{tenant_name}/{filename}",
+            "stderr": "",
+            "exit_code": 0,
+            "execution_time_ms": elapsed_ms,
+            "sandbox_type": "host"
+        }
+    except Exception as e:
+        return {"stdout": "", "stderr": f"Error downloading file: {str(e)}", "exit_code": 1, "execution_time_ms": int((time.time() - start_time) * 1000), "sandbox_type": "host"}
+
+def run_download_public_file_tool(db, args: dict, tenant) -> dict:
+    url = args.get("url")
+    filename = args.get("filename")
+    if not url or not filename:
+        return {"stdout": "", "stderr": "Error: Both url and filename are required.", "exit_code": 1, "execution_time_ms": 0, "sandbox_type": "host"}
+        
+    import os
+    import time
+    import urllib.request
+    from storage import UPLOAD_DIR
+    
+    start_time = time.time()
+    tenant_name = tenant.name if tenant else "default"
+    local_path = os.path.join(UPLOAD_DIR, tenant_name, filename)
+    
+    try:
+        tenant_upload_dir = os.path.join(UPLOAD_DIR, tenant_name)
+        os.makedirs(tenant_upload_dir, exist_ok=True)
+        
+        req = urllib.request.Request(
+            url, 
+            headers={'User-Agent': 'Mozilla/5.0'}
+        )
+        with urllib.request.urlopen(req, timeout=15) as response:
+            data = response.read()
+            
+        with open(local_path, "wb") as f:
+            f.write(data)
+            
+        elapsed_ms = int((time.time() - start_time) * 1000)
+        return {
+            "stdout": f"Successfully downloaded public file to sandbox/uploads/{tenant_name}/{filename}",
+            "stderr": "",
+            "exit_code": 0,
+            "execution_time_ms": elapsed_ms,
+            "sandbox_type": "host"
+        }
+    except Exception as e:
+        return {"stdout": "", "stderr": f"Error downloading public file: {str(e)}", "exit_code": 1, "execution_time_ms": int((time.time() - start_time) * 1000), "sandbox_type": "host"}
+
+def map_local_generated_files_to_tenant(exec_res: dict, tenant_name: str = "default") -> dict:
+    generated_files = exec_res.get("generated_files", [])
+    if not generated_files:
+        return exec_res
+    import os
+    from storage import OUTPUT_DIR
+    for f in generated_files:
+        old_path = os.path.join(OUTPUT_DIR, f["filename"])
+        if os.path.exists(old_path):
+            tenant_output_dir = os.path.join(OUTPUT_DIR, tenant_name)
+            os.makedirs(tenant_output_dir, exist_ok=True)
+            new_path = os.path.join(tenant_output_dir, f["filename"])
+            os.rename(old_path, new_path)
+            f["url"] = f"/api/v1/files/download/{tenant_name}/{f['filename']}"
+            f["sandbox_path"] = f"sandbox/outputs/{tenant_name}/{f['filename']}"
+    return exec_res
 
 skill_engine = SkillEngine()

@@ -126,7 +126,23 @@ def init_db():
 
     if db_creation_status["fresh_start"]:
         db_creation_status["details"] = "Creating database schemas and relational models..."
-    
+
+    # Ensure storage_config has a default local entry
+    # (runs on existing DBs too — safe because it checks first)
+    if inspector.has_table("storage_config"):
+        db = SessionLocal()
+        try:
+            from models import StorageConfig
+            existing = db.query(StorageConfig).first()
+            if not existing:
+                db.add(StorageConfig(provider="local", is_active=True))
+                db.commit()
+                print("Migration: Seeded default local StorageConfig entry")
+        except Exception as e:
+            print(f"Migration warning: Could not seed StorageConfig: {e}")
+        finally:
+            db.close()
+
     # Create all tables
     Base.metadata.create_all(bind=engine)
     
@@ -157,6 +173,19 @@ def init_db():
             db_creation_status["details"] = "Successfully seeded core apps and system diagnostics suite!"
     except Exception as e:
         print(f"Error seeding default app: {e}")
+    finally:
+        db.close()
+
+    # Seed default local StorageConfig if none exists (handles fresh installs after create_all)
+    db = SessionLocal()
+    try:
+        from models import StorageConfig
+        if not db.query(StorageConfig).first():
+            db.add(StorageConfig(provider="local", is_active=True))
+            db.commit()
+            print("Seeded default local StorageConfig entry")
+    except Exception as e:
+        print(f"Error seeding StorageConfig: {e}")
     finally:
         db.close()
 
