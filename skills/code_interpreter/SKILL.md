@@ -17,3 +17,8 @@ tools:
 
 # Code Interpreter Skill
 Use this skill when users request mathematical calculations, data processing, string formatting, algorithms, or complex logic that benefits from running Python code in a sandbox.
+
+### ⚠️ Network Isolation Constraint
+The sandbox environment has **NO internet connection**. 
+* Do NOT attempt to run `pip install` or download external packages.
+* Do NOT use libraries that make HTTP/network requests (like `urllib`, `requests`, `socket`, etc.) inside your code.

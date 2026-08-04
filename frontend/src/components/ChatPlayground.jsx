@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Send, Bot, User, Terminal, Sparkles, Trash2, Check, Copy, Activity, Code2, Globe, Plus, MessageSquare, Brain, ChevronDown, ChevronUp, Cpu, ShieldCheck, Box, Key, Download, X, History, FileText, Sparkle, Sliders, Paperclip } from 'lucide-react';
+import { Send, Bot, User, Terminal, Sparkles, Trash2, Check, Copy, Activity, Code2, Globe, Plus, MessageSquare, Brain, ChevronDown, ChevronUp, Cpu, ShieldCheck, Box, Key, Download, X, History, FileText, Sparkle, Sliders, Paperclip, Maximize2, Minimize2, Loader } from 'lucide-react';
 import AsyncSearchableDropdown from './AsyncSearchableDropdown';
 
 export default function ChatPlayground() {
@@ -42,6 +42,7 @@ export default function ChatPlayground() {
 
   // Collapsible configuration sidebar state
   const [isSettingsOpen, setIsSettingsOpen] = useState(true);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   // File Upload states
   const fileInputRef = React.useRef(null);
@@ -446,7 +447,7 @@ export default function ChatPlayground() {
       // Document attachments description
       const docAttachments = attachedFiles.filter(f => !f.type.startsWith('image/'));
       if (docAttachments.length > 0) {
-        const descriptions = docAttachments.map(f => `[Attached File: ${f.name} (Path: ${f.sandboxPath})]`).join('\n');
+        const descriptions = docAttachments.map(f => `[Attached File: ${f.name} (URL: ${f.url})]`).join('\n');
         textDescriptionParts.push(descriptions);
       }
 
@@ -510,6 +511,32 @@ export default function ChatPlayground() {
       let finalContent = '';
       let turnGeneratedFiles = [];
 
+      // Append initial streaming assistant message to show progress in real-time
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: 'assistant',
+          content: '',
+          timestamp: new Date().toLocaleTimeString(),
+          reasoning: '',
+          generatedFiles: [],
+          isStreaming: true
+        },
+      ]);
+
+      const updateMessageState = () => {
+        setMessages((prev) => {
+          const next = [...prev];
+          const lastMsg = next[next.length - 1];
+          if (lastMsg && lastMsg.role === 'assistant') {
+            lastMsg.content = finalContent;
+            lastMsg.reasoning = reasoningTraces.join('\n\n');
+            lastMsg.generatedFiles = [...turnGeneratedFiles];
+          }
+          return next;
+        });
+      };
+
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
@@ -518,6 +545,7 @@ export default function ChatPlayground() {
         const events = buffer.split('\n\n');
         buffer = events.pop() || '';
 
+        let stateChanged = false;
         for (const evtBlock of events) {
           if (!evtBlock.trim()) continue;
           const lines = evtBlock.split('\n');
@@ -538,10 +566,12 @@ export default function ChatPlayground() {
             if (delta.reasoning) {
               setLiveThought(delta.reasoning);
               reasoningTraces.push(`💭 ${delta.reasoning}`);
+              stateChanged = true;
             }
             if (delta.tool_call) {
               setLiveThought(`Invoking tool ${delta.tool_call.name}...`);
               reasoningTraces.push(`🛠️ Invoking Tool: ${delta.tool_call.name}\nArgs: ${JSON.stringify(delta.tool_call.arguments)}`);
+              stateChanged = true;
             }
             if (delta.tool_result) {
               setLiveThought(`Tool ${delta.tool_result.tool_name} finished in ${delta.tool_result.execution_time_ms}ms.`);
@@ -550,24 +580,31 @@ export default function ChatPlayground() {
               if (delta.tool_result.generated_files && delta.tool_result.generated_files.length > 0) {
                 turnGeneratedFiles.push(...delta.tool_result.generated_files);
               }
+              stateChanged = true;
             }
             if (delta.content) {
               finalContent += delta.content;
+              stateChanged = true;
             }
           }
         }
+        if (stateChanged) {
+          updateMessageState();
+        }
       }
 
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: 'assistant',
-          content: finalContent || 'No response content emitted.',
-          timestamp: new Date().toLocaleTimeString(),
-          reasoning: reasoningTraces.join('\n\n'),
-          generatedFiles: turnGeneratedFiles,
-        },
-      ]);
+      // Finalize the streaming message
+      setMessages((prev) => {
+        const next = [...prev];
+        const lastMsg = next[next.length - 1];
+        if (lastMsg && lastMsg.role === 'assistant') {
+          lastMsg.content = finalContent || 'No response content emitted.';
+          lastMsg.reasoning = reasoningTraces.join('\n\n');
+          lastMsg.generatedFiles = turnGeneratedFiles;
+          delete lastMsg.isStreaming;
+        }
+        return next;
+      });
 
       // Refresh sessions list after message finishes
       fetchSessionsList(apiKey);
@@ -662,14 +699,30 @@ export default function ChatPlayground() {
       list.push(...message.generatedFiles);
     }
     if (typeof message.content === 'string') {
-      const linkRegex = /\[([^\]]+)\]\(\/api\/v1\/files\/download\/([^)]+)\)/g;
+      // 1. Match local download links: [/api/v1/files/download/filename] or [/api/v1/files/download/tenant/filename]
+      const localRegex = /\[([^\]]+)\]\((?:https?:\/\/[^\/]+)?\/api\/v1\/files\/download\/(?:[^\/]+\/)?([^)]+)\)/g;
       let match;
-      while ((match = linkRegex.exec(message.content)) !== null) {
+      while ((match = localRegex.exec(message.content)) !== null) {
         if (!list.some(f => f.filename === match[2])) {
+          const urlMatch = match[0].match(/\(([^)]+)\)/);
           list.push({
             original_name: match[1],
             filename: match[2],
-            url: `/api/v1/files/download/${match[2]}`
+            url: urlMatch ? urlMatch[1] : `/api/v1/files/download/${match[2]}`
+          });
+        }
+      }
+      // 2. Match cloud storage links (e.g. S3 / Azure blobs containing filename uuid prefixes)
+      const cloudRegex = /\[([^\]]+)\]\((https:\/\/[a-zA-Z0-9.-]+\.(?:blob\.core\.windows\.net|s3[a-zA-Z0-9.-]*\.amazonaws\.com)\/([^?)]+)(?:\?[^)]+)?)\)/g;
+      while ((match = cloudRegex.exec(message.content)) !== null) {
+        const fullUrl = match[2];
+        const pathPart = match[3];
+        const filename = pathPart.split('/').pop();
+        if (!list.some(f => f.filename === filename)) {
+          list.push({
+            original_name: match[1],
+            filename: filename,
+            url: fullUrl
           });
         }
       }
@@ -710,15 +763,95 @@ export default function ChatPlayground() {
   };
 
   const renderMessageContent = (content) => {
+    let textStr = '';
+    let attachments = [];
+
     if (typeof content === 'string') {
-      return <div className="markdown-body" dangerouslySetInnerHTML={{ __html: renderMarkdown(content) }} />;
+      textStr = content;
+    } else if (Array.isArray(content)) {
+      const textBlock = content.find(block => block.type === 'text');
+      if (textBlock) {
+        textStr = textBlock.text;
+      }
     }
+
+    // Extract [Attached File: name.pdf (URL: https://...)]
+    if (textStr) {
+      const attachmentRegex = /\[Attached File:\s*([^\s\]]+)\s*\(URL:\s*([^\)]+)\)\]/g;
+      let match;
+      while ((match = attachmentRegex.exec(textStr)) !== null) {
+        attachments.push({
+          name: match[1],
+          url: match[2]
+        });
+      }
+      textStr = textStr.replace(attachmentRegex, '').trim();
+    }
+
+    const renderTextContent = (txt) => {
+      if (!txt) return null;
+      return <div className="markdown-body" dangerouslySetInnerHTML={{ __html: renderMarkdown(txt) }} />;
+    };
+
+    const renderAttachments = () => {
+      if (attachments.length === 0) return null;
+      return (
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '10px' }}>
+          {attachments.map((file, idx) => {
+            const isImage = /\.(png|jpe?g|gif|webp|svg)/i.test(file.name);
+            return (
+              <a
+                key={idx}
+                href={file.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  background: 'rgba(255, 255, 255, 0.08)',
+                  border: '1px solid rgba(255, 255, 255, 0.15)',
+                  borderRadius: '8px',
+                  padding: '6px 12px 6px 8px',
+                  fontSize: '0.8rem',
+                  color: 'inherit',
+                  textDecoration: 'none',
+                  transition: 'background 0.2s',
+                }}
+                onMouseOver={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.12)'}
+                onMouseOut={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)'}
+              >
+                {isImage ? (
+                  <img src={file.url} alt={file.name} style={{ width: '20px', height: '20px', borderRadius: '4px', objectFit: 'cover' }} />
+                ) : (
+                  <FileText size={14} style={{ opacity: 0.8 }} />
+                )}
+                <span style={{ maxWidth: '140px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: '500' }}>
+                  {file.name}
+                </span>
+              </a>
+            );
+          })}
+        </div>
+      );
+    };
+
+    if (typeof content === 'string') {
+      return (
+        <div>
+          {renderAttachments()}
+          {renderTextContent(textStr)}
+        </div>
+      );
+    }
+
     if (Array.isArray(content)) {
       return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          {renderAttachments()}
           {content.map((block, idx) => {
             if (block.type === 'text') {
-              return <div key={idx} className="markdown-body" dangerouslySetInnerHTML={{ __html: renderMarkdown(block.text) }} />;
+              return renderTextContent(textStr);
             }
             if (block.type === 'image_url') {
               return (
@@ -744,10 +877,224 @@ export default function ChatPlayground() {
     return '';
   };
 
+  const renderAssistantContentBox = (m, idx) => {
+    if (m.isStreaming && !m.content) {
+      return (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          padding: '12px 16px',
+          background: 'var(--bg-input)',
+          border: '1px solid var(--border-subtle)',
+          borderRadius: '16px 16px 16px 4px',
+          fontSize: '0.85rem',
+          color: 'var(--text-muted)'
+        }}>
+          <Loader size={14} className="spin" /> Generating response...
+        </div>
+      );
+    }
+
+    return (
+      <div
+        style={{
+          background: 'var(--bg-input)',
+          color: 'var(--text-main)',
+          border: '1px solid var(--border-subtle)',
+          padding: '12px 16px',
+          borderRadius: '16px 16px 16px 4px',
+          boxShadow: 'var(--shadow-card)',
+          fontSize: '0.9rem',
+          lineHeight: '1.6',
+          whiteSpace: 'pre-wrap',
+        }}
+      >
+        {renderMessageContent(m.content)}
+        {(() => {
+          const genFiles = extractGeneratedFiles(m);
+          if (genFiles.length === 0) return null;
+          return (
+            <div style={{ marginTop: '12px', borderTop: '1px solid var(--border-subtle)', paddingTop: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div style={{ fontSize: '0.78rem', fontWeight: '600', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Download size={13} /> Generated Files
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                {genFiles.map((file, fidx) => {
+                  const isImage = /\.(png|jpe?g|gif|webp|svg)$/i.test(file.original_name);
+                  return (
+                    <div key={fidx} style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      <a
+                        href={file.url}
+                        download={file.original_name}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          background: 'var(--bg-card)',
+                          border: '1px solid var(--border-subtle)',
+                          borderRadius: '8px',
+                          padding: '6px 12px',
+                          fontSize: '0.82rem',
+                          color: 'var(--text-main)',
+                          textDecoration: 'none',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s',
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.borderColor = 'var(--primary-violet)'}
+                        onMouseLeave={(e) => e.currentTarget.style.borderColor = 'var(--border-subtle)'}
+                      >
+                        <Download size={14} color="var(--primary-violet)" />
+                        <span>{file.original_name}</span>
+                      </a>
+                      {isImage && (
+                        <img
+                          src={file.url}
+                          alt={file.original_name}
+                          style={{
+                            maxWidth: '240px',
+                            maxHeight: '180px',
+                            borderRadius: '6px',
+                            border: '1px solid var(--border-subtle)',
+                            marginTop: '4px',
+                          }}
+                        />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()}
+      </div>
+    );
+  };
+
+  const renderReasoningAccordion = (m, idx) => {
+    const hasReasoning = Boolean(m.reasoning);
+    if (!hasReasoning) return null;
+
+    const isExpanded = m.isStreaming ? (expandedReasoning[idx] !== false) : expandedReasoning[idx];
+
+    let headerText = 'Skill Engine Reasoning & Tool Traces';
+    let icon = <Brain size={14} />;
+
+    if (m.isStreaming) {
+      const steps = parseReasoning(m.reasoning);
+      if (steps.length > 0) {
+        const lastStep = steps[steps.length - 1];
+        if (lastStep.type === 'thought') {
+          const cleanThought = lastStep.content.replace(/^💭\s*/, '').trim();
+          const truncated = cleanThought.length > 60 ? cleanThought.substring(0, 60) + '...' : cleanThought;
+          headerText = `Agent Thinking: ${truncated}`;
+        } else if (lastStep.type === 'tool_call') {
+          headerText = `Invoking Tool: ${lastStep.name}`;
+        } else if (lastStep.type === 'tool_result') {
+          headerText = `Tool Executed: ${lastStep.title}`;
+        }
+      } else {
+        headerText = 'Agent Processing...';
+      }
+      icon = <Loader size={14} className="spin" style={{ color: 'var(--primary-violet)' }} />;
+    }
+
+    return (
+      <div style={{ background: 'rgba(139, 92, 246, 0.06)', border: '1px solid rgba(139, 92, 246, 0.2)', borderRadius: '10px', overflow: 'hidden', minWidth: 0, maxWidth: '100%' }}>
+        <button
+          onClick={() => setExpandedReasoning(prev => ({ ...prev, [idx]: !isExpanded }))}
+          style={{
+            width: '100%',
+            padding: '8px 12px',
+            background: 'transparent',
+            border: 'none',
+            color: 'var(--primary-violet)',
+            fontWeight: '600',
+            fontSize: '0.78rem',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            cursor: 'pointer',
+          }}
+        >
+          <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            {icon} {headerText}
+          </span>
+          {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+        </button>
+
+        {isExpanded && (
+          <div style={{ padding: '16px', borderTop: '1px solid rgba(139, 92, 246, 0.15)', display: 'flex', flexDirection: 'column', gap: '14px', background: 'var(--bg-panel)', minWidth: 0, overflow: 'hidden' }}>
+            {parseReasoning(m.reasoning).map((step, sidx) => {
+              if (step.type === 'thought') {
+                return (
+                  <div key={sidx} style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                    <div style={{ background: 'rgba(139, 92, 246, 0.12)', padding: '6px', borderRadius: '50%', color: 'var(--primary-violet)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <Sparkles size={13} />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: '0.7rem', fontWeight: '700', color: 'var(--primary-violet)', letterSpacing: '0.05em', marginBottom: '2px' }}>AI THOUGHT</div>
+                      <div style={{ fontSize: '0.8rem', color: 'var(--text-main)', lineHeight: '1.5' }}>{step.content}</div>
+                    </div>
+                  </div>
+                );
+              }
+              if (step.type === 'tool_call') {
+                return (
+                  <div key={sidx} style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                    <div style={{ background: 'rgba(16, 185, 129, 0.12)', padding: '6px', borderRadius: '50%', color: 'var(--primary-emerald)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <Terminal size={13} />
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: '0.7rem', fontWeight: '700', color: 'var(--primary-emerald)', letterSpacing: '0.05em', marginBottom: '2px' }}>TOOL INVOCATION</div>
+                      <div style={{ fontSize: '0.8rem', color: 'var(--text-main)', fontWeight: '600' }}>{step.name}</div>
+                      {step.arguments && (
+                        <pre style={{ margin: '6px 0 0 0', padding: '8px 12px', background: 'var(--bg-input)', border: '1px solid var(--border-subtle)', borderRadius: '6px', fontSize: '0.76rem', color: 'var(--text-sub)', overflowX: 'auto', fontFamily: 'var(--font-mono)', maxWidth: '100%', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                          {step.arguments}
+                        </pre>
+                      )}
+                    </div>
+                  </div>
+                );
+              }
+              if (step.type === 'tool_result') {
+                return (
+                  <div key={sidx} style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                    <div style={{ background: 'rgba(245, 158, 11, 0.12)', padding: '6px', borderRadius: '50%', color: 'var(--primary-amber)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <Code2 size={13} />
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: '0.7rem', fontWeight: '700', color: 'var(--primary-amber)', letterSpacing: '0.05em', marginBottom: '2px' }}>EXECUTION LOGS ({step.title})</div>
+                      <pre style={{ margin: '6px 0 0 0', padding: '10px 14px', background: '#0b0f19', border: '1px solid #1e293b', borderRadius: '8px', fontSize: '0.76rem', color: '#38bdf8', overflowX: 'auto', fontFamily: 'var(--font-mono)', whiteSpace: 'pre-wrap', maxHeight: '200px', overflowY: 'auto', maxWidth: '100%', wordBreak: 'break-all' }}>
+                        {step.output}
+                      </pre>
+                    </div>
+                  </div>
+                );
+              }
+              return (
+                <div key={sidx} style={{ fontSize: '0.8rem', color: 'var(--text-sub)' }}>
+                  {step.content}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const activeSessionObj = sessions.find((s) => s.id === activeSessionId) || sessions[0];
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 105px)', width: '100%' }}>
+    <div style={{
+      display: 'flex',
+      flexDirection: 'column',
+      ...(isFullscreen
+        ? { position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 9999 }
+        : { height: 'calc(100vh - 105px)', width: '100%' }
+      )
+    }}>
       {/* Main Full-Width Simulator Console */}
       <div className="glass-box" style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%', overflow: 'hidden' }}>
         {/* Simulator Control Header Bar */}
@@ -783,6 +1130,16 @@ export default function ChatPlayground() {
               <Sliders size={15} color="var(--primary-violet)" />
               {isSettingsOpen ? ' Hide Config' : ' Config'}
             </button>
+
+            {/* Fullscreen Toggle */}
+            <button
+              className="btn-outline"
+              onClick={() => setIsFullscreen(!isFullscreen)}
+              title={isFullscreen ? 'Exit fullscreen' : 'Maximize chat'}
+              style={{ padding: '6px 10px', fontSize: '0.82rem', borderColor: isFullscreen ? 'var(--primary-violet)' : 'var(--border-subtle)', background: isFullscreen ? 'rgba(139, 92, 246, 0.08)' : 'transparent' }}
+            >
+              {isFullscreen ? <Minimize2 size={15} color="var(--primary-violet)" /> : <Maximize2 size={15} color="var(--primary-violet)" />}
+            </button>
           </div>
         </div>
 
@@ -792,23 +1149,7 @@ export default function ChatPlayground() {
           {/* LEFT SECTION: Message Area (Takes up remaining flex space) */}
           <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, height: '100%' }}>
 
-            {/* Quick Presets Bar */}
-            <div style={{ padding: '8px 18px', borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-input)', display: 'flex', gap: '8px', overflowX: 'auto', flexShrink: 0 }}>
-              {presets.map((p, idx) => {
-                const Icon = p.icon;
-                return (
-                  <button
-                    key={idx}
-                    className="btn-outline"
-                    onClick={() => handleSend(p.text)}
-                    disabled={loading}
-                    style={{ padding: '4px 10px', fontSize: '0.76rem', borderRadius: '16px' }}
-                  >
-                    <Icon size={12} color="var(--primary-violet)" /> {p.label}
-                  </button>
-                );
-              })}
-            </div>
+
 
             {/* Message Stream Viewport */}
             <div style={{ flex: 1, padding: '20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '18px' }}>
@@ -825,6 +1166,7 @@ export default function ChatPlayground() {
                       gap: '12px',
                       alignSelf: isUser ? 'flex-end' : 'flex-start',
                       maxWidth: '85%',
+                      minWidth: 0,
                     }}
                   >
                     {!isUser && (
@@ -833,164 +1175,36 @@ export default function ChatPlayground() {
                       </div>
                     )}
 
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', width: '100%' }}>
-                      <div
-                        style={{
-                          background: isUser ? 'linear-gradient(135deg, var(--primary-violet), var(--primary-indigo))' : 'var(--bg-input)',
-                          color: isUser ? '#ffffff' : 'var(--text-main)',
-                          border: isUser ? 'none' : '1px solid var(--border-subtle)',
-                          padding: '12px 16px',
-                          borderRadius: isUser ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
-                          boxShadow: 'var(--shadow-card)',
-                          fontSize: '0.9rem',
-                          lineHeight: '1.6',
-                          whiteSpace: 'pre-wrap',
-                        }}
-                      >
-                        {renderMessageContent(m.content)}
-                        {(() => {
-                          const genFiles = extractGeneratedFiles(m);
-                          if (genFiles.length === 0) return null;
-                          return (
-                            <div style={{ marginTop: '12px', borderTop: '1px solid var(--border-subtle)', paddingTop: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                              <div style={{ fontSize: '0.78rem', fontWeight: '600', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                <Download size={13} /> Generated Files
-                              </div>
-                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                                {genFiles.map((file, fidx) => {
-                                  const isImage = /\.(png|jpe?g|gif|webp|svg)$/i.test(file.original_name);
-                                  return (
-                                    <div key={fidx} style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                                      <a
-                                        href={file.url}
-                                        download={file.original_name}
-                                        style={{
-                                          display: 'inline-flex',
-                                          alignItems: 'center',
-                                          gap: '8px',
-                                          background: 'var(--bg-card)',
-                                          border: '1px solid var(--border-subtle)',
-                                          borderRadius: '8px',
-                                          padding: '6px 12px',
-                                          fontSize: '0.82rem',
-                                          color: 'var(--text-main)',
-                                          textDecoration: 'none',
-                                          cursor: 'pointer',
-                                          transition: 'all 0.2s',
-                                        }}
-                                        onMouseEnter={(e) => e.currentTarget.style.borderColor = 'var(--primary-violet)'}
-                                        onMouseLeave={(e) => e.currentTarget.style.borderColor = 'var(--border-subtle)'}
-                                      >
-                                        <Download size={14} color="var(--primary-violet)" />
-                                        <span>{file.original_name}</span>
-                                      </a>
-                                      {isImage && (
-                                        <img
-                                          src={file.url}
-                                          alt={file.original_name}
-                                          style={{
-                                            maxWidth: '240px',
-                                            maxHeight: '180px',
-                                            borderRadius: '6px',
-                                            border: '1px solid var(--border-subtle)',
-                                            marginTop: '4px',
-                                          }}
-                                        />
-                                      )}
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          );
-                        })()}
-                      </div>
-
-                      {/* Reasoning & Execution Traces Accordion */}
-                      {hasReasoning && (
-                        <div style={{ background: 'rgba(139, 92, 246, 0.06)', border: '1px solid rgba(139, 92, 246, 0.2)', borderRadius: '10px', overflow: 'hidden' }}>
-                          <button
-                            onClick={() => toggleReasoning(idx)}
-                            style={{
-                              width: '100%',
-                              padding: '8px 12px',
-                              background: 'transparent',
-                              border: 'none',
-                              color: 'var(--primary-violet)',
-                              fontWeight: '600',
-                              fontSize: '0.78rem',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'space-between',
-                              cursor: 'pointer',
-                            }}
-                          >
-                            <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                              <Brain size={14} /> Skill Engine Reasoning & Tool Traces
-                            </span>
-                            {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                          </button>
-
-                          {isExpanded && (
-                            <div style={{ padding: '16px', borderTop: '1px solid rgba(139, 92, 246, 0.15)', display: 'flex', flexDirection: 'column', gap: '14px', background: 'var(--bg-panel)' }}>
-                              {parseReasoning(m.reasoning).map((step, sidx) => {
-                                if (step.type === 'thought') {
-                                  return (
-                                    <div key={sidx} style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
-                                      <div style={{ background: 'rgba(139, 92, 246, 0.12)', padding: '6px', borderRadius: '50%', color: 'var(--primary-violet)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                        <Sparkles size={13} />
-                                      </div>
-                                      <div style={{ flex: 1 }}>
-                                        <div style={{ fontSize: '0.7rem', fontWeight: '700', color: 'var(--primary-violet)', letterSpacing: '0.05em', marginBottom: '2px' }}>AI THOUGHT</div>
-                                        <div style={{ fontSize: '0.8rem', color: 'var(--text-main)', lineHeight: '1.5' }}>{step.content}</div>
-                                      </div>
-                                    </div>
-                                  );
-                                }
-                                if (step.type === 'tool_call') {
-                                  return (
-                                    <div key={sidx} style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
-                                      <div style={{ background: 'rgba(16, 185, 129, 0.12)', padding: '6px', borderRadius: '50%', color: 'var(--primary-emerald)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                        <Terminal size={13} />
-                                      </div>
-                                      <div style={{ flex: 1, minWidth: 0 }}>
-                                        <div style={{ fontSize: '0.7rem', fontWeight: '700', color: 'var(--primary-emerald)', letterSpacing: '0.05em', marginBottom: '2px' }}>TOOL INVOCATION</div>
-                                        <div style={{ fontSize: '0.8rem', color: 'var(--text-main)', fontWeight: '600' }}>{step.name}</div>
-                                        {step.arguments && (
-                                          <pre style={{ margin: '6px 0 0 0', padding: '8px 12px', background: 'var(--bg-input)', border: '1px solid var(--border-subtle)', borderRadius: '6px', fontSize: '0.76rem', color: 'var(--text-sub)', overflowX: 'auto', fontFamily: 'var(--font-mono)' }}>
-                                            {step.arguments}
-                                          </pre>
-                                        )}
-                                      </div>
-                                    </div>
-                                  );
-                                }
-                                if (step.type === 'tool_result') {
-                                  return (
-                                    <div key={sidx} style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
-                                      <div style={{ background: 'rgba(245, 158, 11, 0.12)', padding: '6px', borderRadius: '50%', color: 'var(--primary-amber)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                        <Code2 size={13} />
-                                      </div>
-                                      <div style={{ flex: 1, minWidth: 0 }}>
-                                        <div style={{ fontSize: '0.7rem', fontWeight: '700', color: 'var(--primary-amber)', letterSpacing: '0.05em', marginBottom: '2px' }}>EXECUTION LOGS ({step.title})</div>
-                                        <pre style={{ margin: '6px 0 0 0', padding: '10px 14px', background: '#0b0f19', border: '1px solid #1e293b', borderRadius: '8px', fontSize: '0.76rem', color: '#38bdf8', overflowX: 'auto', fontFamily: 'var(--font-mono)', whiteSpace: 'pre-wrap', maxHeight: '200px', overflowY: 'auto' }}>
-                                          {step.output}
-                                        </pre>
-                                      </div>
-                                    </div>
-                                  );
-                                }
-                                return (
-                                  <div key={sidx} style={{ fontSize: '0.8rem', color: 'var(--text-sub)' }}>
-                                    {step.content}
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          )}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', width: '100%', minWidth: 0 }}>
+                      {isUser ? (
+                        <div
+                          style={{
+                            background: 'linear-gradient(135deg, var(--primary-violet), var(--primary-indigo))',
+                            color: '#ffffff',
+                            padding: '12px 16px',
+                            borderRadius: '16px 16px 4px 16px',
+                            boxShadow: 'var(--shadow-card)',
+                            fontSize: '0.9rem',
+                            lineHeight: '1.6',
+                            whiteSpace: 'pre-wrap',
+                          }}
+                        >
+                          {renderMessageContent(m.content)}
                         </div>
+                      ) : (
+                        m.isStreaming ? (
+                          <>
+                            {renderReasoningAccordion(m, idx)}
+                            {m.content && renderAssistantContentBox(m, idx)}
+                          </>
+                        ) : (
+                          <>
+                            {renderAssistantContentBox(m, idx)}
+                            {renderReasoningAccordion(m, idx)}
+                          </>
+                        )
                       )}
-
+                      
                       <div style={{ display: 'flex', justifyContent: isUser ? 'flex-end' : 'space-between', alignItems: 'center', padding: '0 4px' }}>
                         {!isUser && (
                           <button
@@ -1015,14 +1229,6 @@ export default function ChatPlayground() {
               })}
 
               {/* Live Thought Stream Box */}
-              {loading && (
-                <div style={{ display: 'flex', gap: '10px', alignItems: 'center', background: 'rgba(139, 92, 246, 0.08)', border: '1px solid var(--border-glow)', padding: '12px 16px', borderRadius: '12px' }}>
-                  <Sparkles size={18} color="var(--primary-violet)" className="spin" />
-                  <div style={{ fontSize: '0.85rem', color: 'var(--primary-violet)', fontWeight: '600', fontFamily: 'var(--font-mono)' }}>
-                    {liveThought || 'Model thinking & executing tools...'}
-                  </div>
-                </div>
-              )}
             </div>
 
             {/* Input Bar */}
@@ -1125,6 +1331,46 @@ export default function ChatPlayground() {
               overflowY: 'auto',
               flexShrink: 0
             }}>
+              {/* Section 0: Quick Examples */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '10px', letterSpacing: '0.5px' }}>
+                  ⚡ Quick Examples
+                </label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {presets.map((p, idx) => {
+                    const Icon = p.icon;
+                    return (
+                      <button
+                        key={idx}
+                        onClick={() => handleSend(p.text)}
+                        disabled={loading}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '10px',
+                          padding: '10px 12px',
+                          background: 'rgba(139, 92, 246, 0.06)',
+                          border: '1px solid rgba(139, 92, 246, 0.2)',
+                          borderRadius: '10px',
+                          cursor: loading ? 'not-allowed' : 'pointer',
+                          textAlign: 'left',
+                          width: '100%',
+                          transition: 'background 0.15s',
+                          opacity: loading ? 0.5 : 1,
+                        }}
+                        onMouseEnter={e => e.currentTarget.style.background = 'rgba(139, 92, 246, 0.12)'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'rgba(139, 92, 246, 0.06)'}
+                      >
+                        <div style={{ background: 'rgba(139, 92, 246, 0.15)', padding: '6px', borderRadius: '8px', flexShrink: 0 }}>
+                          <Icon size={13} color="var(--primary-violet)" />
+                        </div>
+                        <span style={{ fontSize: '0.78rem', fontWeight: '600', color: 'var(--text-main)' }}>{p.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
               {/* Section 1: Tenant Key */}
               <div>
                 <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '8px', letterSpacing: '0.5px' }}>

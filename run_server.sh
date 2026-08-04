@@ -26,6 +26,16 @@ if [ -z "$GEMINI_API_KEY" ] && [ -z "$OPENAI_API_KEY" ] && [ -z "$LLM_API_KEY" ]
     echo "Please set GEMINI_API_KEY in your .env file or run: export GEMINI_API_KEY='your-key'"
 fi
 
+# Build frontend
+echo "Building frontend..."
+cd "$PROJECT_DIR/frontend"
+if [ ! -d "node_modules" ]; then
+    echo "Installing frontend dependencies..."
+    npm install
+fi
+npm run build
+cd "$PROJECT_DIR"
+
 echo "Starting Skill Manager Server on http://localhost:2704 ..."
 cd "$PROJECT_DIR/backend"
 ../venv/bin/python -m uvicorn main:app --host 0.0.0.0 --port 2704 --reload
