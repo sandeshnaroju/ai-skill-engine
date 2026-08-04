@@ -36,6 +36,9 @@ fi
 npm run build
 cd "$PROJECT_DIR"
 
-echo "Starting Skill Manager Server on http://localhost:2704 ..."
+echo "Initializing Database..."
 cd "$PROJECT_DIR/backend"
+../venv/bin/python -c "from database import init_db; init_db()"
+
+echo "Starting Skill Manager Server on http://localhost:2704 ..."
 ../venv/bin/python -m uvicorn main:app --host 0.0.0.0 --port 2704 --reload
