@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "lucide-react": "^0.263.1",
+    "prochat": "^0.0.38",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   },

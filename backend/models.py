@@ -53,6 +53,8 @@ class ChatMessage(Base):
     content = Column(Text, nullable=True)
     tool_calls = Column(Text, nullable=True)  # JSON string if any
     tool_call_id = Column(String, nullable=True)
+    json = Column(Text, nullable=True)        # Saved ProChat UI component structure
+    code = Column(Text, nullable=True)        # Saved ProChat component code block
     created_at = Column(DateTime, default=datetime.utcnow)
 
     session = relationship("ConversationSession", back_populates="messages")

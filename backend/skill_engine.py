@@ -34,7 +34,69 @@ def update_request_usage(chat_req, prompt_text: str, response_text: str):
     chat_req.completion_tokens = r_tokens
     chat_req.cost_usd = round((p_tokens * input_rate + r_tokens * output_rate) / 1000000.0, 6)
 
+PROCHAT_SYSTEM_INSTRUCTION = (
+    "You are a ProChat UI generator. Your job is to return UI for the "
+    "response of another LLM assistant. The assistant's response is added in the messages.\n\n"
+    "Rules:\n"
+    "1. Ensure that all data and information provided in the assistant's response is fully included in the generated UI.\n"
+    "2. Do not leave out, omit, or truncate any data points, figures, or information from the response."
+)
+
 class SkillEngine:
+    def _get_prochat_ui(self, db: Session, tenant, messages, final_text: str, prochat_model: str = None) -> tuple:
+        """Helper to fetch UI components from ProChat API (non-streaming).
+        
+        prochat_model: the model name explicitly requested by the user (e.g. 'genui-mars-0.1').
+                       Used to override the model_name stored in TenantLLM config.
+        """
+        from models import TenantLLM
+        from encryption_utils import decrypt_key
+        import requests
+        import json
+
+        config = db.query(TenantLLM).filter(
+            TenantLLM.tenant_id == tenant.id,
+            (TenantLLM.provider == "prochat") | TenantLLM.model_name.ilike("%genui%"),
+            TenantLLM.is_active == True
+        ).first()
+
+        if not config:
+            return None, None
+
+        try:
+            api_key = decrypt_key(config.api_key_encrypted)
+            base_url = config.base_url or "https://www.prochat.dev/apps/api/v1"
+            # Use explicitly requested model name, fall back to DB config, then default
+            resolved_model = prochat_model or config.model_name or "genui-mars-0.1"
+
+            prochat_messages = [
+                {"role": "system", "content": PROCHAT_SYSTEM_INSTRUCTION},
+                {"role": "user", "content": f"Here is the assistant response data:\n\n{final_text}\n\nBased on this response, please present this in the UI."}
+            ]
+
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json"
+            }
+            payload = {
+                "model": resolved_model,
+                "messages": prochat_messages,
+                "stream": False
+            }
+            
+            res = requests.post(f"{base_url.rstrip('/')}/chat/completions", headers=headers, json=payload, timeout=30)
+            res_json = res.json()
+            content_str = res_json["choices"][0]["message"]["content"]
+            
+            try:
+                content_obj = json.loads(content_str)
+                return content_obj.get("json"), content_obj.get("code")
+            except Exception:
+                return content_str, None
+        except Exception as e:
+            print(f"Error calling ProChat completions: {e}")
+            return None, None
+
     def process_chat(
         self,
         db: Session,
@@ -44,7 +106,8 @@ class SkillEngine:
         app_id: str = None,
         max_turns: int = 25,
         model_name: str = None,
-        request_source: str = "api"
+        request_source: str = "api",
+        prochat_model: str = None
     ) -> dict:
         start_time = time.time()
 
@@ -356,11 +419,18 @@ class SkillEngine:
                 else:
                     final_answer = response_msg.content or ""
                     
+                    extracted_json = None
+                    extracted_code = None
+                    if prochat_model:
+                        extracted_json, extracted_code = self._get_prochat_ui(db, tenant, messages, final_answer, prochat_model)
+
                     if persist and session_obj:
                         db.add(ChatMessage(
                             session_id=session_obj.id,
                             role="assistant",
-                            content=final_answer
+                            content=final_answer,
+                            json=extracted_json,
+                            code=extracted_code
                         ))
                         db.commit()
 
@@ -376,6 +446,8 @@ class SkillEngine:
 
                     return {
                         "response": final_answer,
+                        "json": extracted_json,
+                        "code": extracted_code,
                         "session_id": session_id,
                         "request_id": request_id,
                         "tenant": tenant.name,
@@ -385,6 +457,22 @@ class SkillEngine:
             # Max turns reached
             duration_ms = int((time.time() - start_time) * 1000)
             final_res = messages[-1].get("content") or "Reached maximum tool execution turns."
+            
+            extracted_json = None
+            extracted_code = None
+            if prochat_model:
+                extracted_json, extracted_code = self._get_prochat_ui(db, tenant, messages, final_res, prochat_model)
+
+            if persist and session_obj:
+                db.add(ChatMessage(
+                    session_id=session_obj.id,
+                    role="assistant",
+                    content=final_res,
+                    json=extracted_json,
+                    code=extracted_code
+                ))
+                db.commit()
+
             chat_req.assistant_response = final_res
             chat_req.tools_called = len(executed_logs)
             chat_req.total_duration_ms = duration_ms
@@ -395,6 +483,8 @@ class SkillEngine:
 
             return {
                 "response": final_res,
+                "json": extracted_json,
+                "code": extracted_code,
                 "session_id": session_id,
                 "request_id": request_id,
                 "tenant": tenant.name,
@@ -420,7 +510,8 @@ class SkillEngine:
         app_id: str = None,
         model_name: str = "gemini-2.5-flash",
         max_turns: int = 25,
-        request_source: str = "api"
+        request_source: str = "api",
+        prochat_model: str = None
     ):
         start_time = time.time()
 
@@ -856,11 +947,126 @@ class SkillEngine:
                                 ))
                                 db.commit()
                 else:
+                    last_extracted_json = None
+                    last_extracted_code = None
+
+                    if prochat_model:
+                        # 1. Fetch ProChat API config from DB
+                        from models import TenantLLM
+                        from encryption_utils import decrypt_key
+                        import requests
+                        
+                        config = db.query(TenantLLM).filter(
+                            TenantLLM.tenant_id == tenant.id,
+                            (TenantLLM.provider == "prochat") | TenantLLM.model_name.ilike("%genui%"),
+                            TenantLLM.is_active == True
+                        ).first()
+
+                        if not config:
+                            warning_chunk = {
+                                "id": f"chatcmpl-{session_id}",
+                                "object": "chat.completion.chunk",
+                                "created": 1700000000,
+                                "model": model_name,
+                                "choices": [{
+                                    "index": 0,
+                                    "delta": {
+                                        "content": "\n\n⚠️ **ProChat Generative UI config not found.** Please go to the **Tenants & Keys** settings dashboard, select your Tenant, and add a model configuration with provider `prochat` and your API Key to enable this feature."
+                                    },
+                                    "finish_reason": "stop"
+                                }]
+                            }
+                            yield f"data: {json.dumps(warning_chunk)}\n\n"
+                        else:
+                            try:
+                                api_key = decrypt_key(config.api_key_encrypted)
+                                base_url = config.base_url or "https://www.prochat.dev/apps/api/v1"
+                                resolved_model = prochat_model or config.model_name or "genui-mars-0.1"
+
+                                prochat_messages = [
+                                    {"role": "system", "content": PROCHAT_SYSTEM_INSTRUCTION},
+                                    {"role": "user", "content": f"Here is the assistant response data:\n\n{full_text}\n\nBased on this response, please present this in the UI."}
+                                ]
+
+                                # Yield a loading indicator for the status
+                                _loading_chunk = {
+                                    "id": f"chatcmpl-{session_id}",
+                                    "object": "chat.completion.chunk",
+                                    "created": 1700000000,
+                                    "model": model_name,
+                                    "choices": [{
+                                        "index": 0,
+                                        "delta": {"reasoning": "Generating dynamic user interface components..."},
+                                        "finish_reason": None
+                                    }]
+                                }
+                                yield f"data: {json.dumps(_loading_chunk)}\n\n"
+
+                                headers = {
+                                    "Authorization": f"Bearer {api_key}",
+                                    "Content-Type": "application/json"
+                                }
+                                payload = {
+                                    "model": resolved_model,
+                                    "messages": prochat_messages,
+                                    "stream": True
+                                }
+                                
+                                res = requests.post(f"{base_url.rstrip('/')}/chat/completions", headers=headers, json=payload, stream=True, timeout=60)
+                                
+                                for line in res.iter_lines():
+                                    if not line:
+                                        continue
+                                    line_str = line.decode("utf-8").strip()
+                                    if line_str.startswith("data: "):
+                                        data_content = line_str[6:]
+                                        if data_content == "[DONE]":
+                                            break
+                                        try:
+                                            chunk_obj = json.loads(data_content)
+                                            delta = chunk_obj["choices"][0]["delta"]
+                                            content_str = delta.get("content")
+                                            if content_str:
+                                                try:
+                                                    content_obj = json.loads(content_str)
+                                                    extracted_json = content_obj.get("json")
+                                                    extracted_code = content_obj.get("code")
+                                                except Exception:
+                                                    extracted_json = content_str
+                                                    extracted_code = None
+                                                
+                                                if extracted_json:
+                                                    last_extracted_json = extracted_json
+                                                if extracted_code:
+                                                    last_extracted_code = extracted_code
+
+                                                ui_chunk = {
+                                                    "id": f"chatcmpl-{session_id}",
+                                                    "object": "chat.completion.chunk",
+                                                    "created": 1700000000,
+                                                    "model": model_name,
+                                                    "choices": [{
+                                                        "index": 0,
+                                                        "delta": {
+                                                            "json": extracted_json,
+                                                            "code": extracted_code
+                                                        },
+                                                        "finish_reason": None
+                                                    }]
+                                                }
+                                                yield f"data: {json.dumps(ui_chunk)}\n\n"
+                                        except Exception as e:
+                                            print(f"Error parsing ProChat chunk: {e}")
+                            except Exception as e:
+                                print(f"Error calling ProChat completions stream: {e}")
+
                     if persist and session_obj:
                         db.add(ChatMessage(
                             session_id=session_obj.id,
                             role="assistant",
-                            content=full_text
+                            content=full_text,
+                            json=last_extracted_json,
+                            code=last_extracted_code
                         ))
                         db.commit()
 
@@ -886,6 +1092,129 @@ class SkillEngine:
 
             # Max turns — mark completed
             duration_ms = int((time.time() - start_time) * 1000)
+            
+            last_extracted_json = None
+            last_extracted_code = None
+
+            if prochat_model:
+                # Fetch ProChat API config from DB
+                from models import TenantLLM
+                from encryption_utils import decrypt_key
+                import requests
+                
+                config = db.query(TenantLLM).filter(
+                    TenantLLM.tenant_id == tenant.id,
+                    (TenantLLM.provider == "prochat") | TenantLLM.model_name.ilike("%genui%"),
+                    TenantLLM.is_active == True
+                ).first()
+
+                if not config:
+                    warning_chunk = {
+                        "id": f"chatcmpl-{session_id}",
+                        "object": "chat.completion.chunk",
+                        "created": 1700000000,
+                        "model": model_name,
+                        "choices": [{
+                            "index": 0,
+                            "delta": {
+                                "content": "\n\n⚠️ **ProChat Generative UI config not found.** Please go to the **Tenants & Keys** settings dashboard, select your Tenant, and add a model configuration with provider `prochat` and your API Key to enable this feature."
+                            },
+                            "finish_reason": "stop"
+                        }]
+                    }
+                    yield f"data: {json.dumps(warning_chunk)}\n\n"
+                else:
+                    try:
+                        api_key = decrypt_key(config.api_key_encrypted)
+                        base_url = config.base_url or "https://www.prochat.dev/apps/api/v1"
+                        resolved_model = prochat_model or config.model_name or "genui-mars-0.1"
+
+                        prochat_messages = [
+                            {"role": "system", "content": PROCHAT_SYSTEM_INSTRUCTION},
+                            {"role": "user", "content": f"Here is the assistant response data:\n\n{final_answer}\n\nBased on this response, please present this in the UI."}
+                        ]
+
+                        _loading_chunk2 = {
+                            "id": f"chatcmpl-{session_id}",
+                            "object": "chat.completion.chunk",
+                            "created": 1700000000,
+                            "model": model_name,
+                            "choices": [{
+                                "index": 0,
+                                "delta": {"reasoning": "Generating dynamic user interface components..."},
+                                "finish_reason": None
+                            }]
+                        }
+                        yield f"data: {json.dumps(_loading_chunk2)}\n\n"
+
+                        headers = {
+                            "Authorization": f"Bearer {api_key}",
+                            "Content-Type": "application/json"
+                        }
+                        payload = {
+                            "model": resolved_model,
+                            "messages": prochat_messages,
+                            "stream": True
+                        }
+                        
+                        res = requests.post(f"{base_url.rstrip('/')}/chat/completions", headers=headers, json=payload, stream=True, timeout=60)
+                        
+                        for line in res.iter_lines():
+                            if not line:
+                                continue
+                            line_str = line.decode("utf-8").strip()
+                            if line_str.startswith("data: "):
+                                data_content = line_str[6:]
+                                if data_content == "[DONE]":
+                                    break
+                                try:
+                                    chunk_obj = json.loads(data_content)
+                                    delta = chunk_obj["choices"][0]["delta"]
+                                    content_str = delta.get("content")
+                                    if content_str:
+                                        try:
+                                            content_obj = json.loads(content_str)
+                                            extracted_json = content_obj.get("json")
+                                            extracted_code = content_obj.get("code")
+                                        except Exception:
+                                            extracted_json = content_str
+                                            extracted_code = None
+                                        
+                                        if extracted_json:
+                                            last_extracted_json = extracted_json
+                                        if extracted_code:
+                                            last_extracted_code = extracted_code
+
+                                        ui_chunk = {
+                                            "id": f"chatcmpl-{session_id}",
+                                            "object": "chat.completion.chunk",
+                                            "created": 1700000000,
+                                            "model": model_name,
+                                            "choices": [{
+                                                "index": 0,
+                                                "delta": {
+                                                    "json": extracted_json,
+                                                    "code": extracted_code
+                                                },
+                                                "finish_reason": None
+                                            }]
+                                        }
+                                        yield f"data: {json.dumps(ui_chunk)}\n\n"
+                                except Exception as e:
+                                    print(f"Error parsing ProChat chunk: {e}")
+                    except Exception as e:
+                        print(f"Error calling ProChat completions stream: {e}")
+
+            if persist and session_obj:
+                db.add(ChatMessage(
+                    session_id=session_obj.id,
+                    role="assistant",
+                    content=final_answer,
+                    json=last_extracted_json,
+                    code=last_extracted_code
+                ))
+                db.commit()
+
             chat_req.assistant_response = final_answer
             chat_req.tools_called = len(executed_logs)
             chat_req.total_duration_ms = duration_ms

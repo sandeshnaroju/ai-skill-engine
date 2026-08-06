@@ -66,6 +66,7 @@ def get_paginated_response(query_or_list, page: Optional[int], page_size: int, s
 class PlaygroundChatRequest(BaseModel):
     message: str
     session_id: Optional[str] = "default_session"
+    prochat_model: Optional[str] = None
 
 class OpenAIStyleMessage(BaseModel):
     role: str
@@ -77,6 +78,7 @@ class OpenAIChatRequest(BaseModel):
     session_id: Optional[str] = "default_session"
     app_id: Optional[str] = None
     stream: Optional[bool] = False
+    prochat_model: Optional[str] = None
 
 class TenantCreate(BaseModel):
     name: str
@@ -688,7 +690,8 @@ def interact(
         db=db,
         tenant=tenant,
         session_id=req.session_id,
-        user_message=req.message
+        user_message=req.message,
+        prochat_model=req.prochat_model
     )
     return result
 
@@ -700,11 +703,12 @@ def stream_interact(
 ):
     from fastapi.responses import StreamingResponse
     return StreamingResponse(
-        skill_engine.stream_chat(
+        skill_engine.stream_openai_chat(
             db=db,
             tenant=tenant,
             session_id=req.session_id,
-            user_message=req.message
+            user_message=req.message,
+            prochat_model=req.prochat_model
         ),
         media_type="text/event-stream"
     )
@@ -738,7 +742,8 @@ def openai_chat_completions(
                     user_message=last_user_msg,
                     app_id=req.app_id,
                     model_name=req.model or "gemini-2.5-flash",
-                    request_source=x_request_source
+                    request_source=x_request_source,
+                    prochat_model=req.prochat_model
                 ),
                 media_type="text/event-stream"
             )
@@ -750,7 +755,8 @@ def openai_chat_completions(
             user_message=last_user_msg,
             app_id=req.app_id,
             model_name=req.model,
-            request_source=x_request_source
+            request_source=x_request_source,
+            prochat_model=req.prochat_model
         )
 
         return {
@@ -764,7 +770,9 @@ def openai_chat_completions(
                     "index": 0,
                     "message": {
                         "role": "assistant",
-                        "content": result["response"]
+                        "content": result["response"],
+                        "json": result.get("json"),
+                        "code": result.get("code")
                     },
                     "finish_reason": "stop"
                 }
@@ -1014,6 +1022,8 @@ def get_session_messages(
                 "role": m.role,
                 "content": m.content,
                 "tool_calls": m.tool_calls,
+                "json": m.json,
+                "code": m.code,
                 "timestamp": m.created_at.strftime("%H:%M:%S") if m.created_at else ""
             }
             for m in msgs
@@ -1037,6 +1047,8 @@ def get_session_messages(
                 "role": m.role,
                 "content": m.content,
                 "tool_calls": m.tool_calls,
+                "json": m.json,
+                "code": m.code,
                 "timestamp": m.created_at.strftime("%H:%M:%S") if m.created_at else ""
             }
             for m in items_asc

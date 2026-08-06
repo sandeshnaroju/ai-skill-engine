@@ -124,6 +124,20 @@ def init_db():
             finally:
                 db.close()
 
+    if inspector.has_table("chat_messages"):
+        columns = [c["name"] for c in inspector.get_columns("chat_messages")]
+        if "json" not in columns:
+            db = SessionLocal()
+            try:
+                db.execute(text("ALTER TABLE chat_messages ADD COLUMN json TEXT"))
+                db.execute(text("ALTER TABLE chat_messages ADD COLUMN code TEXT"))
+                db.commit()
+                print("Migration: Added json and code columns to chat_messages table")
+            except Exception as e:
+                print(f"Migration warning: Could not add json/code columns to chat_messages: {e}")
+            finally:
+                db.close()
+
     if db_creation_status["fresh_start"]:
         db_creation_status["details"] = "Creating database schemas and relational models..."
 
