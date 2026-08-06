@@ -12,27 +12,27 @@ export default function ApiTester() {
   const [prochatModel, setProchatModel] = useState('');
   const [message, setMessage] = useState('Check disk space and system uptime');
   const [stream, setStream] = useState(true);
-  
+
   // File upload state for testing
   const [uploading, setUploading] = useState(false);
   const [uploadedFile, setUploadedFile] = useState(null); // null | { name, url, sandboxPath, type }
   const [attachMode, setAttachMode] = useState('text'); // 'text' | 'image'
-  
+
   // Custom tenant models list
   const [tenantModels, setTenantModels] = useState([]);
-  
+
   const [loading, setLoading] = useState(false);
   const [copiedKey, setCopiedKey] = useState(false);
   const [activeTab, setActiveTab] = useState('response'); // 'request' or 'response'
   const [consoleViewMode, setConsoleViewMode] = useState('formatted'); // 'formatted' | 'raw'
-  
+
   // Parsed real-time stream data
   const [streamContent, setStreamContent] = useState('');
   const [streamReasoning, setStreamReasoning] = useState([]);
   const [streamTools, setStreamTools] = useState([]);
   const [prochatUiJson, setProchatUiJson] = useState(null);
   const [prochatUiCode, setProchatUiCode] = useState('');
-  
+
   // Terminal log output
   const [logs, setLogs] = useState([]);
 
@@ -48,12 +48,12 @@ export default function ApiTester() {
     try {
       const formData = new FormData();
       formData.append('file', file);
-      
+
       const headers = {};
       if (selectedTenantKey) {
         headers['X-API-Key'] = selectedTenantKey.trim();
       }
-      
+
       const res = await fetch('/api/v1/files/upload', {
         method: 'POST',
         headers,
@@ -87,10 +87,10 @@ export default function ApiTester() {
       ]);
       const tenantsData = await tenantsRes.json();
       const appsData = await appsRes.json();
-      
+
       setTenants(tenantsData || []);
       setApps(appsData || []);
-      
+
       if (tenantsData && tenantsData.length > 0) {
         setSelectedTenantKey(tenantsData[0].api_key);
       }
@@ -141,9 +141,9 @@ export default function ApiTester() {
     setStreamTools([]);
     setProchatUiJson(null);
     setProchatUiCode('');
-    
+
     const startTime = Date.now();
-    
+
     logText(`Preparing API request to POST /api/v1/chat/completions`);
     setLoading(true);
 
@@ -215,7 +215,7 @@ export default function ApiTester() {
               if (line.startsWith('data: ')) {
                 const rawData = line.replace('data: ', '').trim();
                 logText(`data: ${rawData}`);
-                
+
                 if (rawData !== '[DONE]') {
                   try {
                     const dataJson = JSON.parse(rawData);
@@ -245,10 +245,10 @@ export default function ApiTester() {
                         }
                       }
                       if (delta.code) {
-                        setProchatUiCode(delta.code);
+                        setProchatUiCode(prev => prev + delta.code);
                       }
                     }
-                  } catch (e) {}
+                  } catch (e) { }
                 }
               }
             }
@@ -262,7 +262,7 @@ export default function ApiTester() {
       } else {
         const data = await res.json();
         logText(`Response JSON:\n${JSON.stringify(data, null, 2)}`);
-        
+
         const assistantMessage = data.choices?.[0]?.message;
         if (assistantMessage) {
           setStreamContent(assistantMessage.content || '');
@@ -318,7 +318,7 @@ export default function ApiTester() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-      
+
       {/* Banner */}
       <div className="glass-box" style={{ padding: '20px 24px' }}>
         <h2 style={{ fontSize: '1.25rem', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -331,7 +331,7 @@ export default function ApiTester() {
 
       {/* Main Grid */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.4fr', gap: '24px' }}>
-        
+
         {/* Column 1: Config Form */}
         <div className="glass-box" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <h3 style={{ fontSize: '1.02rem', fontWeight: '600', color: 'var(--text-main)' }}>
@@ -376,7 +376,7 @@ export default function ApiTester() {
                   fetchOptions={async (searchTerm) => {
                     if (!selectedTenantKey) return [];
                     const url = `/api/v1/tenant/llms?search=${encodeURIComponent(searchTerm || '')}&page_size=10&page=1`;
-                    const res = await fetch(url, { headers: { 'X-API-Key': selectedTenantKey }});
+                    const res = await fetch(url, { headers: { 'X-API-Key': selectedTenantKey } });
                     const data = await res.json();
                     return (data.items || [])
                       .filter(m => m.provider !== 'prochat' && !m.model_name.toLowerCase().includes('genui'))
@@ -390,7 +390,7 @@ export default function ApiTester() {
                 />
               </div>
             </div>
-            
+
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
               <label style={{ fontSize: '0.76rem', color: 'var(--text-sub)', fontWeight: '600' }}>App Scope (Optional)</label>
               <div style={{ width: '100%' }}>
@@ -464,7 +464,7 @@ export default function ApiTester() {
           {/* File Upload Section */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', border: '1px dashed var(--border-subtle)', padding: '12px', borderRadius: '10px', background: 'rgba(255,255,255,0.02)' }}>
             <label style={{ fontSize: '0.76rem', color: 'var(--text-sub)', fontWeight: '600' }}>Attach File to API Call</label>
-            
+
             {!uploadedFile ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <input
@@ -558,7 +558,7 @@ export default function ApiTester() {
 
         {/* Column 2: Request & Response Tabs */}
         <div className="glass-box" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          
+
           {/* Tabs header */}
           <div style={{ display: 'flex', borderBottom: '1px solid var(--border-subtle)', gap: '16px', paddingBottom: '4px' }}>
             <button
@@ -688,8 +688,8 @@ export default function ApiTester() {
                       ))}
                       {streamTools.map((tool, idx) => {
                         if (tool.type === 'call') {
-                          const renderArgs = typeof tool.arguments === 'object' 
-                            ? JSON.stringify(tool.arguments, null, 2) 
+                          const renderArgs = typeof tool.arguments === 'object'
+                            ? JSON.stringify(tool.arguments, null, 2)
                             : String(tool.arguments || '');
                           return (
                             <div key={`call-${idx}`} style={{ fontSize: '0.78rem', color: 'var(--primary-emerald)', fontFamily: 'var(--font-mono)', marginBottom: '4px' }}>
@@ -705,8 +705,8 @@ export default function ApiTester() {
                         if (tool.type === 'result') {
                           const toolName = tool.tool_name || tool.toolName || tool.title || 'unknown';
                           const outputVal = tool.stdout || tool.output || '';
-                          const renderOutput = typeof outputVal === 'object' 
-                            ? JSON.stringify(outputVal, null, 2) 
+                          const renderOutput = typeof outputVal === 'object'
+                            ? JSON.stringify(outputVal, null, 2)
                             : String(outputVal || 'No output.');
                           return (
                             <div key={`result-${idx}`} style={{ fontSize: '0.78rem', color: 'var(--primary-amber)', fontFamily: 'var(--font-mono)', marginBottom: '4px' }}>
@@ -738,7 +738,7 @@ export default function ApiTester() {
                     )}
                   </div>
 
-                  {prochatUiJson && (
+                  {(prochatUiJson || prochatUiCode) && (
                     <div style={{ marginTop: '14px', borderTop: '1px solid var(--border-subtle)', paddingTop: '14px', width: '100%', boxSizing: 'border-box' }}>
                       <div style={{ fontSize: '0.74rem', fontWeight: '700', color: 'var(--primary-violet)', letterSpacing: '0.05em', borderBottom: '1px solid rgba(139, 92, 246, 0.15)', paddingBottom: '4px', marginBottom: '8px' }}>
                         GENERATED PROCHAT UI
@@ -755,7 +755,7 @@ export default function ApiTester() {
                           return null;
                         })()}
                         width={"100%"}
-                        debug={false}
+                        debug={true}
                       />
                     </div>
                   )}
