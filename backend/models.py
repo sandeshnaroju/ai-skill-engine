@@ -53,6 +53,8 @@ class ChatMessage(Base):
     content = Column(Text, nullable=True)
     tool_calls = Column(Text, nullable=True)  # JSON string if any
     tool_call_id = Column(String, nullable=True)
+    json = Column(Text, nullable=True)        # Saved ProChat UI component structure
+    code = Column(Text, nullable=True)        # Saved ProChat component code block
     created_at = Column(DateTime, default=datetime.utcnow)
 
     session = relationship("ConversationSession", back_populates="messages")
@@ -165,3 +167,30 @@ class TenantLLM(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     tenant = relationship("Tenant", back_populates="llms")
+
+class StorageConfig(Base):
+    """Persists the active file storage backend configuration (global, single-row)."""
+    __tablename__ = "storage_config"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    provider = Column(String, nullable=False, default="local")  # local | s3 | azure
+
+    # AWS S3 fields
+    bucket_name = Column(String, nullable=True)
+    region = Column(String, nullable=True)
+    access_key_encrypted = Column(Text, nullable=True)
+    secret_key_encrypted = Column(Text, nullable=True)
+    endpoint_url = Column(String, nullable=True)  # For S3-compatible (MinIO, etc.)
+
+    # Azure Blob Storage fields
+    container_name = Column(String, nullable=True)
+    account_name_encrypted = Column(Text, nullable=True)
+    account_key_encrypted = Column(Text, nullable=True)
+
+    # URL mode
+    use_presigned_urls = Column(Boolean, default=True)
+    presigned_url_expires_seconds = Column(Integer, default=3600)
+
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

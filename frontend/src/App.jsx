@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Key, Layers, MessageSquare, Database, Server, ShieldCheck, Cpu, BookOpen, Sun, Moon, Activity, Box, PanelLeftClose, PanelLeftOpen, Menu, Zap, Terminal, FileText, DollarSign, LogOut, User as UserIcon } from 'lucide-react';
+import { Key, Layers, MessageSquare, Database, Server, ShieldCheck, Cpu, BookOpen, Sun, Moon, Activity, Box, PanelLeftClose, PanelLeftOpen, Menu, Zap, Terminal, FileText, DollarSign, LogOut, User as UserIcon, HardDrive } from 'lucide-react';
 import TenantManager from './components/TenantManager';
 import SkillCatalog from './components/SkillCatalog';
 import ChatPlayground from './components/ChatPlayground';
@@ -13,6 +13,7 @@ import RequestLogs from './components/RequestLogs';
 import UsageSummary from './components/UsageSummary';
 import AuthPages from './components/AuthPages';
 import Profile from './components/Profile';
+import StorageSettings from './components/StorageSettings';
 
 export default function App() {
   const navItems = [
@@ -21,6 +22,7 @@ export default function App() {
     { id: 'skills', label: 'Skills Catalog', icon: Layers },
     { id: 'mcp', label: 'MCP Servers', icon: Cpu },
     { id: 'tenants', label: 'Tenants & Keys', icon: Key },
+    { id: 'storage', label: 'Storage', icon: HardDrive },
     { id: 'usage', label: 'LLM Cost & Usage', icon: DollarSign },
     { id: 'logs', label: 'Sandbox Audit Logs', icon: Database },
     { id: 'apilogs', label: 'API Execution Logs', icon: Activity },
@@ -501,6 +503,7 @@ export default function App() {
           {activeTab === 'skills' && <SkillCatalog />}
           {activeTab === 'mcp' && <McpServerManager />}
           {activeTab === 'tenants' && <TenantManager />}
+          {activeTab === 'storage' && <StorageSettings />}
           {activeTab === 'usage' && <UsageSummary />}
           {activeTab === 'logs' && <AuditLogs />}
           {activeTab === 'apilogs' && <ApiLogs />}

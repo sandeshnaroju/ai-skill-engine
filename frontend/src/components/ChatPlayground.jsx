@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Send, Bot, User, Terminal, Sparkles, Trash2, Check, Copy, Activity, Code2, Globe, Plus, MessageSquare, Brain, ChevronDown, ChevronUp, Cpu, ShieldCheck, Box, Key, Download, X, History, FileText, Sparkle, Sliders, Paperclip } from 'lucide-react';
+import { Send, Bot, User, Terminal, Sparkles, Trash2, Check, Copy, Activity, Code2, Globe, Plus, MessageSquare, Brain, ChevronDown, ChevronUp, Cpu, ShieldCheck, Box, Key, Download, X, History, FileText, Sparkle, Sliders, Paperclip, Maximize2, Minimize2, Loader } from 'lucide-react';
 import AsyncSearchableDropdown from './AsyncSearchableDropdown';
+import ProChat from 'prochat';
 
 export default function ChatPlayground() {
   const [initialSessionId] = useState(() => `session_${Math.floor(1000 + Math.random() * 9000)}`);
@@ -42,6 +43,9 @@ export default function ChatPlayground() {
 
   // Collapsible configuration sidebar state
   const [isSettingsOpen, setIsSettingsOpen] = useState(true);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  // ProChat model selection — empty string = disabled, model name string = enabled with that model
+  const [prochatModel, setProchatModel] = useState('');
 
   // File Upload states
   const fileInputRef = React.useRef(null);
@@ -59,7 +63,7 @@ export default function ChatPlayground() {
       for (const file of files) {
         const formData = new FormData();
         formData.append('file', file);
-        
+
         const headers = {};
         if (apiKey.trim()) {
           headers['X-API-Key'] = apiKey.trim();
@@ -70,10 +74,10 @@ export default function ChatPlayground() {
           headers,
           body: formData
         });
-        
+
         if (!res.ok) throw new Error('File upload failed');
         const data = await res.json();
-        
+
         // Read file to base64 if it's an image
         let base64 = null;
         if (file.type.startsWith('image/')) {
@@ -177,7 +181,7 @@ export default function ChatPlayground() {
   const processLoadedMessages = (rawMessages) => {
     const processed = [];
     let pendingReasoning = [];
-    
+
     rawMessages.forEach((m) => {
       if (m.role === 'user') {
         processed.push({
@@ -194,25 +198,43 @@ export default function ChatPlayground() {
         if (m.tool_calls) {
           try {
             toolCalls = typeof m.tool_calls === 'string' ? JSON.parse(m.tool_calls) : m.tool_calls;
-          } catch (e) {}
+          } catch (e) { }
         }
-        
+
         if (toolCalls && toolCalls.length > 0) {
           pendingReasoning.push(`💭 Consulting LLM model (Turn)...`);
           toolCalls.forEach(tc => {
             const name = tc.function?.name || tc.name || 'tool';
-            const args = typeof tc.function?.arguments === 'string' 
-              ? tc.function.arguments 
+            const args = typeof tc.function?.arguments === 'string'
+              ? tc.function.arguments
               : JSON.stringify(tc.function?.arguments || tc.arguments || {});
             pendingReasoning.push(`💭 Invoking tool ${name}...`);
             pendingReasoning.push(`🛠️ Invoking Tool: ${name}\nArgs: ${args}`);
           });
         }
-        
+
+        if (m.json || m.code) {
+          pendingReasoning.push(`💭 Generating dynamic user interface components...`);
+          let parsedJson = null;
+          if (m.json) {
+            if (typeof m.json === 'string') {
+              try { parsedJson = JSON.parse(m.json); } catch (e) { }
+            } else {
+              parsedJson = m.json;
+            }
+          }
+          if (parsedJson) {
+            pendingReasoning.push(`📊 UI Schema JSON:\n${JSON.stringify(parsedJson, null, 2)}`);
+          }
+          pendingReasoning.push(`⚡ Rendered ProChat Generative UI component.`);
+        }
+
         if (m.content && m.content.trim()) {
           processed.push({
             role: 'assistant',
             content: m.content,
+            json: m.json,
+            code: m.code,
             timestamp: m.timestamp || new Date().toLocaleTimeString(),
             reasoning: pendingReasoning.length > 0 ? pendingReasoning.join('\n\n') : null
           });
@@ -226,7 +248,7 @@ export default function ChatPlayground() {
         });
       }
     });
-    
+
     if (pendingReasoning.length > 0) {
       processed.push({
         role: 'assistant',
@@ -235,7 +257,7 @@ export default function ChatPlayground() {
         reasoning: pendingReasoning.join('\n\n')
       });
     }
-    
+
     return processed;
   };
 
@@ -303,8 +325,11 @@ export default function ChatPlayground() {
       if (res.ok) {
         const data = await res.json();
         setTenantModels(data || []);
-        if (data && data.length > 0) {
-          setSelectedModel(data[0].model_name);
+        const nonProchat = (data || []).filter(
+          m => m.provider !== 'prochat' && !m.model_name.toLowerCase().includes('genui')
+        );
+        if (nonProchat.length > 0) {
+          setSelectedModel(nonProchat[0].model_name);
         } else {
           setSelectedModel('');
         }
@@ -430,69 +455,70 @@ export default function ChatPlayground() {
     }
   };
 
-    const handleSend = async (textToSend = null) => {
-      const query = textToSend || input;
-      if (!query.trim() || loading) return;
+  const handleSend = async (textToSend = null) => {
+    const query = textToSend || input;
+    if (!query.trim() || loading) return;
 
-      const currentSessionObj = sessions.find((s) => s.id === activeSessionId);
-      if (currentSessionObj && (currentSessionObj.name.startsWith('New Chat Session') || currentSessionObj.name === 'Developer & Math Session')) {
-        generateLLMThreadTitle(query);
+    const currentSessionObj = sessions.find((s) => s.id === activeSessionId);
+    if (currentSessionObj && (currentSessionObj.name.startsWith('New Chat Session') || currentSessionObj.name === 'Developer & Math Session')) {
+      generateLLMThreadTitle(query);
+    }
+
+    // Construct multimodal content payload
+    let contentPayload = query;
+    let textDescriptionParts = [];
+
+    // Document attachments description
+    const docAttachments = attachedFiles.filter(f => !f.type.startsWith('image/'));
+    if (docAttachments.length > 0) {
+      const descriptions = docAttachments.map(f => `[Attached File: ${f.name} (URL: ${f.url})]`).join('\n');
+      textDescriptionParts.push(descriptions);
+    }
+
+    let finalQueryText = query;
+    if (textDescriptionParts.length > 0) {
+      finalQueryText = `${textDescriptionParts.join('\n')}\n\n${query}`;
+    }
+
+    const imageAttachments = attachedFiles.filter(f => f.type.startsWith('image/'));
+    if (imageAttachments.length > 0) {
+      contentPayload = [
+        { type: 'text', text: finalQueryText },
+        ...imageAttachments.map(img => ({
+          type: 'image_url',
+          image_url: { url: img.base64 }
+        }))
+      ];
+    } else {
+      contentPayload = finalQueryText;
+    }
+
+    const userTime = new Date().toLocaleTimeString();
+    setMessages((prev) => [
+      ...prev,
+      { role: 'user', content: contentPayload, timestamp: userTime },
+    ]);
+    if (!textToSend) setInput('');
+    setAttachedFiles([]);
+    setLoading(true);
+    setLiveThought('Connecting to Skill Gateway...');
+
+    try {
+      const headers = {
+        'Content-Type': 'application/json',
+        'X-Request-Source': 'dashboard'
+      };
+      if (apiKey.trim()) {
+        headers['X-API-Key'] = apiKey.trim();
       }
 
-      // Construct multimodal content payload
-      let contentPayload = query;
-      let textDescriptionParts = [];
-
-      // Document attachments description
-      const docAttachments = attachedFiles.filter(f => !f.type.startsWith('image/'));
-      if (docAttachments.length > 0) {
-        const descriptions = docAttachments.map(f => `[Attached File: ${f.name} (Path: ${f.sandboxPath})]`).join('\n');
-        textDescriptionParts.push(descriptions);
-      }
-
-      let finalQueryText = query;
-      if (textDescriptionParts.length > 0) {
-        finalQueryText = `${textDescriptionParts.join('\n')}\n\n${query}`;
-      }
-
-      const imageAttachments = attachedFiles.filter(f => f.type.startsWith('image/'));
-      if (imageAttachments.length > 0) {
-        contentPayload = [
-          { type: 'text', text: finalQueryText },
-          ...imageAttachments.map(img => ({
-            type: 'image_url',
-            image_url: { url: img.base64 }
-          }))
-        ];
-      } else {
-        contentPayload = finalQueryText;
-      }
-
-      const userTime = new Date().toLocaleTimeString();
-      setMessages((prev) => [
-        ...prev,
-        { role: 'user', content: contentPayload, timestamp: userTime },
-      ]);
-      if (!textToSend) setInput('');
-      setAttachedFiles([]);
-      setLoading(true);
-      setLiveThought('Connecting to Skill Gateway...');
-
-      try {
-        const headers = {
-          'Content-Type': 'application/json',
-          'X-Request-Source': 'dashboard'
-        };
-        if (apiKey.trim()) {
-          headers['X-API-Key'] = apiKey.trim();
-        }
-
-        const payload = {
-          messages: [{ role: 'user', content: contentPayload }],
-          session_id: activeSessionId,
-          model: selectedModel,
-          stream: true,
-        };
+      const payload = {
+        messages: [{ role: 'user', content: contentPayload }],
+        session_id: activeSessionId,
+        model: selectedModel,
+        stream: true,
+        ...(prochatModel.trim() ? { prochat_model: prochatModel.trim() } : {}),
+      };
       if (selectedAppId) {
         payload.app_id = selectedAppId;
       }
@@ -509,6 +535,39 @@ export default function ChatPlayground() {
       let reasoningTraces = [];
       let finalContent = '';
       let turnGeneratedFiles = [];
+      let finalJson = null;
+      let finalCode = '';
+
+      // Append initial streaming assistant message to show progress in real-time
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: 'assistant',
+          content: '',
+          timestamp: new Date().toLocaleTimeString(),
+          reasoning: '',
+          generatedFiles: [],
+          isStreaming: true,
+          json: '',
+          code: '',
+          prochat_model: prochatModel
+        },
+      ]);
+
+      const updateMessageState = () => {
+        setMessages((prev) => {
+          const next = [...prev];
+          const lastMsg = next[next.length - 1];
+          if (lastMsg && lastMsg.role === 'assistant') {
+            lastMsg.content = finalContent;
+            lastMsg.reasoning = reasoningTraces.join('\n\n');
+            lastMsg.generatedFiles = [...turnGeneratedFiles];
+            lastMsg.json = finalJson;
+            lastMsg.code = finalCode;
+          }
+          return next;
+        });
+      };
 
       while (true) {
         const { value, done } = await reader.read();
@@ -518,6 +577,7 @@ export default function ChatPlayground() {
         const events = buffer.split('\n\n');
         buffer = events.pop() || '';
 
+        let stateChanged = false;
         for (const evtBlock of events) {
           if (!evtBlock.trim()) continue;
           const lines = evtBlock.split('\n');
@@ -538,10 +598,12 @@ export default function ChatPlayground() {
             if (delta.reasoning) {
               setLiveThought(delta.reasoning);
               reasoningTraces.push(`💭 ${delta.reasoning}`);
+              stateChanged = true;
             }
             if (delta.tool_call) {
               setLiveThought(`Invoking tool ${delta.tool_call.name}...`);
               reasoningTraces.push(`🛠️ Invoking Tool: ${delta.tool_call.name}\nArgs: ${JSON.stringify(delta.tool_call.arguments)}`);
+              stateChanged = true;
             }
             if (delta.tool_result) {
               setLiveThought(`Tool ${delta.tool_result.tool_name} finished in ${delta.tool_result.execution_time_ms}ms.`);
@@ -550,24 +612,55 @@ export default function ChatPlayground() {
               if (delta.tool_result.generated_files && delta.tool_result.generated_files.length > 0) {
                 turnGeneratedFiles.push(...delta.tool_result.generated_files);
               }
+              stateChanged = true;
             }
             if (delta.content) {
               finalContent += delta.content;
+              stateChanged = true;
+            }
+            if (delta.json) {
+              if (typeof delta.json === 'string') {
+                try {
+                  finalJson = JSON.parse(delta.json);
+                } catch (e) {
+                  // Fall back only if parsing fails
+                  finalJson = delta.json;
+                }
+              } else {
+                finalJson = delta.json;
+              }
+              stateChanged = true;
+            }
+            if (delta.code) {
+              finalCode = delta.code;
+              stateChanged = true;
             }
           }
         }
+        if (stateChanged) {
+          updateMessageState();
+        }
       }
 
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: 'assistant',
-          content: finalContent || 'No response content emitted.',
-          timestamp: new Date().toLocaleTimeString(),
-          reasoning: reasoningTraces.join('\n\n'),
-          generatedFiles: turnGeneratedFiles,
-        },
-      ]);
+      // Finalize the streaming message
+      setMessages((prev) => {
+        const next = [...prev];
+        const lastMsg = next[next.length - 1];
+        if (lastMsg && lastMsg.role === 'assistant') {
+          lastMsg.content = finalContent || 'No response content emitted.';
+          if (finalJson) {
+            reasoningTraces.push(`💭 Generating dynamic user interface components...`);
+            reasoningTraces.push(`📊 UI Schema JSON:\n${JSON.stringify(finalJson, null, 2)}`);
+            reasoningTraces.push(`⚡ Rendered ProChat Generative UI component.`);
+          }
+          lastMsg.reasoning = reasoningTraces.join('\n\n');
+          lastMsg.generatedFiles = turnGeneratedFiles;
+          lastMsg.json = finalJson;
+          lastMsg.code = finalCode;
+          delete lastMsg.isStreaming;
+        }
+        return next;
+      });
 
       // Refresh sessions list after message finishes
       fetchSessionsList(apiKey);
@@ -613,7 +706,7 @@ export default function ChatPlayground() {
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;');
-      
+
     // 2. Parse Code Blocks ```lang ... ```
     const codeBlockRegex = /```(\w*)\n([\s\S]*?)```/g;
     html = html.replace(codeBlockRegex, (match, lang, code) => {
@@ -662,14 +755,30 @@ export default function ChatPlayground() {
       list.push(...message.generatedFiles);
     }
     if (typeof message.content === 'string') {
-      const linkRegex = /\[([^\]]+)\]\(\/api\/v1\/files\/download\/([^)]+)\)/g;
+      // 1. Match local download links: [/api/v1/files/download/filename] or [/api/v1/files/download/tenant/filename]
+      const localRegex = /\[([^\]]+)\]\((?:https?:\/\/[^\/]+)?\/api\/v1\/files\/download\/(?:[^\/]+\/)?([^)]+)\)/g;
       let match;
-      while ((match = linkRegex.exec(message.content)) !== null) {
+      while ((match = localRegex.exec(message.content)) !== null) {
         if (!list.some(f => f.filename === match[2])) {
+          const urlMatch = match[0].match(/\(([^)]+)\)/);
           list.push({
             original_name: match[1],
             filename: match[2],
-            url: `/api/v1/files/download/${match[2]}`
+            url: urlMatch ? urlMatch[1] : `/api/v1/files/download/${match[2]}`
+          });
+        }
+      }
+      // 2. Match cloud storage links (e.g. S3 / Azure blobs containing filename uuid prefixes)
+      const cloudRegex = /\[([^\]]+)\]\((https:\/\/[a-zA-Z0-9.-]+\.(?:blob\.core\.windows\.net|s3[a-zA-Z0-9.-]*\.amazonaws\.com)\/([^?)]+)(?:\?[^)]+)?)\)/g;
+      while ((match = cloudRegex.exec(message.content)) !== null) {
+        const fullUrl = match[2];
+        const pathPart = match[3];
+        const filename = pathPart.split('/').pop();
+        if (!list.some(f => f.filename === filename)) {
+          list.push({
+            original_name: match[1],
+            filename: filename,
+            url: fullUrl
           });
         }
       }
@@ -680,10 +789,10 @@ export default function ChatPlayground() {
   const parseReasoning = (reasoning) => {
     if (Array.isArray(reasoning)) return reasoning;
     if (!reasoning || typeof reasoning !== 'string') return [];
-    
+
     const blocks = reasoning.split('\n\n');
     const traces = [];
-    
+
     blocks.forEach(block => {
       const trimmed = block.trim();
       if (trimmed.startsWith('💭')) {
@@ -705,20 +814,100 @@ export default function ChatPlayground() {
         traces.push({ type: 'text', content: trimmed });
       }
     });
-    
+
     return traces;
   };
 
   const renderMessageContent = (content) => {
+    let textStr = '';
+    let attachments = [];
+
     if (typeof content === 'string') {
-      return <div className="markdown-body" dangerouslySetInnerHTML={{ __html: renderMarkdown(content) }} />;
+      textStr = content;
+    } else if (Array.isArray(content)) {
+      const textBlock = content.find(block => block.type === 'text');
+      if (textBlock) {
+        textStr = textBlock.text;
+      }
     }
+
+    // Extract [Attached File: name.pdf (URL: https://...)]
+    if (textStr) {
+      const attachmentRegex = /\[Attached File:\s*([^\s\]]+)\s*\(URL:\s*([^\)]+)\)\]/g;
+      let match;
+      while ((match = attachmentRegex.exec(textStr)) !== null) {
+        attachments.push({
+          name: match[1],
+          url: match[2]
+        });
+      }
+      textStr = textStr.replace(attachmentRegex, '').trim();
+    }
+
+    const renderTextContent = (txt) => {
+      if (!txt) return null;
+      return <div className="markdown-body" dangerouslySetInnerHTML={{ __html: renderMarkdown(txt) }} />;
+    };
+
+    const renderAttachments = () => {
+      if (attachments.length === 0) return null;
+      return (
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '10px' }}>
+          {attachments.map((file, idx) => {
+            const isImage = /\.(png|jpe?g|gif|webp|svg)/i.test(file.name);
+            return (
+              <a
+                key={idx}
+                href={file.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  background: 'rgba(255, 255, 255, 0.08)',
+                  border: '1px solid rgba(255, 255, 255, 0.15)',
+                  borderRadius: '8px',
+                  padding: '6px 12px 6px 8px',
+                  fontSize: '0.8rem',
+                  color: 'inherit',
+                  textDecoration: 'none',
+                  transition: 'background 0.2s',
+                }}
+                onMouseOver={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.12)'}
+                onMouseOut={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)'}
+              >
+                {isImage ? (
+                  <img src={file.url} alt={file.name} style={{ width: '20px', height: '20px', borderRadius: '4px', objectFit: 'cover' }} />
+                ) : (
+                  <FileText size={14} style={{ opacity: 0.8 }} />
+                )}
+                <span style={{ maxWidth: '140px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: '500' }}>
+                  {file.name}
+                </span>
+              </a>
+            );
+          })}
+        </div>
+      );
+    };
+
+    if (typeof content === 'string') {
+      return (
+        <div>
+          {renderAttachments()}
+          {renderTextContent(textStr)}
+        </div>
+      );
+    }
+
     if (Array.isArray(content)) {
       return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          {renderAttachments()}
           {content.map((block, idx) => {
             if (block.type === 'text') {
-              return <div key={idx} className="markdown-body" dangerouslySetInnerHTML={{ __html: renderMarkdown(block.text) }} />;
+              return renderTextContent(textStr);
             }
             if (block.type === 'image_url') {
               return (
@@ -744,10 +933,263 @@ export default function ChatPlayground() {
     return '';
   };
 
+  const renderAssistantContentBox = (m, idx) => {
+    const isProchatActive = m.prochat_model || m.json || m.code;
+    if (m.isStreaming && !m.content) {
+      return (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          padding: '12px 16px',
+          background: 'var(--bg-input)',
+          border: '1px solid var(--border-subtle)',
+          borderRadius: '16px 16px 16px 4px',
+          fontSize: '0.85rem',
+          color: 'var(--text-muted)'
+        }}>
+          <Loader size={14} className="spin" /> Generating response...
+        </div>
+      );
+    }
+
+    return (
+      <div
+        style={{
+          background: 'var(--bg-input)',
+          color: 'var(--text-main)',
+          border: '1px solid var(--border-subtle)',
+          padding: '12px 16px',
+          borderRadius: '16px 16px 16px 4px',
+          boxShadow: 'var(--shadow-card)',
+          fontSize: '0.9rem',
+          lineHeight: '1.6',
+          whiteSpace: 'pre-wrap',
+          width: isProchatActive ? '100%' : 'auto',
+          boxSizing: 'border-box'
+        }}
+      >
+        {!isProchatActive && renderMessageContent(m.content)}
+        {(() => {
+          const genFiles = extractGeneratedFiles(m);
+          if (genFiles.length === 0) return null;
+          return (
+            <div style={{ marginTop: '12px', borderTop: '1px solid var(--border-subtle)', paddingTop: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div style={{ fontSize: '0.78rem', fontWeight: '600', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Download size={13} /> Generated Files
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                {genFiles.map((file, fidx) => {
+                  const isImage = /\.(png|jpe?g|gif|webp|svg)$/i.test(file.original_name);
+                  return (
+                    <div key={fidx} style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      <a
+                        href={file.url}
+                        download={file.original_name}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          background: 'var(--bg-card)',
+                          border: '1px solid var(--border-subtle)',
+                          borderRadius: '8px',
+                          padding: '6px 12px',
+                          fontSize: '0.82rem',
+                          color: 'var(--text-main)',
+                          textDecoration: 'none',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s',
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.borderColor = 'var(--primary-violet)'}
+                        onMouseLeave={(e) => e.currentTarget.style.borderColor = 'var(--border-subtle)'}
+                      >
+                        <Download size={14} color="var(--primary-violet)" />
+                        <span>{file.original_name}</span>
+                      </a>
+                      {isImage && (
+                        <img
+                          src={file.url}
+                          alt={file.original_name}
+                          style={{
+                            maxWidth: '240px',
+                            maxHeight: '180px',
+                            borderRadius: '6px',
+                            border: '1px solid var(--border-subtle)',
+                            marginTop: '4px',
+                          }}
+                        />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()}
+        {(() => {
+          const hasUiChunk = m.json;
+          if (!hasUiChunk) return null;
+          return (
+            <div style={{ marginTop: '14px', borderTop: '1px solid var(--border-subtle)', paddingTop: '14px', width: '100%', boxSizing: 'border-box' }}>
+              <ProChat
+                id={`prochat-${idx}`}
+                json={(() => {
+                  if (typeof m.json === 'string') {
+                    return m.json;
+                  }
+                  if (m.json && typeof m.json === 'object') {
+                    return JSON.stringify(m.json);
+                  }
+                  return null;
+                })()}
+                width={"100%"}
+                debug={false}
+              />
+            </div>
+          );
+        })()}
+      </div>
+    );
+  };
+
+  const renderReasoningAccordion = (m, idx) => {
+    const hasReasoning = Boolean(m.reasoning);
+    const isProchatActive = m.prochat_model || m.json || m.code;
+    if (!hasReasoning && !isProchatActive) return null;
+
+    const isExpanded = m.isStreaming ? (expandedReasoning[idx] !== false) : expandedReasoning[idx];
+
+    let headerText = isProchatActive ? 'Response Details & Reasoning' : 'Skill Engine Reasoning & Tool Traces';
+    let icon = <Brain size={14} />;
+
+    if (m.isStreaming) {
+      const steps = parseReasoning(m.reasoning);
+      if (steps.length > 0) {
+        const lastStep = steps[steps.length - 1];
+        if (lastStep.type === 'thought') {
+          const cleanThought = lastStep.content.replace(/^💭\s*/, '').trim();
+          const truncated = cleanThought.length > 60 ? cleanThought.substring(0, 60) + '...' : cleanThought;
+          headerText = `Agent Thinking: ${truncated}`;
+        } else if (lastStep.type === 'tool_call') {
+          headerText = `Invoking Tool: ${lastStep.name}`;
+        } else if (lastStep.type === 'tool_result') {
+          headerText = `Tool Executed: ${lastStep.title}`;
+        }
+      } else {
+        headerText = 'Agent Processing...';
+      }
+      icon = <Loader size={14} className="spin" style={{ color: 'var(--primary-violet)' }} />;
+    }
+
+    return (
+      <div style={{ background: 'rgba(139, 92, 246, 0.06)', border: '1px solid rgba(139, 92, 246, 0.2)', borderRadius: '10px', overflow: 'hidden', minWidth: 0, maxWidth: '100%' }}>
+        <button
+          onClick={() => setExpandedReasoning(prev => ({ ...prev, [idx]: !isExpanded }))}
+          style={{
+            width: '100%',
+            padding: '8px 12px',
+            background: 'transparent',
+            border: 'none',
+            color: 'var(--primary-violet)',
+            fontWeight: '600',
+            fontSize: '0.78rem',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            cursor: 'pointer',
+          }}
+        >
+          <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            {icon} {headerText}
+          </span>
+          {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+        </button>
+
+        {isExpanded && (
+          <div style={{ padding: '16px', borderTop: '1px solid rgba(139, 92, 246, 0.15)', display: 'flex', flexDirection: 'column', gap: '14px', background: 'var(--bg-panel)', minWidth: 0, overflow: 'hidden' }}>
+            {isProchatActive && m.content && (
+              <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start', borderBottom: hasReasoning ? '1px solid rgba(139, 92, 246, 0.15)' : 'none', paddingBottom: hasReasoning ? '14px' : '0', marginBottom: hasReasoning ? '14px' : '0' }}>
+                <div style={{ background: 'rgba(139, 92, 246, 0.12)', padding: '6px', borderRadius: '50%', color: 'var(--primary-violet)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <MessageSquare size={13} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: '0.7rem', fontWeight: '700', color: 'var(--primary-violet)', letterSpacing: '0.05em', marginBottom: '4px' }}>TEXT RESPONSE</div>
+                  <div style={{ fontSize: '0.85rem', color: 'var(--text-main)', lineHeight: '1.6', whiteSpace: 'pre-wrap' }}>
+                    {renderMessageContent(m.content)}
+                  </div>
+                </div>
+              </div>
+            )}
+            {parseReasoning(m.reasoning).map((step, sidx) => {
+              if (step.type === 'thought') {
+                return (
+                  <div key={sidx} style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                    <div style={{ background: 'rgba(139, 92, 246, 0.12)', padding: '6px', borderRadius: '50%', color: 'var(--primary-violet)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <Sparkles size={13} />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: '0.7rem', fontWeight: '700', color: 'var(--primary-violet)', letterSpacing: '0.05em', marginBottom: '2px' }}>AI THOUGHT</div>
+                      <div style={{ fontSize: '0.8rem', color: 'var(--text-main)', lineHeight: '1.5' }}>{step.content}</div>
+                    </div>
+                  </div>
+                );
+              }
+              if (step.type === 'tool_call') {
+                return (
+                  <div key={sidx} style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                    <div style={{ background: 'rgba(16, 185, 129, 0.12)', padding: '6px', borderRadius: '50%', color: 'var(--primary-emerald)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <Terminal size={13} />
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: '0.7rem', fontWeight: '700', color: 'var(--primary-emerald)', letterSpacing: '0.05em', marginBottom: '2px' }}>TOOL INVOCATION</div>
+                      <div style={{ fontSize: '0.8rem', color: 'var(--text-main)', fontWeight: '600' }}>{step.name}</div>
+                      {step.arguments && (
+                        <pre style={{ margin: '6px 0 0 0', padding: '8px 12px', background: 'var(--bg-input)', border: '1px solid var(--border-subtle)', borderRadius: '6px', fontSize: '0.76rem', color: 'var(--text-sub)', overflowX: 'auto', fontFamily: 'var(--font-mono)', maxWidth: '100%', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                          {step.arguments}
+                        </pre>
+                      )}
+                    </div>
+                  </div>
+                );
+              }
+              if (step.type === 'tool_result') {
+                return (
+                  <div key={sidx} style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                    <div style={{ background: 'rgba(245, 158, 11, 0.12)', padding: '6px', borderRadius: '50%', color: 'var(--primary-amber)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <Code2 size={13} />
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: '0.7rem', fontWeight: '700', color: 'var(--primary-amber)', letterSpacing: '0.05em', marginBottom: '2px' }}>EXECUTION LOGS ({step.title})</div>
+                      <pre style={{ margin: '6px 0 0 0', padding: '10px 14px', background: '#0b0f19', border: '1px solid #1e293b', borderRadius: '8px', fontSize: '0.76rem', color: '#38bdf8', overflowX: 'auto', fontFamily: 'var(--font-mono)', whiteSpace: 'pre-wrap', maxHeight: '200px', overflowY: 'auto', maxWidth: '100%', wordBreak: 'break-all' }}>
+                        {step.output}
+                      </pre>
+                    </div>
+                  </div>
+                );
+              }
+              return (
+                <div key={sidx} style={{ fontSize: '0.8rem', color: 'var(--text-sub)' }}>
+                  {step.content}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const activeSessionObj = sessions.find((s) => s.id === activeSessionId) || sessions[0];
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 105px)', width: '100%' }}>
+    <div style={{
+      display: 'flex',
+      flexDirection: 'column',
+      ...(isFullscreen
+        ? { position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 9999 }
+        : { height: 'calc(100vh - 105px)', width: '100%' }
+      )
+    }}>
       {/* Main Full-Width Simulator Console */}
       <div className="glass-box" style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%', overflow: 'hidden' }}>
         {/* Simulator Control Header Bar */}
@@ -783,6 +1225,16 @@ export default function ChatPlayground() {
               <Sliders size={15} color="var(--primary-violet)" />
               {isSettingsOpen ? ' Hide Config' : ' Config'}
             </button>
+
+            {/* Fullscreen Toggle */}
+            <button
+              className="btn-outline"
+              onClick={() => setIsFullscreen(!isFullscreen)}
+              title={isFullscreen ? 'Exit fullscreen' : 'Maximize chat'}
+              style={{ padding: '6px 10px', fontSize: '0.82rem', borderColor: isFullscreen ? 'var(--primary-violet)' : 'var(--border-subtle)', background: isFullscreen ? 'rgba(139, 92, 246, 0.08)' : 'transparent' }}
+            >
+              {isFullscreen ? <Minimize2 size={15} color="var(--primary-violet)" /> : <Maximize2 size={15} color="var(--primary-violet)" />}
+            </button>
           </div>
         </div>
 
@@ -792,23 +1244,7 @@ export default function ChatPlayground() {
           {/* LEFT SECTION: Message Area (Takes up remaining flex space) */}
           <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, height: '100%' }}>
 
-            {/* Quick Presets Bar */}
-            <div style={{ padding: '8px 18px', borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-input)', display: 'flex', gap: '8px', overflowX: 'auto', flexShrink: 0 }}>
-              {presets.map((p, idx) => {
-                const Icon = p.icon;
-                return (
-                  <button
-                    key={idx}
-                    className="btn-outline"
-                    onClick={() => handleSend(p.text)}
-                    disabled={loading}
-                    style={{ padding: '4px 10px', fontSize: '0.76rem', borderRadius: '16px' }}
-                  >
-                    <Icon size={12} color="var(--primary-violet)" /> {p.label}
-                  </button>
-                );
-              })}
-            </div>
+
 
             {/* Message Stream Viewport */}
             <div style={{ flex: 1, padding: '20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '18px' }}>
@@ -816,6 +1252,7 @@ export default function ChatPlayground() {
                 const isUser = m.role === 'user';
                 const hasReasoning = Boolean(m.reasoning);
                 const isExpanded = expandedReasoning[idx];
+                const isProchatActive = m.prochat_model || m.json || m.code;
 
                 return (
                   <div
@@ -825,6 +1262,8 @@ export default function ChatPlayground() {
                       gap: '12px',
                       alignSelf: isUser ? 'flex-end' : 'flex-start',
                       maxWidth: '85%',
+                      width: (!isUser && isProchatActive) ? '100%' : 'auto',
+                      minWidth: 0,
                     }}
                   >
                     {!isUser && (
@@ -833,162 +1272,27 @@ export default function ChatPlayground() {
                       </div>
                     )}
 
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', width: '100%' }}>
-                      <div
-                        style={{
-                          background: isUser ? 'linear-gradient(135deg, var(--primary-violet), var(--primary-indigo))' : 'var(--bg-input)',
-                          color: isUser ? '#ffffff' : 'var(--text-main)',
-                          border: isUser ? 'none' : '1px solid var(--border-subtle)',
-                          padding: '12px 16px',
-                          borderRadius: isUser ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
-                          boxShadow: 'var(--shadow-card)',
-                          fontSize: '0.9rem',
-                          lineHeight: '1.6',
-                          whiteSpace: 'pre-wrap',
-                        }}
-                      >
-                        {renderMessageContent(m.content)}
-                        {(() => {
-                          const genFiles = extractGeneratedFiles(m);
-                          if (genFiles.length === 0) return null;
-                          return (
-                            <div style={{ marginTop: '12px', borderTop: '1px solid var(--border-subtle)', paddingTop: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                              <div style={{ fontSize: '0.78rem', fontWeight: '600', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                <Download size={13} /> Generated Files
-                              </div>
-                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                                {genFiles.map((file, fidx) => {
-                                  const isImage = /\.(png|jpe?g|gif|webp|svg)$/i.test(file.original_name);
-                                  return (
-                                    <div key={fidx} style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                                      <a
-                                        href={file.url}
-                                        download={file.original_name}
-                                        style={{
-                                          display: 'inline-flex',
-                                          alignItems: 'center',
-                                          gap: '8px',
-                                          background: 'var(--bg-card)',
-                                          border: '1px solid var(--border-subtle)',
-                                          borderRadius: '8px',
-                                          padding: '6px 12px',
-                                          fontSize: '0.82rem',
-                                          color: 'var(--text-main)',
-                                          textDecoration: 'none',
-                                          cursor: 'pointer',
-                                          transition: 'all 0.2s',
-                                        }}
-                                        onMouseEnter={(e) => e.currentTarget.style.borderColor = 'var(--primary-violet)'}
-                                        onMouseLeave={(e) => e.currentTarget.style.borderColor = 'var(--border-subtle)'}
-                                      >
-                                        <Download size={14} color="var(--primary-violet)" />
-                                        <span>{file.original_name}</span>
-                                      </a>
-                                      {isImage && (
-                                        <img
-                                          src={file.url}
-                                          alt={file.original_name}
-                                          style={{
-                                            maxWidth: '240px',
-                                            maxHeight: '180px',
-                                            borderRadius: '6px',
-                                            border: '1px solid var(--border-subtle)',
-                                            marginTop: '4px',
-                                          }}
-                                        />
-                                      )}
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          );
-                        })()}
-                      </div>
-
-                      {/* Reasoning & Execution Traces Accordion */}
-                      {hasReasoning && (
-                        <div style={{ background: 'rgba(139, 92, 246, 0.06)', border: '1px solid rgba(139, 92, 246, 0.2)', borderRadius: '10px', overflow: 'hidden' }}>
-                          <button
-                            onClick={() => toggleReasoning(idx)}
-                            style={{
-                              width: '100%',
-                              padding: '8px 12px',
-                              background: 'transparent',
-                              border: 'none',
-                              color: 'var(--primary-violet)',
-                              fontWeight: '600',
-                              fontSize: '0.78rem',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'space-between',
-                              cursor: 'pointer',
-                            }}
-                          >
-                            <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                              <Brain size={14} /> Skill Engine Reasoning & Tool Traces
-                            </span>
-                            {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                          </button>
-
-                          {isExpanded && (
-                            <div style={{ padding: '16px', borderTop: '1px solid rgba(139, 92, 246, 0.15)', display: 'flex', flexDirection: 'column', gap: '14px', background: 'var(--bg-panel)' }}>
-                              {parseReasoning(m.reasoning).map((step, sidx) => {
-                                if (step.type === 'thought') {
-                                  return (
-                                    <div key={sidx} style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
-                                      <div style={{ background: 'rgba(139, 92, 246, 0.12)', padding: '6px', borderRadius: '50%', color: 'var(--primary-violet)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                        <Sparkles size={13} />
-                                      </div>
-                                      <div style={{ flex: 1 }}>
-                                        <div style={{ fontSize: '0.7rem', fontWeight: '700', color: 'var(--primary-violet)', letterSpacing: '0.05em', marginBottom: '2px' }}>AI THOUGHT</div>
-                                        <div style={{ fontSize: '0.8rem', color: 'var(--text-main)', lineHeight: '1.5' }}>{step.content}</div>
-                                      </div>
-                                    </div>
-                                  );
-                                }
-                                if (step.type === 'tool_call') {
-                                  return (
-                                    <div key={sidx} style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
-                                      <div style={{ background: 'rgba(16, 185, 129, 0.12)', padding: '6px', borderRadius: '50%', color: 'var(--primary-emerald)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                        <Terminal size={13} />
-                                      </div>
-                                      <div style={{ flex: 1, minWidth: 0 }}>
-                                        <div style={{ fontSize: '0.7rem', fontWeight: '700', color: 'var(--primary-emerald)', letterSpacing: '0.05em', marginBottom: '2px' }}>TOOL INVOCATION</div>
-                                        <div style={{ fontSize: '0.8rem', color: 'var(--text-main)', fontWeight: '600' }}>{step.name}</div>
-                                        {step.arguments && (
-                                          <pre style={{ margin: '6px 0 0 0', padding: '8px 12px', background: 'var(--bg-input)', border: '1px solid var(--border-subtle)', borderRadius: '6px', fontSize: '0.76rem', color: 'var(--text-sub)', overflowX: 'auto', fontFamily: 'var(--font-mono)' }}>
-                                            {step.arguments}
-                                          </pre>
-                                        )}
-                                      </div>
-                                    </div>
-                                  );
-                                }
-                                if (step.type === 'tool_result') {
-                                  return (
-                                    <div key={sidx} style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
-                                      <div style={{ background: 'rgba(245, 158, 11, 0.12)', padding: '6px', borderRadius: '50%', color: 'var(--primary-amber)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                        <Code2 size={13} />
-                                      </div>
-                                      <div style={{ flex: 1, minWidth: 0 }}>
-                                        <div style={{ fontSize: '0.7rem', fontWeight: '700', color: 'var(--primary-amber)', letterSpacing: '0.05em', marginBottom: '2px' }}>EXECUTION LOGS ({step.title})</div>
-                                        <pre style={{ margin: '6px 0 0 0', padding: '10px 14px', background: '#0b0f19', border: '1px solid #1e293b', borderRadius: '8px', fontSize: '0.76rem', color: '#38bdf8', overflowX: 'auto', fontFamily: 'var(--font-mono)', whiteSpace: 'pre-wrap', maxHeight: '200px', overflowY: 'auto' }}>
-                                          {step.output}
-                                        </pre>
-                                      </div>
-                                    </div>
-                                  );
-                                }
-                                return (
-                                  <div key={sidx} style={{ fontSize: '0.8rem', color: 'var(--text-sub)' }}>
-                                    {step.content}
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          )}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', width: '100%', minWidth: 0 }}>
+                      {isUser ? (
+                        <div
+                          style={{
+                            background: 'linear-gradient(135deg, var(--primary-violet), var(--primary-indigo))',
+                            color: '#ffffff',
+                            padding: '12px 16px',
+                            borderRadius: '16px 16px 4px 16px',
+                            boxShadow: 'var(--shadow-card)',
+                            fontSize: '0.9rem',
+                            lineHeight: '1.6',
+                            whiteSpace: 'pre-wrap',
+                          }}
+                        >
+                          {renderMessageContent(m.content)}
                         </div>
+                      ) : (
+                        <>
+                          {renderReasoningAccordion(m, idx)}
+                          {(!m.isStreaming || m.content) && renderAssistantContentBox(m, idx)}
+                        </>
                       )}
 
                       <div style={{ display: 'flex', justifyContent: isUser ? 'flex-end' : 'space-between', alignItems: 'center', padding: '0 4px' }}>
@@ -1015,14 +1319,6 @@ export default function ChatPlayground() {
               })}
 
               {/* Live Thought Stream Box */}
-              {loading && (
-                <div style={{ display: 'flex', gap: '10px', alignItems: 'center', background: 'rgba(139, 92, 246, 0.08)', border: '1px solid var(--border-glow)', padding: '12px 16px', borderRadius: '12px' }}>
-                  <Sparkles size={18} color="var(--primary-violet)" className="spin" />
-                  <div style={{ fontSize: '0.85rem', color: 'var(--primary-violet)', fontWeight: '600', fontFamily: 'var(--font-mono)' }}>
-                    {liveThought || 'Model thinking & executing tools...'}
-                  </div>
-                </div>
-              )}
             </div>
 
             {/* Input Bar */}
@@ -1125,6 +1421,46 @@ export default function ChatPlayground() {
               overflowY: 'auto',
               flexShrink: 0
             }}>
+              {/* Section 0: Quick Examples */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '10px', letterSpacing: '0.5px' }}>
+                  ⚡ Quick Examples
+                </label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {presets.map((p, idx) => {
+                    const Icon = p.icon;
+                    return (
+                      <button
+                        key={idx}
+                        onClick={() => handleSend(p.text)}
+                        disabled={loading}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '10px',
+                          padding: '10px 12px',
+                          background: 'rgba(139, 92, 246, 0.06)',
+                          border: '1px solid rgba(139, 92, 246, 0.2)',
+                          borderRadius: '10px',
+                          cursor: loading ? 'not-allowed' : 'pointer',
+                          textAlign: 'left',
+                          width: '100%',
+                          transition: 'background 0.15s',
+                          opacity: loading ? 0.5 : 1,
+                        }}
+                        onMouseEnter={e => e.currentTarget.style.background = 'rgba(139, 92, 246, 0.12)'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'rgba(139, 92, 246, 0.06)'}
+                      >
+                        <div style={{ background: 'rgba(139, 92, 246, 0.15)', padding: '6px', borderRadius: '8px', flexShrink: 0 }}>
+                          <Icon size={13} color="var(--primary-violet)" />
+                        </div>
+                        <span style={{ fontSize: '0.78rem', fontWeight: '600', color: 'var(--text-main)' }}>{p.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
               {/* Section 1: Tenant Key */}
               <div>
                 <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '8px', letterSpacing: '0.5px' }}>
@@ -1171,10 +1507,12 @@ export default function ChatPlayground() {
                     const url = `/api/v1/tenant/llms?search=${encodeURIComponent(searchTerm || '')}&page_size=10&page=1`;
                     const res = await fetch(url, { headers: { 'X-API-Key': apiKey } });
                     const data = await res.json();
-                    return (data.items || []).map(m => ({
-                      value: m.model_name,
-                      label: `${m.model_name} (${m.provider})`
-                    }));
+                    return (data.items || [])
+                      .filter(m => m.provider !== 'prochat' && !m.model_name.toLowerCase().includes('genui'))
+                      .map(m => ({
+                        value: m.model_name,
+                        label: `${m.model_name} (${m.provider})`
+                      }));
                   }}
                   placeholder={tenantModels.length === 0 ? "No models" : "Select Model"}
                   disabled={!apiKey}
@@ -1210,6 +1548,67 @@ export default function ChatPlayground() {
                   }}
                   placeholder="🌐 Global (All Skills)"
                 />
+              </div>
+
+              {/* Section 3.5: Generative UI Model */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.5px' }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Sparkles size={12} color={prochatModel.trim() ? 'var(--primary-violet)' : 'var(--text-muted)'} />
+                    Generative UI Model
+                  </span>
+                </label>
+                <div style={{ position: 'relative', display: 'flex', gap: '6px', alignItems: 'center' }}>
+                  <select
+                    value={prochatModel}
+                    onChange={(e) => setProchatModel(e.target.value)}
+                    style={{
+                      flex: 1,
+                      padding: '8px 10px',
+                      fontSize: '0.82rem',
+                      borderRadius: '8px',
+                      border: `1px solid ${prochatModel.trim() ? 'rgba(139, 92, 246, 0.5)' : 'var(--border-subtle)'}`,
+                      background: prochatModel.trim() ? 'rgba(139, 92, 246, 0.06)' : 'var(--bg-input)',
+                      color: prochatModel.trim() ? 'var(--primary-violet)' : 'var(--text-sub)',
+                      outline: 'none',
+                      transition: 'all 0.2s',
+                    }}
+                  >
+                    <option value="">— disabled —</option>
+                    {tenantModels
+                      .filter(m => m.provider === 'prochat' || m.model_name.toLowerCase().includes('genui'))
+                      .map(m => (
+                        <option key={m.id} value={m.model_name}>
+                          {m.model_name}
+                        </option>
+                      ))}
+                  </select>
+                  {prochatModel.trim() && (
+                    <button
+                      onClick={() => setProchatModel('')}
+                      title="Clear ProChat model"
+                      style={{
+                        padding: '7px 8px',
+                        borderRadius: '8px',
+                        border: '1px solid var(--border-subtle)',
+                        background: 'transparent',
+                        cursor: 'pointer',
+                        color: 'var(--text-muted)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        lineHeight: 1,
+                        flexShrink: 0,
+                      }}
+                    >
+                      <X size={13} />
+                    </button>
+                  )}
+                </div>
+                {prochatModel.trim() && (
+                  <span style={{ fontSize: '0.71rem', color: 'var(--primary-violet)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <Sparkles size={10} /> ProChat active · <code style={{ fontSize: '0.7rem' }}>{prochatModel}</code>
+                  </span>
+                )}
               </div>
 
               <div style={{ borderTop: '1px solid var(--border-subtle)', my: '10px' }} />

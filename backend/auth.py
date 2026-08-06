@@ -27,9 +27,6 @@ def get_current_user(
     db: Session = Depends(get_db)
 ) -> User:
     if not session_token:
-        # First-run: if no user is registered yet, provide a mock user
-        if db.query(User).first() is None:
-            return User(id="system", email="playground@local")
         raise HTTPException(status_code=401, detail="Authentication required")
     
     user = db.query(User).filter(User.session_token == session_token).first()
@@ -56,8 +53,9 @@ def get_current_tenant(
             # Retrieve the user's tenant (or create a default one if none exists)
             tenant = db.query(Tenant).filter(Tenant.user_id == user.id, Tenant.is_active == True).first()
             if not tenant:
+                safe_email = "".join(c if c.isalnum() or c in ("-", "_") else "_" for c in user.email.split("@")[0])
                 tenant = Tenant(
-                    name=f"{user.email}'s Workspace",
+                    name=f"{safe_email}_workspace",
                     api_key=generate_api_key("sk_usr_"),
                     is_active=True,
                     user_id=user.id
@@ -66,20 +64,5 @@ def get_current_tenant(
                 db.commit()
                 db.refresh(tenant)
             return tenant
-
-    # 3. First-run Fallback / Empty DB playground access
-    has_users = db.query(User).first() is not None
-    if not has_users:
-        default_tenant = db.query(Tenant).filter(Tenant.name == "Default Playground Tenant").first()
-        if not default_tenant:
-            default_tenant = Tenant(
-                name="Default Playground Tenant",
-                api_key=generate_api_key("sk_demo_"),
-                is_active=True
-            )
-            db.add(default_tenant)
-            db.commit()
-            db.refresh(default_tenant)
-        return default_tenant
 
     raise HTTPException(status_code=401, detail="Authentication required or invalid credentials")

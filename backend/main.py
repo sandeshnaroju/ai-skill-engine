@@ -1,5 +1,5 @@
 import os
-from typing import Optional, List
+from typing import Optional, List, Any, Union
 from fastapi import FastAPI, Depends, HTTPException, Header, Response, Cookie, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -14,7 +14,7 @@ from auth import get_current_tenant, generate_api_key, hash_password, verify_pas
 from skill_registry import skill_registry
 from skill_engine import skill_engine
 
-# Initialize database tables on start
+# Initialize/Verify database tables on startup
 init_db()
 
 app = FastAPI(
@@ -66,10 +66,11 @@ def get_paginated_response(query_or_list, page: Optional[int], page_size: int, s
 class PlaygroundChatRequest(BaseModel):
     message: str
     session_id: Optional[str] = "default_session"
+    prochat_model: Optional[str] = None
 
 class OpenAIStyleMessage(BaseModel):
     role: str
-    content: str
+    content: Union[str, List[Any]]
 
 class OpenAIChatRequest(BaseModel):
     messages: List[OpenAIStyleMessage]
@@ -77,6 +78,7 @@ class OpenAIChatRequest(BaseModel):
     session_id: Optional[str] = "default_session"
     app_id: Optional[str] = None
     stream: Optional[bool] = False
+    prochat_model: Optional[str] = None
 
 class TenantCreate(BaseModel):
     name: str
@@ -233,55 +235,262 @@ OUTPUT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "sand
 @app.post("/api/v1/files/upload")
 def upload_file(
     file: UploadFile = File(...),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
 ):
-    os.makedirs(UPLOAD_DIR, exist_ok=True)
-    
-    # Clean filename to avoid path traversal
+    import secrets, uuid as _uuid
+    from storage import get_storage_backend
+    from models import Tenant
+
+    # Resolve active tenant slug
+    tenant = db.query(Tenant).filter(Tenant.user_id == current_user.id, Tenant.is_active == True).first()
+    tenant_name = tenant.name if tenant else "default"
+
+    # Sanitize filename
     safe_filename = "".join(c for c in file.filename if c.isalnum() or c in (".", "_", "-")).strip()
     if not safe_filename:
-        import secrets
         safe_filename = f"upload_{secrets.token_hex(8)}"
-        
-    # Append unique ID prefix to filename to prevent collisions
-    import uuid
-    unique_filename = f"{uuid.uuid4().hex}_{safe_filename}"
-    file_path = os.path.join(UPLOAD_DIR, unique_filename)
-    
+    unique_filename = f"{_uuid.uuid4().hex}_{safe_filename}"
+
+    data = file.file.read()
+
     try:
-        with open(file_path, "wb") as f:
-            f.write(file.file.read())
+        backend = get_storage_backend(db)
+        # Only write local cache file if using LocalStorage
+        if backend.__class__.__name__ == "LocalStorage":
+            tenant_upload_dir = os.path.join(UPLOAD_DIR, tenant_name)
+            os.makedirs(tenant_upload_dir, exist_ok=True)
+            local_path = os.path.join(tenant_upload_dir, unique_filename)
+            with open(local_path, "wb") as f:
+                f.write(data)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to write file: {str(e)}")
-        
-    # Determine local serve URL and absolute path inside sandbox
-    file_url = f"/api/v1/files/download/{unique_filename}"
-    sandbox_path = f"sandbox/uploads/{unique_filename}" # relative path from execution workspace root
-    
+        raise HTTPException(status_code=500, detail=f"Failed to cache file locally: {str(e)}")
+
+    try:
+        file_url = backend.upload(unique_filename, data, file.content_type or "application/octet-stream", tenant_name=tenant_name)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Storage upload failed: {str(e)}")
+
+    sandbox_path = f"sandbox/uploads/{tenant_name}/{unique_filename}"
     return {
         "filename": unique_filename,
         "original_name": file.filename,
         "content_type": file.content_type,
-        "size": os.path.getsize(file_path),
+        "size": len(data),
         "url": file_url,
         "sandbox_path": sandbox_path
     }
 
-@app.get("/api/v1/files/download/{filename}")
-def download_file(filename: str):
+@app.get("/api/v1/files/download/{tenant_name}/{filename}")
+def download_file(tenant_name: str, filename: str):
     # Security check: prevent directory traversal by normalizing path
-    file_path = os.path.abspath(os.path.join(UPLOAD_DIR, filename))
+    file_path = os.path.abspath(os.path.join(UPLOAD_DIR, tenant_name, filename))
     if file_path.startswith(UPLOAD_DIR) and os.path.exists(file_path):
         return FileResponse(file_path)
-        
-    output_file_path = os.path.abspath(os.path.join(OUTPUT_DIR, filename))
+
+    output_file_path = os.path.abspath(os.path.join(OUTPUT_DIR, tenant_name, filename))
     if output_file_path.startswith(OUTPUT_DIR) and os.path.exists(output_file_path):
         return FileResponse(output_file_path)
-        
+
     raise HTTPException(status_code=404, detail="File not found")
 
+@app.get("/api/v1/files/download/{filename}")
+def download_file_fallback(filename: str):
+    # Fallback search across uploads and outputs
+    # 1. Check default folder
+    for directory in (UPLOAD_DIR, OUTPUT_DIR):
+        file_path = os.path.abspath(os.path.join(directory, "default", filename))
+        if file_path.startswith(directory) and os.path.exists(file_path):
+            return FileResponse(file_path)
+            
+    # 2. Check if it matches any nested tenant folder
+    for directory in (UPLOAD_DIR, OUTPUT_DIR):
+        if os.path.exists(directory):
+            for t_dir in os.listdir(directory):
+                file_path = os.path.abspath(os.path.join(directory, t_dir, filename))
+                if file_path.startswith(directory) and os.path.exists(file_path):
+                    return FileResponse(file_path)
+                    
+    # 3. Check directly in the root directory (for older uploads)
+    for directory in (UPLOAD_DIR, OUTPUT_DIR):
+        file_path = os.path.abspath(os.path.join(directory, filename))
+        if file_path.startswith(directory) and os.path.exists(file_path):
+            return FileResponse(file_path)
+
+    raise HTTPException(status_code=404, detail="File not found")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Storage Configuration API
+# ─────────────────────────────────────────────────────────────────────────────
+
+class StorageConfigPayload(BaseModel):
+    provider: str  # local | s3 | azure
+    bucket_name: Optional[str] = None
+    region: Optional[str] = None
+    access_key: Optional[str] = None      # plain-text; will be encrypted before save
+    secret_key: Optional[str] = None      # plain-text; will be encrypted before save
+    endpoint_url: Optional[str] = None
+    container_name: Optional[str] = None
+    account_name: Optional[str] = None    # plain-text; will be encrypted before save
+    account_key: Optional[str] = None     # plain-text; will be encrypted before save
+    use_presigned_urls: Optional[bool] = True
+    presigned_url_expires_seconds: Optional[int] = 3600
+
+@app.get("/api/v1/storage/config")
+def get_storage_config(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Return current storage config with credentials masked."""
+    from models import StorageConfig
+    config = db.query(StorageConfig).filter(StorageConfig.is_active == True).first()
+    if not config:
+        return {"provider": "local"}
+    return {
+        "provider": config.provider,
+        "bucket_name": config.bucket_name,
+        "region": config.region,
+        "access_key": "••••••••" if config.access_key_encrypted else None,
+        "secret_key": "••••••••" if config.secret_key_encrypted else None,
+        "endpoint_url": config.endpoint_url,
+        "container_name": config.container_name,
+        "account_name": "••••••••" if config.account_name_encrypted else None,
+        "account_key": "••••••••" if config.account_key_encrypted else None,
+        "use_presigned_urls": config.use_presigned_urls,
+        "presigned_url_expires_seconds": config.presigned_url_expires_seconds,
+    }
+
+@app.put("/api/v1/storage/config")
+def update_storage_config(
+    payload: StorageConfigPayload,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Save or update the global storage configuration."""
+    from models import StorageConfig
+    from encryption_utils import encrypt_key
+
+    config = db.query(StorageConfig).filter(StorageConfig.is_active == True).first()
+    if not config:
+        config = StorageConfig(is_active=True)
+        db.add(config)
+
+    config.provider = payload.provider
+    config.bucket_name = payload.bucket_name
+    config.region = payload.region
+    config.endpoint_url = payload.endpoint_url
+    config.container_name = payload.container_name
+    config.use_presigned_urls = payload.use_presigned_urls if payload.use_presigned_urls is not None else True
+    config.presigned_url_expires_seconds = payload.presigned_url_expires_seconds or 3600
+
+    # Only overwrite encrypted fields if new plain-text value provided (non-empty, non-placeholder)
+    MASK = "••••••••"
+    if payload.access_key and payload.access_key != MASK:
+        config.access_key_encrypted = encrypt_key(payload.access_key)
+    if payload.secret_key and payload.secret_key != MASK:
+        config.secret_key_encrypted = encrypt_key(payload.secret_key)
+    if payload.account_name and payload.account_name != MASK:
+        config.account_name_encrypted = encrypt_key(payload.account_name)
+    if payload.account_key and payload.account_key != MASK:
+        config.account_key_encrypted = encrypt_key(payload.account_key)
+
+    db.commit()
+    
+    msg = "Storage configuration saved successfully."
+    if payload.provider in ("azure", "s3"):
+        msg += f" Make sure to add the 'cloud_storage' skill to your app so the LLM can use your {payload.provider.upper()} storage!"
+        
+    return {"message": msg}
+
+@app.post("/api/v1/storage/test")
+def test_storage_config(
+    payload: Optional[StorageConfigPayload] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Test connectivity for the currently saved storage config, or a transient config payload."""
+    from storage import S3Storage, AzureStorage, get_storage_backend
+    from models import StorageConfig
+    from encryption_utils import decrypt_key as decrypt_value
+
+    if payload is not None:
+        if payload.provider == "local":
+            return {"success": True, "message": "Local storage is always available — no connection required."}
+
+        # Load existing config for credential fallback decryption
+        config = db.query(StorageConfig).filter(StorageConfig.is_active == True).first()
+        MASK = "••••••••"
+
+        if payload.provider == "s3":
+            access_key = ""
+            if payload.access_key and payload.access_key != MASK:
+                access_key = payload.access_key
+            elif config and config.access_key_encrypted:
+                access_key = decrypt_value(config.access_key_encrypted)
+
+            secret_key = ""
+            if payload.secret_key and payload.secret_key != MASK:
+                secret_key = payload.secret_key
+            elif config and config.secret_key_encrypted:
+                secret_key = decrypt_value(config.secret_key_encrypted)
+
+            try:
+                storage_client = S3Storage(
+                    bucket_name=payload.bucket_name or "",
+                    region=payload.region or "us-east-1",
+                    access_key=access_key,
+                    secret_key=secret_key,
+                    endpoint_url=payload.endpoint_url or None,
+                    use_presigned=payload.use_presigned_urls if payload.use_presigned_urls is not None else True,
+                    presigned_expires=payload.presigned_url_expires_seconds or 3600,
+                )
+                return storage_client.test_connection()
+            except Exception as e:
+                return {"success": False, "message": str(e)}
+
+        if payload.provider == "azure":
+            account_name = ""
+            if payload.account_name and payload.account_name != MASK:
+                account_name = payload.account_name
+            elif config and config.account_name_encrypted:
+                account_name = decrypt_value(config.account_name_encrypted)
+
+            account_key = ""
+            if payload.account_key and payload.account_key != MASK:
+                account_key = payload.account_key
+            elif config and config.account_key_encrypted:
+                account_key = decrypt_value(config.account_key_encrypted)
+
+            try:
+                storage_client = AzureStorage(
+                    account_name=account_name,
+                    account_key=account_key,
+                    container_name=payload.container_name or "",
+                    use_presigned=payload.use_presigned_urls if payload.use_presigned_urls is not None else True,
+                    presigned_expires=payload.presigned_url_expires_seconds or 3600,
+                )
+                return storage_client.test_connection()
+            except Exception as e:
+                return {"success": False, "message": str(e)}
+
+    # Fallback to saved config
+    try:
+        backend = get_storage_backend(db)
+        if isinstance(backend, (S3Storage, AzureStorage)):
+            return backend.test_connection()
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+    return {"success": True, "message": "Local storage is always available — no connection required."}
+
 @app.get("/api/v1/apps")
-def list_apps(db: Session = Depends(get_db), page: Optional[int] = None, page_size: int = 10, search: Optional[str] = None):
+def list_apps(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    page: Optional[int] = None,
+    page_size: int = 10,
+    search: Optional[str] = None
+):
     from models import AppModel
     query = db.query(AppModel)
     if search:
@@ -308,7 +517,11 @@ def list_apps(db: Session = Depends(get_db), page: Optional[int] = None, page_si
     return get_paginated_response(query, page, page_size, serialize)
 
 @app.post("/api/v1/apps")
-def create_app(payload: AppCreate, db: Session = Depends(get_db)):
+def create_app(
+    payload: AppCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     from models import AppModel, AppSkillMapping
     clean_name = payload.name.strip()
     app_obj = db.query(AppModel).filter(AppModel.name == clean_name).first()
@@ -334,7 +547,11 @@ def create_app(payload: AppCreate, db: Session = Depends(get_db)):
     return {"status": "created", "app_id": app_obj.id, "name": app_obj.name}
 
 @app.delete("/api/v1/apps/{app_id}")
-def delete_app(app_id: str, db: Session = Depends(get_db)):
+def delete_app(
+    app_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     from models import AppModel
     app_obj = db.query(AppModel).filter(AppModel.id == app_id).first()
     if not app_obj:
@@ -348,7 +565,13 @@ def health_check():
     return {"status": "ok", "service": "skill_manager"}
 
 @app.get("/api/v1/skills")
-def list_skills(db: Session = Depends(get_db), page: Optional[int] = None, page_size: int = 10, search: Optional[str] = None):
+def list_skills(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    page: Optional[int] = None,
+    page_size: int = 10,
+    search: Optional[str] = None
+):
     skill_registry.reload_skills(db=db)
     all_skills = skill_registry.list_skills()
     if search:
@@ -367,7 +590,11 @@ def list_skills(db: Session = Depends(get_db), page: Optional[int] = None, page_
         return res
 
 @app.post("/api/v1/skills")
-def create_skill(payload: SkillSaveRequest, db: Session = Depends(get_db)):
+def create_skill(
+    payload: SkillSaveRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     clean_name = payload.skill_name.strip().lower().replace(" ", "_")
     from models import CustomSkill
     
@@ -388,7 +615,11 @@ def create_skill(payload: SkillSaveRequest, db: Session = Depends(get_db)):
     return {"status": "created", "skill_name": clean_name, "source": "database"}
 
 @app.get("/api/v1/skills/{skill_name}")
-def get_skill_content(skill_name: str, db: Session = Depends(get_db)):
+def get_skill_content(
+    skill_name: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     skill_registry.reload_skills(db=db)
     skill_data = skill_registry.skills.get(skill_name)
     if not skill_data:
@@ -404,7 +635,12 @@ def get_skill_content(skill_name: str, db: Session = Depends(get_db)):
     raise HTTPException(status_code=404, detail="Skill file content not available")
 
 @app.put("/api/v1/skills/{skill_name}")
-def update_skill(skill_name: str, payload: SkillSaveRequest, db: Session = Depends(get_db)):
+def update_skill(
+    skill_name: str,
+    payload: SkillSaveRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     from models import CustomSkill
     clean_name = skill_name.strip().lower().replace(" ", "_")
     
@@ -427,7 +663,11 @@ def update_skill(skill_name: str, payload: SkillSaveRequest, db: Session = Depen
     return {"status": "updated", "skill_name": clean_name, "source": "database"}
 
 @app.delete("/api/v1/skills/{skill_name}")
-def delete_skill(skill_name: str, db: Session = Depends(get_db)):
+def delete_skill(
+    skill_name: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     from models import CustomSkill
     clean_name = skill_name.strip().lower().replace(" ", "_")
     
@@ -450,7 +690,8 @@ def interact(
         db=db,
         tenant=tenant,
         session_id=req.session_id,
-        user_message=req.message
+        user_message=req.message,
+        prochat_model=req.prochat_model
     )
     return result
 
@@ -462,11 +703,12 @@ def stream_interact(
 ):
     from fastapi.responses import StreamingResponse
     return StreamingResponse(
-        skill_engine.stream_chat(
+        skill_engine.stream_openai_chat(
             db=db,
             tenant=tenant,
             session_id=req.session_id,
-            user_message=req.message
+            user_message=req.message,
+            prochat_model=req.prochat_model
         ),
         media_type="text/event-stream"
     )
@@ -500,7 +742,8 @@ def openai_chat_completions(
                     user_message=last_user_msg,
                     app_id=req.app_id,
                     model_name=req.model or "gemini-2.5-flash",
-                    request_source=x_request_source
+                    request_source=x_request_source,
+                    prochat_model=req.prochat_model
                 ),
                 media_type="text/event-stream"
             )
@@ -512,7 +755,8 @@ def openai_chat_completions(
             user_message=last_user_msg,
             app_id=req.app_id,
             model_name=req.model,
-            request_source=x_request_source
+            request_source=x_request_source,
+            prochat_model=req.prochat_model
         )
 
         return {
@@ -526,7 +770,9 @@ def openai_chat_completions(
                     "index": 0,
                     "message": {
                         "role": "assistant",
-                        "content": result["response"]
+                        "content": result["response"],
+                        "json": result.get("json"),
+                        "code": result.get("code")
                     },
                     "finish_reason": "stop"
                 }
@@ -541,6 +787,7 @@ def openai_chat_completions(
 @app.get("/api/v1/requests")
 def list_chat_requests(
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
     page: Optional[int] = None,
     page_size: int = 20,
     request_source: Optional[str] = None,
@@ -583,7 +830,11 @@ def list_chat_requests(
     return get_paginated_response(query, page, page_size, serialize)
 
 @app.get("/api/v1/requests/{request_id}")
-def get_chat_request(request_id: str, db: Session = Depends(get_db)):
+def get_chat_request(
+    request_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     r = db.query(ChatRequest).filter(ChatRequest.id == request_id).first()
     if not r:
         raise HTTPException(status_code=404, detail="Request not found")
@@ -631,7 +882,8 @@ def get_usage_summary(
     request_source: Optional[str] = None,
     page: Optional[int] = None,
     page_size: int = 10,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     from models import Tenant
     from sqlalchemy import func
@@ -770,6 +1022,8 @@ def get_session_messages(
                 "role": m.role,
                 "content": m.content,
                 "tool_calls": m.tool_calls,
+                "json": m.json,
+                "code": m.code,
                 "timestamp": m.created_at.strftime("%H:%M:%S") if m.created_at else ""
             }
             for m in msgs
@@ -793,6 +1047,8 @@ def get_session_messages(
                 "role": m.role,
                 "content": m.content,
                 "tool_calls": m.tool_calls,
+                "json": m.json,
+                "code": m.code,
                 "timestamp": m.created_at.strftime("%H:%M:%S") if m.created_at else ""
             }
             for m in items_asc
@@ -834,8 +1090,21 @@ def create_tenant(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    import re
+    name_val = payload.name.strip()
+    if not name_val:
+        raise HTTPException(status_code=400, detail="Tenant name cannot be empty.")
+    if " " in name_val:
+        raise HTTPException(status_code=400, detail="Tenant name must not contain spaces.")
+    if not re.match(r"^[a-zA-Z0-9_-]+$", name_val):
+        raise HTTPException(status_code=400, detail="Tenant name can only contain alphanumeric characters, underscores, and hyphens.")
+    
+    existing = db.query(Tenant).filter(Tenant.name.ilike(name_val)).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Tenant name already exists.")
+
     tenant = Tenant(
-        name=payload.name,
+        name=name_val,
         api_key=generate_api_key(),
         is_active=True,
         user_id=current_user.id if current_user.id != "system" else None
@@ -867,7 +1136,12 @@ def delete_tenant(
     return {"status": "deleted", "tenant_id": tenant_id}
 
 @app.get("/api/v1/logs/filters")
-def get_logs_filters(db: Session = Depends(get_db), search_tenant: Optional[str] = None, search_model: Optional[str] = None):
+def get_logs_filters(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    search_tenant: Optional[str] = None,
+    search_model: Optional[str] = None
+):
     from models import Tenant
     t_query = db.query(Tenant.name).join(ExecutionLog).distinct()
     if search_tenant:
@@ -887,6 +1161,7 @@ def get_logs_filters(db: Session = Depends(get_db), search_tenant: Optional[str]
 @app.get("/api/v1/logs")
 def get_logs(
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
     page: Optional[int] = None,
     page_size: int = 20,
     request_source: Optional[str] = None,
@@ -939,7 +1214,13 @@ class McpServerCreate(BaseModel):
     env: Optional[str] = None
 
 @app.get("/api/v1/mcp_servers")
-def list_mcp_servers(db: Session = Depends(get_db), page: Optional[int] = None, page_size: int = 10, search: Optional[str] = None):
+def list_mcp_servers(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    page: Optional[int] = None,
+    page_size: int = 10,
+    search: Optional[str] = None
+):
     from models import McpServer
     from mcp_manager import mcp_manager
     query = db.query(McpServer)
@@ -963,7 +1244,11 @@ def list_mcp_servers(db: Session = Depends(get_db), page: Optional[int] = None, 
     return get_paginated_response(query, page, page_size, serialize)
 
 @app.post("/api/v1/mcp_servers")
-def create_mcp_server(payload: McpServerCreate, db: Session = Depends(get_db)):
+def create_mcp_server(
+    payload: McpServerCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     from models import McpServer
     clean_name = payload.name.strip().lower().replace(" ", "_")
     srv = db.query(McpServer).filter(McpServer.name == clean_name).first()
@@ -989,7 +1274,11 @@ def create_mcp_server(payload: McpServerCreate, db: Session = Depends(get_db)):
     return {"status": "created", "server_id": srv.id, "name": srv.name}
 
 @app.delete("/api/v1/mcp_servers/{server_id}")
-def delete_mcp_server(server_id: str, db: Session = Depends(get_db)):
+def delete_mcp_server(
+    server_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     from models import McpServer
     srv = db.query(McpServer).filter(McpServer.id == server_id).first()
     if not srv:
@@ -1003,6 +1292,7 @@ def delete_mcp_server(server_id: str, db: Session = Depends(get_db)):
 def list_tenant_llms(
     tenant: Tenant = Depends(get_current_tenant),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
     page: Optional[int] = None,
     page_size: int = 10,
     search: Optional[str] = None
@@ -1027,7 +1317,8 @@ def list_tenant_llms(
 def create_tenant_llm(
     payload: TenantLlmCreate,
     tenant: Tenant = Depends(get_current_tenant),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     from models import TenantLLM
     from encryption_utils import encrypt_key
@@ -1065,7 +1356,8 @@ def create_tenant_llm(
 def delete_tenant_llm(
     llm_id: str,
     tenant: Tenant = Depends(get_current_tenant),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     from models import TenantLLM
     llm = db.query(TenantLLM).filter(
