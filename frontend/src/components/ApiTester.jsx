@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Terminal, Send, Play, Copy, Check, Info, Cpu, Code2, ToggleLeft, ToggleRight, Database } from 'lucide-react';
 import AsyncSearchableDropdown from './AsyncSearchableDropdown';
+import ProChat from 'prochat';
 
 export default function ApiTester() {
   const [tenants, setTenants] = useState([]);
@@ -8,6 +9,7 @@ export default function ApiTester() {
   const [selectedTenantKey, setSelectedTenantKey] = useState('');
   const [model, setModel] = useState('');
   const [appId, setAppId] = useState('');
+  const [prochatModel, setProchatModel] = useState('');
   const [message, setMessage] = useState('Check disk space and system uptime');
   const [stream, setStream] = useState(true);
   
@@ -28,6 +30,8 @@ export default function ApiTester() {
   const [streamContent, setStreamContent] = useState('');
   const [streamReasoning, setStreamReasoning] = useState([]);
   const [streamTools, setStreamTools] = useState([]);
+  const [prochatUiJson, setProchatUiJson] = useState(null);
+  const [prochatUiCode, setProchatUiCode] = useState('');
   
   // Terminal log output
   const [logs, setLogs] = useState([]);
@@ -108,8 +112,11 @@ export default function ApiTester() {
       if (res.ok) {
         const data = await res.json();
         setTenantModels(data || []);
-        if (data && data.length > 0) {
-          setModel(data[0].model_name);
+        const nonProchat = (data || []).filter(
+          m => m.provider !== 'prochat' && !m.model_name.toLowerCase().includes('genui')
+        );
+        if (nonProchat.length > 0) {
+          setModel(nonProchat[0].model_name);
         } else {
           setModel('');
         }
@@ -132,6 +139,8 @@ export default function ApiTester() {
     setStreamContent('');
     setStreamReasoning([]);
     setStreamTools([]);
+    setProchatUiJson(null);
+    setProchatUiCode('');
     
     const startTime = Date.now();
     
@@ -164,6 +173,10 @@ export default function ApiTester() {
 
     if (appId) {
       payload.app_id = appId;
+    }
+
+    if (prochatModel.trim()) {
+      payload.prochat_model = prochatModel.trim();
     }
 
     try {
@@ -220,6 +233,20 @@ export default function ApiTester() {
                       if (delta.content) {
                         setStreamContent(prev => prev + delta.content);
                       }
+                      if (delta.json) {
+                        if (typeof delta.json === 'string') {
+                          try {
+                            setProchatUiJson(JSON.parse(delta.json));
+                          } catch (e) {
+                            setProchatUiJson(delta.json);
+                          }
+                        } else {
+                          setProchatUiJson(delta.json);
+                        }
+                      }
+                      if (delta.code) {
+                        setProchatUiCode(delta.code);
+                      }
                     }
                   } catch (e) {}
                 }
@@ -239,6 +266,12 @@ export default function ApiTester() {
         const assistantMessage = data.choices?.[0]?.message;
         if (assistantMessage) {
           setStreamContent(assistantMessage.content || '');
+          if (assistantMessage.json) {
+            setProchatUiJson(assistantMessage.json);
+          }
+          if (assistantMessage.code) {
+            setProchatUiCode(assistantMessage.code);
+          }
         }
         if (data.reasoning) {
           setStreamReasoning([data.reasoning]);
@@ -273,7 +306,8 @@ export default function ApiTester() {
     messages: [{ role: 'user', content: curlContent }],
     model: model,
     stream: stream,
-    ...(appId && { app_id: appId })
+    ...(appId && { app_id: appId }),
+    ...(prochatModel.trim() && { prochat_model: prochatModel.trim() })
   };
 
   const curlCommand = `curl -X POST http://localhost:8000/api/v1/chat/completions \\
@@ -344,10 +378,12 @@ export default function ApiTester() {
                     const url = `/api/v1/tenant/llms?search=${encodeURIComponent(searchTerm || '')}&page_size=10&page=1`;
                     const res = await fetch(url, { headers: { 'X-API-Key': selectedTenantKey }});
                     const data = await res.json();
-                    return (data.items || []).map(m => ({
-                      value: m.model_name,
-                      label: `${m.model_name} (${m.provider})`
-                    }));
+                    return (data.items || [])
+                      .filter(m => m.provider !== 'prochat' && !m.model_name.toLowerCase().includes('genui'))
+                      .map(m => ({
+                        value: m.model_name,
+                        label: `${m.model_name} (${m.provider})`
+                      }));
                   }}
                   placeholder={tenantModels.length === 0 ? "No models configured" : "Select Model"}
                   disabled={!selectedTenantKey}
@@ -377,6 +413,35 @@ export default function ApiTester() {
                 />
               </div>
             </div>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <label style={{ fontSize: '0.76rem', color: 'var(--text-sub)', fontWeight: '600' }}>ProChat UI Model (Optional)</label>
+            <select
+              value={prochatModel}
+              onChange={(e) => setProchatModel(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '10px 14px',
+                borderRadius: '8px',
+                border: '1px solid var(--border-subtle)',
+                background: 'var(--bg-input)',
+                color: 'var(--text-main)',
+                fontSize: '0.88rem',
+                outline: 'none',
+                transition: 'border-color 0.2s',
+                cursor: 'pointer'
+              }}
+            >
+              <option value="">— disabled —</option>
+              {tenantModels
+                .filter(m => m.provider === 'prochat' || m.model_name.toLowerCase().includes('genui'))
+                .map(m => (
+                  <option key={m.id} value={m.model_name}>
+                    {m.model_name}
+                  </option>
+                ))}
+            </select>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px', background: 'var(--bg-input)', borderRadius: '10px', border: '1px solid var(--border-subtle)' }}>
@@ -672,6 +737,28 @@ export default function ApiTester() {
                       </span>
                     )}
                   </div>
+
+                  {prochatUiJson && (
+                    <div style={{ marginTop: '14px', borderTop: '1px solid var(--border-subtle)', paddingTop: '14px', width: '100%', boxSizing: 'border-box' }}>
+                      <div style={{ fontSize: '0.74rem', fontWeight: '700', color: 'var(--primary-violet)', letterSpacing: '0.05em', borderBottom: '1px solid rgba(139, 92, 246, 0.15)', paddingBottom: '4px', marginBottom: '8px' }}>
+                        GENERATED PROCHAT UI
+                      </div>
+                      <ProChat
+                        id="prochat-api-tester"
+                        json={(() => {
+                          if (typeof prochatUiJson === 'string') {
+                            return prochatUiJson;
+                          }
+                          if (prochatUiJson && typeof prochatUiJson === 'object') {
+                            return JSON.stringify(prochatUiJson);
+                          }
+                          return null;
+                        })()}
+                        width={"100%"}
+                        debug={false}
+                      />
+                    </div>
+                  )}
                 </div>
               )}
             </div>

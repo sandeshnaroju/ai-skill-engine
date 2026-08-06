@@ -349,11 +349,26 @@ export default function TenantManager() {
                   <div style={{ display: 'flex', gap: '10px' }}>
                     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
                       <label style={{ fontSize: '0.74rem', color: 'var(--text-sub)', fontWeight: '600' }}>Provider</label>
-                      <select value={provider} onChange={(e) => setProvider(e.target.value)} style={{ padding: '8px' }}>
+                      <select
+                        value={provider}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setProvider(val);
+                          if (val === 'prochat') {
+                            setModelName('genui-mars-0.1');
+                            setBaseUrl('https://www.prochat.dev/apps/api/v1');
+                          } else {
+                            setModelName('');
+                            setBaseUrl('');
+                          }
+                        }}
+                        style={{ padding: '8px' }}
+                      >
                         <option value="openai">OpenAI</option>
                         <option value="gemini">Gemini</option>
                         <option value="anthropic">Anthropic</option>
                         <option value="openrouter">OpenRouter</option>
+                        <option value="prochat">ProChat (Gen UI)</option>
                         <option value="custom">Custom Endpoint</option>
                       </select>
                     </div>
