@@ -14,6 +14,7 @@ import UsageSummary from './components/UsageSummary';
 import AuthPages from './components/AuthPages';
 import Profile from './components/Profile';
 import StorageSettings from './components/StorageSettings';
+import SandboxSettings from './components/SandboxSettings';
 
 export default function App() {
   const navItems = [
@@ -23,6 +24,7 @@ export default function App() {
     { id: 'mcp', label: 'MCP Servers', icon: Cpu },
     { id: 'tenants', label: 'Tenants & Keys', icon: Key },
     { id: 'storage', label: 'Storage', icon: HardDrive },
+    { id: 'sandbox', label: 'Sandbox Config', icon: ShieldCheck },
     { id: 'usage', label: 'LLM Cost & Usage', icon: DollarSign },
     { id: 'logs', label: 'Sandbox Audit Logs', icon: Database },
     { id: 'apilogs', label: 'API Execution Logs', icon: Activity },
@@ -504,6 +506,7 @@ export default function App() {
           {activeTab === 'mcp' && <McpServerManager />}
           {activeTab === 'tenants' && <TenantManager />}
           {activeTab === 'storage' && <StorageSettings />}
+          {activeTab === 'sandbox' && <SandboxSettings />}
           {activeTab === 'usage' && <UsageSummary />}
           {activeTab === 'logs' && <AuditLogs />}
           {activeTab === 'apilogs' && <ApiLogs />}

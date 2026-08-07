@@ -194,3 +194,34 @@ class StorageConfig(Base):
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class SandboxConfig(Base):
+    """Persists the active remote sandbox execution configuration (global, single-row)."""
+    __tablename__ = "sandbox_config"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    provider = Column(String, nullable=False, default="none")  # none | azure | fly | e2b | lambda
+
+    # E2B fields
+    e2b_api_key_encrypted = Column(Text, nullable=True)
+
+    # Azure Container Apps (Dynamic Sessions) fields
+    azure_client_id_encrypted = Column(Text, nullable=True)
+    azure_client_secret_encrypted = Column(Text, nullable=True)
+    azure_tenant_id_encrypted = Column(Text, nullable=True)
+    azure_session_pool_endpoint = Column(String, nullable=True)
+
+    # Fly.io fields
+    fly_api_token_encrypted = Column(Text, nullable=True)
+    fly_app_name = Column(String, nullable=True)
+
+    # AWS Lambda fields
+    aws_access_key_encrypted = Column(Text, nullable=True)
+    aws_secret_key_encrypted = Column(Text, nullable=True)
+    aws_region = Column(String, nullable=True)
+    aws_function_name = Column(String, nullable=True)
+
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
