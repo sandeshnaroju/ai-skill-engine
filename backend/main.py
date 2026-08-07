@@ -67,6 +67,7 @@ class PlaygroundChatRequest(BaseModel):
     message: str
     session_id: Optional[str] = "default_session"
     prochat_model: Optional[str] = None
+    user_data: Optional[dict] = None
 
 class OpenAIStyleMessage(BaseModel):
     role: str
@@ -79,6 +80,7 @@ class OpenAIChatRequest(BaseModel):
     app_id: Optional[str] = None
     stream: Optional[bool] = False
     prochat_model: Optional[str] = None
+    user_data: Optional[dict] = None
 
 class TenantCreate(BaseModel):
     name: str
@@ -483,6 +485,93 @@ def test_storage_config(
 
     return {"success": True, "message": "Local storage is always available — no connection required."}
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Sandbox Configuration API
+# ─────────────────────────────────────────────────────────────────────────────
+
+class SandboxConfigPayload(BaseModel):
+    provider: str  # none | azure | fly | e2b | lambda
+    e2b_api_key: Optional[str] = None
+    azure_client_id: Optional[str] = None
+    azure_client_secret: Optional[str] = None
+    azure_tenant_id: Optional[str] = None
+    azure_session_pool_endpoint: Optional[str] = None
+    fly_api_token: Optional[str] = None
+    fly_app_name: Optional[str] = None
+    aws_access_key: Optional[str] = None
+    aws_secret_key: Optional[str] = None
+    aws_region: Optional[str] = None
+    aws_function_name: Optional[str] = None
+
+
+@app.get("/api/v1/sandbox/config")
+def get_sandbox_config(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Return the global sandbox config with masked secrets."""
+    from models import SandboxConfig
+    config = db.query(SandboxConfig).filter(SandboxConfig.is_active == True).first()
+    if not config:
+        return {"provider": "none"}
+    return {
+        "provider": config.provider,
+        "e2b_api_key": "••••••••" if config.e2b_api_key_encrypted else None,
+        "azure_client_id": "••••••••" if config.azure_client_id_encrypted else None,
+        "azure_client_secret": "••••••••" if config.azure_client_secret_encrypted else None,
+        "azure_tenant_id": "••••••••" if config.azure_tenant_id_encrypted else None,
+        "azure_session_pool_endpoint": config.azure_session_pool_endpoint,
+        "fly_api_token": "••••••••" if config.fly_api_token_encrypted else None,
+        "fly_app_name": config.fly_app_name,
+        "aws_access_key": "••••••••" if config.aws_access_key_encrypted else None,
+        "aws_secret_key": "••••••••" if config.aws_secret_key_encrypted else None,
+        "aws_region": config.aws_region,
+        "aws_function_name": config.aws_function_name,
+    }
+
+
+@app.put("/api/v1/sandbox/config")
+def update_sandbox_config(
+    payload: SandboxConfigPayload,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Save or update the global sandbox configuration."""
+    from models import SandboxConfig
+    from encryption_utils import encrypt_key
+
+    config = db.query(SandboxConfig).filter(SandboxConfig.is_active == True).first()
+    if not config:
+        config = SandboxConfig(is_active=True)
+        db.add(config)
+
+    config.provider = payload.provider
+    config.azure_session_pool_endpoint = payload.azure_session_pool_endpoint
+    config.fly_app_name = payload.fly_app_name
+    config.aws_region = payload.aws_region
+    config.aws_function_name = payload.aws_function_name
+
+    MASK = "••••••••"
+    if payload.e2b_api_key and payload.e2b_api_key != MASK:
+        config.e2b_api_key_encrypted = encrypt_key(payload.e2b_api_key)
+    if payload.azure_client_id and payload.azure_client_id != MASK:
+        config.azure_client_id_encrypted = encrypt_key(payload.azure_client_id)
+    if payload.azure_client_secret and payload.azure_client_secret != MASK:
+        config.azure_client_secret_encrypted = encrypt_key(payload.azure_client_secret)
+    if payload.azure_tenant_id and payload.azure_tenant_id != MASK:
+        config.azure_tenant_id_encrypted = encrypt_key(payload.azure_tenant_id)
+    if payload.fly_api_token and payload.fly_api_token != MASK:
+        config.fly_api_token_encrypted = encrypt_key(payload.fly_api_token)
+    if payload.aws_access_key and payload.aws_access_key != MASK:
+        config.aws_access_key_encrypted = encrypt_key(payload.aws_access_key)
+    if payload.aws_secret_key and payload.aws_secret_key != MASK:
+        config.aws_secret_key_encrypted = encrypt_key(payload.aws_secret_key)
+
+    db.commit()
+    return {"message": "Sandbox configuration saved successfully."}
+
+
 @app.get("/api/v1/apps")
 def list_apps(
     db: Session = Depends(get_db),
@@ -691,7 +780,8 @@ def interact(
         tenant=tenant,
         session_id=req.session_id,
         user_message=req.message,
-        prochat_model=req.prochat_model
+        prochat_model=req.prochat_model,
+        user_data=req.user_data
     )
     return result
 
@@ -708,7 +798,8 @@ def stream_interact(
             tenant=tenant,
             session_id=req.session_id,
             user_message=req.message,
-            prochat_model=req.prochat_model
+            prochat_model=req.prochat_model,
+            user_data=req.user_data
         ),
         media_type="text/event-stream"
     )
@@ -743,7 +834,8 @@ def openai_chat_completions(
                     app_id=req.app_id,
                     model_name=req.model or "gemini-2.5-flash",
                     request_source=x_request_source,
-                    prochat_model=req.prochat_model
+                    prochat_model=req.prochat_model,
+                    user_data=req.user_data
                 ),
                 media_type="text/event-stream"
             )
@@ -756,7 +848,8 @@ def openai_chat_completions(
             app_id=req.app_id,
             model_name=req.model,
             request_source=x_request_source,
-            prochat_model=req.prochat_model
+            prochat_model=req.prochat_model,
+            user_data=req.user_data
         )
 
         return {

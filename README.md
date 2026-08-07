@@ -154,6 +154,42 @@ This lets you register different models for different tenants independently.
 
 ---
 
+## 📦 Sandbox Environments
+
+AI Skill Engine runs python code and bash scripts inside secure, isolated sandboxes. You can select and configure the active sandbox environment directly from the **Sandbox Settings** page in the dashboard:
+
+1. **Docker Sandbox (Default)**: Runs scripts inside a local ephemeral Docker container (`ai-sandbox-python:latest`). Keeps your host environment safe.
+2. **Process Sandbox**: Executes commands directly on the host server process. Recommended only for trusted private local setups.
+3. **Azure Container Apps (ACA) Sandboxes**: Offloads executions to secure, Hyper-V isolated container pools. Requires Entra ID App credentials (`Client ID`, `Client Secret`, `Tenant ID`) and a `Session Pool Endpoint` (obtainable from the [Azure portal](https://portal.azure.com) or [sandboxes.azure.com](https://sandboxes.azure.com)).
+4. **E2B Sandboxes**: Runs scripts inside specialized, stateful agentic micro-VMs. Requires an `E2B API Key`.
+5. **Fly.io Sandboxes**: Routes execution to Fly.io Machines. Requires a `Fly API Token` and `App Name`.
+6. **AWS Lambda**: Routes calculations to serverless Lambdas. Requires AWS keys (`Access Key`, `Secret Key`), `Region`, and `Function Name`.
+
+> 🔒 **Security Notice:** If any remote sandbox (Azure, E2B, Fly.io, or Lambda) is active, execution strictly targets that cloud environment. If the sandbox call fails or credentials are incomplete, it returns the error immediately and **never** silently falls back to local host processes.
+
+---
+
+## 💾 Sandbox File Operations & Storage
+
+Managing files between your chatbot and remote execution sandboxes is handled in two ways:
+
+### 1. Auto-Download Pipeline
+When running code inside the Azure ACA Sandbox, the system automatically:
+- Scans the sandbox filesystem for newly created files (e.g. PDFs, CSVs, plots) right after execution.
+- Transfers them back to the host server outputs folder.
+- Generates click-to-download links and surfaces them directly in the Chat Playground.
+
+### 2. Sandbox File Manager Skill
+To give the chatbot explicit control over its environment, enable the `sandbox_file_manager` skill. This grants the LLM access to three tools:
+- `list_sandbox_files`: Lists all files present in the active sandbox workspace.
+- `download_sandbox_file`: Pulls a specific file from the remote sandbox to the local backend server.
+- `upload_sandbox_file`: Uploads local server inputs into the remote sandbox workspace for processing.
+
+### 3. Cloud Storage Skill
+For production environments where local files shouldn't be shared directly, use the `cloud_storage` skill to upload generated outputs directly to cloud buckets (AWS S3 or Azure Blob Storage) and retrieve secure cloud URLs.
+
+---
+
 
 ## 🌐 API Usage
 
@@ -180,12 +216,13 @@ Content-Type: application/json
 | `stream` | bool | `false` | Stream response as SSE events |
 | `session_id` | string | `"default_session"` | Arbitrary ID to label this conversation in execution logs |
 | `app_id` | string | `null` | UUID of an App group — scopes available tools to that App's skills only |
+| `user_data` | object | `null` | Key-value pairs (credentials, API keys, tokens) dynamically resolved inside skill tools (e.g. URLs, headers, arguments) during action runs. Keep secrets hidden from the LLM. |
 
 > **Note:** API client conversations are **not** stored in the chat history. Only Dashboard Chat Playground sessions are persisted. Tool execution results are always logged in the API Execution Logs.
 
 ### From Python (OpenAI SDK)
 
-The OpenAI SDK doesn't natively support `session_id` / `app_id`, so pass them via `extra_body`:
+The OpenAI SDK doesn't natively support `session_id` / `app_id` / `user_data`, so pass them via `extra_body`:
 
 ```python
 from openai import OpenAI
@@ -197,11 +234,14 @@ client = OpenAI(
 
 stream = client.chat.completions.create(
     model="gemini-2.5-flash",
-    messages=[{"role": "user", "content": "Calculate compound interest in Python"}],
+    messages=[{"role": "user", "content": "Fetch weather in London"}],
     stream=True,
     extra_body={
         "session_id": "user_123_thread_1",    # labels this call in execution logs
-        "app_id": "your-app-group-uuid"        # scopes tools to this App's skills only
+        "app_id": "your-app-group-uuid",       # scopes tools to this App's skills only
+        "user_data": {
+            "openweathermap_api_key": "YOUR_SECRET_KEY"  # resolved in weather skill parameters
+        }
     }
 )
 
@@ -216,11 +256,14 @@ curl -X POST http://localhost:2704/api/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "X-API-Key: sk_asr_YOUR_TENANT_KEY" \
   -d '{
-    "messages": [{"role": "user", "content": "Check disk space"}],
+    "messages": [{"role": "user", "content": "Fetch weather in Paris"}],
     "model": "gemini-2.5-flash",
     "stream": false,
     "session_id": "user_123_thread_1",
-    "app_id": "your-app-group-uuid"
+    "app_id": "your-app-group-uuid",
+    "user_data": {
+      "openweathermap_api_key": "YOUR_SECRET_KEY"
+    }
   }'
 ```
 
