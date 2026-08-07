@@ -18,15 +18,22 @@ class HttpExecutor:
             }
 
         try:
+            parsed_url = httpx.URL(url)
+            req_params = arguments
+
+            if method in ["GET", "DELETE"]:
+                parsed_url = parsed_url.copy_merge_params(arguments or {})
+                req_params = None
+
             with httpx.Client(timeout=timeout) as client:
                 if method == "GET":
-                    res = client.get(url, params=arguments, headers=headers)
+                    res = client.get(parsed_url, headers=headers)
                 elif method in ["POST", "PUT", "PATCH"]:
-                    res = client.request(method, url, json=arguments, headers=headers)
+                    res = client.request(method, parsed_url, json=req_params, headers=headers)
                 elif method == "DELETE":
-                    res = client.delete(url, params=arguments, headers=headers)
+                    res = client.delete(parsed_url, headers=headers)
                 else:
-                    res = client.request(method, url, params=arguments, headers=headers)
+                    res = client.request(method, parsed_url, params=req_params, headers=headers)
 
                 elapsed_ms = int((time.time() - start_time) * 1000)
 

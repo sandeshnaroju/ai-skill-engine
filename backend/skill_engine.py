@@ -42,6 +42,40 @@ PROCHAT_SYSTEM_INSTRUCTION = (
     "2. Do not leave out, omit, or truncate any data points, figures, or information from the response."
 )
 
+import re
+from typing import Any
+
+def resolve_user_data_placeholders(target: Any, user_data: dict) -> Any:
+    if not user_data or not isinstance(user_data, dict):
+        return target
+    
+    if isinstance(target, str):
+        def replace(match):
+            placeholder = match.group(1).strip()
+            if placeholder.startswith("user_data."):
+                key = placeholder[len("user_data."):]
+            else:
+                key = placeholder
+            
+            parts = key.split(".")
+            val = user_data
+            for part in parts:
+                if isinstance(val, dict) and part in val:
+                    val = val[part]
+                else:
+                    print(f"DEBUG resolve: key '{part}' not found in user_data structure.")
+                    return match.group(0)
+            print(f"DEBUG resolve: Replaced placeholder '{placeholder}' with '{val}'")
+            return str(val)
+            
+        return re.sub(r'\{\{([^}]+)\}\}', replace, target)
+        
+    elif isinstance(target, dict):
+        return {k: resolve_user_data_placeholders(v, user_data) for k, v in target.items()}
+    elif isinstance(target, list):
+        return [resolve_user_data_placeholders(item, user_data) for item in target]
+    return target
+
 class SkillEngine:
     def _get_prochat_ui(self, db: Session, tenant, messages, final_text: str, prochat_model: str = None) -> tuple:
         """Helper to fetch UI components from ProChat API (non-streaming).
@@ -107,7 +141,8 @@ class SkillEngine:
         max_turns: int = 25,
         model_name: str = None,
         request_source: str = "api",
-        prochat_model: str = None
+        prochat_model: str = None,
+        user_data: dict = None
     ) -> dict:
         start_time = time.time()
 
@@ -319,14 +354,18 @@ class SkillEngine:
                             exec_res = {"stdout": "", "stderr": tool_result, "exit_code": 1, "execution_time_ms": 0, "sandbox_type": "process"}
                             command = f"Error: Tool {fn_name}"
                         else:
+                            import copy
+                            exec_tool_def = resolve_user_data_placeholders(copy.deepcopy(tool_def), user_data)
+                            exec_args = resolve_user_data_placeholders(copy.deepcopy(args), user_data)
+
                             tool_type = tool_def.get("type", "shell")
                             if tool_type in ["http", "rest_api", "api"]:
                                 from executors.http_executor import http_executor
-                                exec_res = http_executor.execute(tool_def=tool_def, arguments=args)
+                                exec_res = http_executor.execute(tool_def=exec_tool_def, arguments=exec_args)
                                 command = f"{tool_def.get('method', 'GET')} {tool_def.get('url')} params={json.dumps(args)}"
                             elif tool_type in ["mcp", "mcp_stdio"]:
                                 from executors.mcp_executor import mcp_executor
-                                exec_res = mcp_executor.execute(tool_def=tool_def, arguments=args)
+                                exec_res = mcp_executor.execute(tool_def=exec_tool_def, arguments=exec_args)
                                 command = tool_def.get("mcp_command") or tool_def.get("command") or f"MCP Call {fn_name}"
                             elif tool_type == "mcp_server":
                                 from mcp_manager import mcp_manager
@@ -334,25 +373,26 @@ class SkillEngine:
                                 srv_data = mcp_servers.get(srv_id)
                                 if srv_data:
                                     srv_obj = SimpleMcpServerObj(**srv_data)
-                                    exec_res = mcp_manager.call_tool(srv_obj, tool_def.get("name"), args)
+                                    exec_res = mcp_manager.call_tool(srv_obj, exec_tool_def.get("name"), exec_args)
                                     command = f"MCP Server {srv_obj.name} -> tool {tool_def.get('name')}"
                                 else:
                                     exec_res = {"stdout": "", "stderr": "MCP Server not found", "exit_code": 1, "execution_time_ms": 0, "sandbox_type": "mcp"}
                                     command = "MCP Call"
                             else:
+                                exec_command = exec_tool_def.get("command", "")
                                 command = tool_def.get("command", "")
-                                code = args.get("code") if tool_type == "code" else None
+                                code = exec_args.get("code") if tool_type == "code" else None
                                 tenant_name = tenant.name if tenant else "default"
                                 
                                 # Intercept explicit cloud & HTTP skills to run on host instead of isolated offline sandbox
                                 if fn_name == "cloud_storage__upload_to_storage":
-                                    exec_res = run_upload_to_storage_tool(db, args, tenant)
+                                    exec_res = run_upload_to_storage_tool(db, exec_args, tenant)
                                 elif fn_name == "cloud_storage__download_from_storage":
-                                    exec_res = run_download_from_storage_tool(db, args, tenant)
+                                    exec_res = run_download_from_storage_tool(db, exec_args, tenant)
                                 elif fn_name == "http_fetcher__download_public_file":
-                                    exec_res = run_download_public_file_tool(db, args, tenant)
+                                    exec_res = run_download_public_file_tool(db, exec_args, tenant)
                                 else:
-                                    exec_res = sandbox_manager.execute(command=command, code=code)
+                                    exec_res = sandbox_manager.execute(command=exec_command, code=code)
                                     exec_res = map_local_generated_files_to_tenant(exec_res, tenant_name=tenant_name)
 
                             tool_result = exec_res.get("stdout") or exec_res.get("stderr") or "Execution completed cleanly with no output."
@@ -511,7 +551,8 @@ class SkillEngine:
         model_name: str = "gemini-2.5-flash",
         max_turns: int = 25,
         request_source: str = "api",
-        prochat_model: str = None
+        prochat_model: str = None,
+        user_data: dict = None
     ):
         start_time = time.time()
 
@@ -802,14 +843,18 @@ class SkillEngine:
                             exec_res = {"stdout": "", "stderr": tool_result, "exit_code": 1, "execution_time_ms": 0, "sandbox_type": "process"}
                             command = f"Error: Tool {fn_name}"
                         else:
+                            import copy
+                            exec_tool_def = resolve_user_data_placeholders(copy.deepcopy(tool_def), user_data)
+                            exec_args = resolve_user_data_placeholders(copy.deepcopy(args), user_data)
+
                             tool_type = tool_def.get("type", "shell")
                             if tool_type in ["http", "rest_api", "api"]:
                                 from executors.http_executor import http_executor
-                                exec_res = http_executor.execute(tool_def=tool_def, arguments=args)
+                                exec_res = http_executor.execute(tool_def=exec_tool_def, arguments=exec_args)
                                 command = f"{tool_def.get('method', 'GET')} {tool_def.get('url')} params={json.dumps(args)}"
                             elif tool_type in ["mcp", "mcp_stdio"]:
                                 from executors.mcp_executor import mcp_executor
-                                exec_res = mcp_executor.execute(tool_def=tool_def, arguments=args)
+                                exec_res = mcp_executor.execute(tool_def=exec_tool_def, arguments=exec_args)
                                 command = tool_def.get("mcp_command") or tool_def.get("command") or f"MCP Call {fn_name}"
                             elif tool_type == "mcp_server":
                                 from mcp_manager import mcp_manager
@@ -817,25 +862,26 @@ class SkillEngine:
                                 srv_data = mcp_servers.get(srv_id)
                                 if srv_data:
                                     srv_obj = SimpleMcpServerObj(**srv_data)
-                                    exec_res = mcp_manager.call_tool(srv_obj, tool_def.get("name"), args)
+                                    exec_res = mcp_manager.call_tool(srv_obj, exec_tool_def.get("name"), exec_args)
                                     command = f"MCP Server {srv_obj.name} -> tool {tool_def.get('name')}"
                                 else:
                                     exec_res = {"stdout": "", "stderr": "MCP Server not found", "exit_code": 1, "execution_time_ms": 0, "sandbox_type": "mcp"}
                                     command = "MCP Call"
                             else:
+                                exec_command = exec_tool_def.get("command", "")
                                 command = tool_def.get("command", "")
-                                code = args.get("code") if tool_type == "code" else None
+                                code = exec_args.get("code") if tool_type == "code" else None
                                 tenant_name = tenant.name if tenant else "default"
                                 
                                 # Intercept explicit cloud & HTTP skills to run on host instead of isolated offline sandbox
                                 if fn_name == "cloud_storage__upload_to_storage":
-                                    exec_res = run_upload_to_storage_tool(db, args, tenant)
+                                    exec_res = run_upload_to_storage_tool(db, exec_args, tenant)
                                 elif fn_name == "cloud_storage__download_from_storage":
-                                    exec_res = run_download_from_storage_tool(db, args, tenant)
+                                    exec_res = run_download_from_storage_tool(db, exec_args, tenant)
                                 elif fn_name == "http_fetcher__download_public_file":
-                                    exec_res = run_download_public_file_tool(db, args, tenant)
+                                    exec_res = run_download_public_file_tool(db, exec_args, tenant)
                                 else:
-                                    exec_res = sandbox_manager.execute(command=command, code=code)
+                                    exec_res = sandbox_manager.execute(command=exec_command, code=code)
                                     exec_res = map_local_generated_files_to_tenant(exec_res, tenant_name=tenant_name)
 
                             tool_result = exec_res.get("stdout") or exec_res.get("stderr") or "Execution completed cleanly with no output."

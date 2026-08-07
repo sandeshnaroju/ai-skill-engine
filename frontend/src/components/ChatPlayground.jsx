@@ -44,6 +44,31 @@ export default function ChatPlayground() {
   // Collapsible configuration sidebar state
   const [isSettingsOpen, setIsSettingsOpen] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [userDataPairs, setUserDataPairs] = useState([{ key: 'api_key', value: 'example_secret_key' }]);
+
+  const handleAddUserDataPair = () => {
+    setUserDataPairs([...userDataPairs, { key: '', value: '' }]);
+  };
+
+  const handleRemoveUserDataPair = (index) => {
+    setUserDataPairs(userDataPairs.filter((_, idx) => idx !== index));
+  };
+
+  const handleUserDataPairChange = (index, field, value) => {
+    const updated = [...userDataPairs];
+    updated[index][field] = value;
+    setUserDataPairs(updated);
+  };
+
+  const getUserDataPayload = () => {
+    const obj = {};
+    userDataPairs.forEach(p => {
+      if (p.key.trim()) {
+        obj[p.key.trim()] = p.value;
+      }
+    });
+    return Object.keys(obj).length > 0 ? obj : null;
+  };
   // ProChat model selection — empty string = disabled, model name string = enabled with that model
   const [prochatModel, setProchatModel] = useState('');
 
@@ -521,6 +546,10 @@ export default function ChatPlayground() {
       };
       if (selectedAppId) {
         payload.app_id = selectedAppId;
+      }
+      const userDataPayload = getUserDataPayload();
+      if (userDataPayload) {
+        payload.user_data = userDataPayload;
       }
 
       const res = await fetch('/api/v1/chat/completions', {
@@ -1611,7 +1640,74 @@ export default function ChatPlayground() {
                 )}
               </div>
 
-              <div style={{ borderTop: '1px solid var(--border-subtle)', my: '10px' }} />
+              {/* Section 3.8: User Data Context */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.5px' }}>
+                  User Data Context (Optional)
+                </label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {userDataPairs.map((pair, idx) => (
+                    <div key={idx} style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                      <input
+                        type="text"
+                        placeholder="Key"
+                        value={pair.key}
+                        onChange={(e) => handleUserDataPairChange(idx, 'key', e.target.value)}
+                        style={{
+                          flex: 1,
+                          background: 'var(--bg-input)',
+                          border: '1px solid var(--border-subtle)',
+                          borderRadius: '8px',
+                          padding: '6px 8px',
+                          color: 'var(--text-main)',
+                          fontSize: '0.76rem',
+                          outline: 'none'
+                        }}
+                      />
+                      <input
+                        type="text"
+                        placeholder="Value"
+                        value={pair.value}
+                        onChange={(e) => handleUserDataPairChange(idx, 'value', e.target.value)}
+                        style={{
+                          flex: 1.2,
+                          background: 'var(--bg-input)',
+                          border: '1px solid var(--border-subtle)',
+                          borderRadius: '8px',
+                          padding: '6px 8px',
+                          color: 'var(--text-main)',
+                          fontSize: '0.76rem',
+                          outline: 'none'
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveUserDataPair(idx)}
+                        style={{
+                          background: 'transparent',
+                          border: 'none',
+                          color: '#ef4444',
+                          cursor: 'pointer',
+                          fontSize: '0.86rem',
+                          padding: '2px'
+                        }}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    className="btn-outline"
+                    onClick={handleAddUserDataPair}
+                    style={{ padding: '4px 8px', fontSize: '0.72rem', alignSelf: 'flex-start' }}
+                  >
+                    + Add Pair
+                  </button>
+                </div>
+              </div>
+
+              <div style={{ borderTop: '1px solid var(--border-subtle)', margin: '10px 0' }} />
 
               {/* Section 4: Utility Controls */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>

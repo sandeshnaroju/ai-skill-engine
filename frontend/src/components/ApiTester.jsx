@@ -12,6 +12,31 @@ export default function ApiTester() {
   const [prochatModel, setProchatModel] = useState('');
   const [message, setMessage] = useState('Check disk space and system uptime');
   const [stream, setStream] = useState(true);
+  const [userDataPairs, setUserDataPairs] = useState([{ key: 'api_key', value: 'example_secret_key' }]);
+
+  const handleAddUserDataPair = () => {
+    setUserDataPairs([...userDataPairs, { key: '', value: '' }]);
+  };
+
+  const handleRemoveUserDataPair = (index) => {
+    setUserDataPairs(userDataPairs.filter((_, idx) => idx !== index));
+  };
+
+  const handleUserDataPairChange = (index, field, value) => {
+    const updated = [...userDataPairs];
+    updated[index][field] = value;
+    setUserDataPairs(updated);
+  };
+
+  const getUserDataPayload = () => {
+    const obj = {};
+    userDataPairs.forEach(p => {
+      if (p.key.trim()) {
+        obj[p.key.trim()] = p.value;
+      }
+    });
+    return Object.keys(obj).length > 0 ? obj : null;
+  };
 
   // File upload state for testing
   const [uploading, setUploading] = useState(false);
@@ -179,6 +204,11 @@ export default function ApiTester() {
       payload.prochat_model = prochatModel.trim();
     }
 
+    const userDataPayload = getUserDataPayload();
+    if (userDataPayload) {
+      payload.user_data = userDataPayload;
+    }
+
     try {
       logText(`Sending HTTP request...`);
       const res = await fetch('/api/v1/chat/completions', {
@@ -302,12 +332,15 @@ export default function ApiTester() {
     }
   }
 
+  const userDataPayloadForCurl = getUserDataPayload();
+
   const requestPayload = {
     messages: [{ role: 'user', content: curlContent }],
     model: model,
     stream: stream,
     ...(appId && { app_id: appId }),
-    ...(prochatModel.trim() && { prochat_model: prochatModel.trim() })
+    ...(prochatModel.trim() && { prochat_model: prochatModel.trim() }),
+    ...(userDataPayloadForCurl && { user_data: userDataPayloadForCurl })
   };
 
   const curlCommand = `curl -X POST http://localhost:8000/api/v1/chat/completions \\
@@ -525,6 +558,68 @@ export default function ApiTester() {
                 </div>
               </div>
             )}
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <label style={{ fontSize: '0.76rem', color: 'var(--text-sub)', fontWeight: '600' }}>User Data Context (Optional)</label>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {userDataPairs.map((pair, idx) => (
+                <div key={idx} style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <input
+                    type="text"
+                    placeholder="Key"
+                    value={pair.key}
+                    onChange={(e) => handleUserDataPairChange(idx, 'key', e.target.value)}
+                    style={{
+                      flex: 1,
+                      background: 'var(--bg-input)',
+                      border: '1px solid var(--border-subtle)',
+                      borderRadius: '8px',
+                      padding: '8px 10px',
+                      color: 'var(--text-main)',
+                      fontSize: '0.8rem'
+                    }}
+                  />
+                  <input
+                    type="text"
+                    placeholder="Value"
+                    value={pair.value}
+                    onChange={(e) => handleUserDataPairChange(idx, 'value', e.target.value)}
+                    style={{
+                      flex: 1.2,
+                      background: 'var(--bg-input)',
+                      border: '1px solid var(--border-subtle)',
+                      borderRadius: '8px',
+                      padding: '8px 10px',
+                      color: 'var(--text-main)',
+                      fontSize: '0.8rem'
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveUserDataPair(idx)}
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      color: '#ef4444',
+                      cursor: 'pointer',
+                      fontSize: '0.9rem',
+                      padding: '4px'
+                    }}
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+              <button
+                type="button"
+                className="btn-outline"
+                onClick={handleAddUserDataPair}
+                style={{ padding: '6px 12px', fontSize: '0.78rem', alignSelf: 'flex-start' }}
+              >
+                + Add Pair
+              </button>
+            </div>
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
