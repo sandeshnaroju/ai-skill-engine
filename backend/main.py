@@ -67,6 +67,7 @@ class PlaygroundChatRequest(BaseModel):
     message: str
     session_id: Optional[str] = "default_session"
     prochat_model: Optional[str] = None
+    user_data: Optional[dict] = None
 
 class OpenAIStyleMessage(BaseModel):
     role: str
@@ -79,6 +80,7 @@ class OpenAIChatRequest(BaseModel):
     app_id: Optional[str] = None
     stream: Optional[bool] = False
     prochat_model: Optional[str] = None
+    user_data: Optional[dict] = None
 
 class TenantCreate(BaseModel):
     name: str
@@ -691,7 +693,8 @@ def interact(
         tenant=tenant,
         session_id=req.session_id,
         user_message=req.message,
-        prochat_model=req.prochat_model
+        prochat_model=req.prochat_model,
+        user_data=req.user_data
     )
     return result
 
@@ -708,7 +711,8 @@ def stream_interact(
             tenant=tenant,
             session_id=req.session_id,
             user_message=req.message,
-            prochat_model=req.prochat_model
+            prochat_model=req.prochat_model,
+            user_data=req.user_data
         ),
         media_type="text/event-stream"
     )
@@ -743,7 +747,8 @@ def openai_chat_completions(
                     app_id=req.app_id,
                     model_name=req.model or "gemini-2.5-flash",
                     request_source=x_request_source,
-                    prochat_model=req.prochat_model
+                    prochat_model=req.prochat_model,
+                    user_data=req.user_data
                 ),
                 media_type="text/event-stream"
             )
@@ -756,7 +761,8 @@ def openai_chat_completions(
             app_id=req.app_id,
             model_name=req.model,
             request_source=x_request_source,
-            prochat_model=req.prochat_model
+            prochat_model=req.prochat_model,
+            user_data=req.user_data
         )
 
         return {

@@ -180,12 +180,13 @@ Content-Type: application/json
 | `stream` | bool | `false` | Stream response as SSE events |
 | `session_id` | string | `"default_session"` | Arbitrary ID to label this conversation in execution logs |
 | `app_id` | string | `null` | UUID of an App group — scopes available tools to that App's skills only |
+| `user_data` | object | `null` | Key-value pairs (credentials, API keys, tokens) dynamically resolved inside skill tools (e.g. URLs, headers, arguments) during action runs. Keep secrets hidden from the LLM. |
 
 > **Note:** API client conversations are **not** stored in the chat history. Only Dashboard Chat Playground sessions are persisted. Tool execution results are always logged in the API Execution Logs.
 
 ### From Python (OpenAI SDK)
 
-The OpenAI SDK doesn't natively support `session_id` / `app_id`, so pass them via `extra_body`:
+The OpenAI SDK doesn't natively support `session_id` / `app_id` / `user_data`, so pass them via `extra_body`:
 
 ```python
 from openai import OpenAI
@@ -197,11 +198,14 @@ client = OpenAI(
 
 stream = client.chat.completions.create(
     model="gemini-2.5-flash",
-    messages=[{"role": "user", "content": "Calculate compound interest in Python"}],
+    messages=[{"role": "user", "content": "Fetch weather in London"}],
     stream=True,
     extra_body={
         "session_id": "user_123_thread_1",    # labels this call in execution logs
-        "app_id": "your-app-group-uuid"        # scopes tools to this App's skills only
+        "app_id": "your-app-group-uuid",       # scopes tools to this App's skills only
+        "user_data": {
+            "openweathermap_api_key": "YOUR_SECRET_KEY"  # resolved in weather skill parameters
+        }
     }
 )
 
@@ -216,11 +220,14 @@ curl -X POST http://localhost:2704/api/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "X-API-Key: sk_asr_YOUR_TENANT_KEY" \
   -d '{
-    "messages": [{"role": "user", "content": "Check disk space"}],
+    "messages": [{"role": "user", "content": "Fetch weather in Paris"}],
     "model": "gemini-2.5-flash",
     "stream": false,
     "session_id": "user_123_thread_1",
-    "app_id": "your-app-group-uuid"
+    "app_id": "your-app-group-uuid",
+    "user_data": {
+      "openweathermap_api_key": "YOUR_SECRET_KEY"
+    }
   }'
 ```
 
