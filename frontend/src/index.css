@@ -289,6 +289,36 @@ input:focus, select:focus, textarea:focus {
   border: 1px solid rgba(20, 184, 166, 0.25);
 }
 
+.tag-http_api {
+  background: rgba(20, 184, 166, 0.12);
+  color: var(--accent-teal);
+  border: 1px solid rgba(20, 184, 166, 0.25);
+}
+
+.tag-e2b {
+  background: rgba(255, 112, 67, 0.12);
+  color: #FF7043;
+  border: 1px solid rgba(255, 112, 67, 0.25);
+}
+
+.tag-azure_aca {
+  background: rgba(0, 120, 212, 0.12);
+  color: #0078D4;
+  border: 1px solid rgba(0, 120, 212, 0.25);
+}
+
+.tag-fly_io {
+  background: rgba(63, 81, 181, 0.12);
+  color: #3F51B5;
+  border: 1px solid rgba(63, 81, 181, 0.25);
+}
+
+.tag-aws_lambda {
+  background: rgba(255, 153, 0, 0.12);
+  color: #FF9900;
+  border: 1px solid rgba(255, 153, 0, 0.25);
+}
+
 /* Animations */
 .spin {
   animation: spin 1s linear infinite;

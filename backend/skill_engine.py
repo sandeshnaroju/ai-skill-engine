@@ -382,6 +382,10 @@ class SkillEngine:
                                 exec_command = exec_tool_def.get("command", "")
                                 command = tool_def.get("command", "")
                                 code = exec_args.get("code") if tool_type == "code" else None
+                                if tool_type == "code" and code:
+                                    command = code
+                                elif not command:
+                                    command = exec_command
                                 tenant_name = tenant.name if tenant else "default"
                                 
                                 # Intercept explicit cloud & HTTP skills to run on host instead of isolated offline sandbox
@@ -391,8 +395,14 @@ class SkillEngine:
                                     exec_res = run_download_from_storage_tool(db, exec_args, tenant)
                                 elif fn_name == "http_fetcher__download_public_file":
                                     exec_res = run_download_public_file_tool(db, exec_args, tenant)
+                                elif fn_name == "sandbox_file_manager__list_sandbox_files":
+                                    exec_res = run_list_sandbox_files(db, session_id)
+                                elif fn_name == "sandbox_file_manager__download_sandbox_file":
+                                    exec_res = run_download_sandbox_file(db, session_id, exec_args)
+                                elif fn_name == "sandbox_file_manager__upload_sandbox_file":
+                                    exec_res = run_upload_sandbox_file(db, session_id, exec_args)
                                 else:
-                                    exec_res = sandbox_manager.execute(command=exec_command, code=code)
+                                    exec_res = sandbox_manager.execute(command=exec_command, code=code, session_id=session_id)
                                     exec_res = map_local_generated_files_to_tenant(exec_res, tenant_name=tenant_name)
 
                             tool_result = exec_res.get("stdout") or exec_res.get("stderr") or "Execution completed cleanly with no output."
@@ -871,6 +881,10 @@ class SkillEngine:
                                 exec_command = exec_tool_def.get("command", "")
                                 command = tool_def.get("command", "")
                                 code = exec_args.get("code") if tool_type == "code" else None
+                                if tool_type == "code" and code:
+                                    command = code
+                                elif not command:
+                                    command = exec_command
                                 tenant_name = tenant.name if tenant else "default"
                                 
                                 # Intercept explicit cloud & HTTP skills to run on host instead of isolated offline sandbox
@@ -880,8 +894,14 @@ class SkillEngine:
                                     exec_res = run_download_from_storage_tool(db, exec_args, tenant)
                                 elif fn_name == "http_fetcher__download_public_file":
                                     exec_res = run_download_public_file_tool(db, exec_args, tenant)
+                                elif fn_name == "sandbox_file_manager__list_sandbox_files":
+                                    exec_res = run_list_sandbox_files(db, session_id)
+                                elif fn_name == "sandbox_file_manager__download_sandbox_file":
+                                    exec_res = run_download_sandbox_file(db, session_id, exec_args)
+                                elif fn_name == "sandbox_file_manager__upload_sandbox_file":
+                                    exec_res = run_upload_sandbox_file(db, session_id, exec_args)
                                 else:
-                                    exec_res = sandbox_manager.execute(command=exec_command, code=code)
+                                    exec_res = sandbox_manager.execute(command=exec_command, code=code, session_id=session_id)
                                     exec_res = map_local_generated_files_to_tenant(exec_res, tenant_name=tenant_name)
 
                             tool_result = exec_res.get("stdout") or exec_res.get("stderr") or "Execution completed cleanly with no output."
@@ -1431,5 +1451,111 @@ def map_local_generated_files_to_tenant(exec_res: dict, tenant_name: str = "defa
             f["url"] = f"/api/v1/files/download/{tenant_name}/{f['filename']}"
             f["sandbox_path"] = f"sandbox/outputs/{tenant_name}/{f['filename']}"
     return exec_res
+
+def run_list_sandbox_files(db, session_id: str):
+    from models import SandboxConfig
+    from encryption_utils import decrypt_key
+    from sandbox.remote_runner import remote_runner
+    import os
+    
+    config = db.query(SandboxConfig).filter(SandboxConfig.is_active == True).first()
+    if config and config.provider == "azure":
+        client_id = decrypt_key(config.azure_client_id_encrypted)
+        client_secret = decrypt_key(config.azure_client_secret_encrypted)
+        tenant_id = decrypt_key(config.azure_tenant_id_encrypted)
+        pool_endpoint = config.azure_session_pool_endpoint
+        if client_id and client_secret and tenant_id and pool_endpoint:
+            try:
+                files = remote_runner.list_files_azure(client_id, client_secret, tenant_id, pool_endpoint, session_id)
+                stdout = "Files in Azure ACA Sandbox:\n" + "\n".join([f"- {f['filename']} ({f['size']} bytes, modified {f['last_modified']})" for f in files])
+                return {"stdout": stdout, "stderr": "", "exit_code": 0, "sandbox_type": "azure_aca"}
+            except Exception as e:
+                return {"stdout": "", "stderr": f"Failed to list sandbox files: {str(e)}", "exit_code": 1, "sandbox_type": "azure_aca"}
+    
+    # Fallback/Local list
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    outputs_dir = os.path.join(base_dir, "sandbox", "outputs")
+    os.makedirs(outputs_dir, exist_ok=True)
+    files = os.listdir(outputs_dir)
+    stdout = "Files in local outputs folder:\n" + "\n".join([f"- {f}" for f in files])
+    return {"stdout": stdout, "stderr": "", "exit_code": 0, "sandbox_type": "process"}
+
+
+def run_download_sandbox_file(db, session_id: str, args: dict):
+    from models import SandboxConfig
+    from encryption_utils import decrypt_key
+    from sandbox.remote_runner import remote_runner
+    import os
+    import uuid
+    
+    filename = args.get("filename")
+    if not filename:
+        return {"stdout": "", "stderr": "Error: filename is required", "exit_code": 1, "sandbox_type": "process"}
+        
+    config = db.query(SandboxConfig).filter(SandboxConfig.is_active == True).first()
+    if config and config.provider == "azure":
+        client_id = decrypt_key(config.azure_client_id_encrypted)
+        client_secret = decrypt_key(config.azure_client_secret_encrypted)
+        tenant_id = decrypt_key(config.azure_tenant_id_encrypted)
+        pool_endpoint = config.azure_session_pool_endpoint
+        if client_id and client_secret and tenant_id and pool_endpoint:
+            try:
+                content = remote_runner.download_file_azure(client_id, client_secret, tenant_id, pool_endpoint, session_id, filename)
+                
+                unique_name = f"{uuid.uuid4().hex}_{filename}"
+                base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                outputs_dir = os.path.join(base_dir, "sandbox", "outputs")
+                os.makedirs(outputs_dir, exist_ok=True)
+                
+                with open(os.path.join(outputs_dir, unique_name), "wb") as f:
+                    f.write(content)
+                    
+                download_url = f"/api/v1/files/download/{unique_name}"
+                stdout = f"Successfully downloaded file. Available locally at: {download_url}"
+                generated_files = [{
+                    "filename": unique_name,
+                    "original_name": filename,
+                    "url": download_url,
+                    "sandbox_path": f"sandbox/outputs/{unique_name}"
+                }]
+                return {"stdout": stdout, "stderr": "", "exit_code": 0, "sandbox_type": "azure_aca", "generated_files": generated_files}
+            except Exception as e:
+                return {"stdout": "", "stderr": f"Failed to download file from sandbox: {str(e)}", "exit_code": 1, "sandbox_type": "azure_aca"}
+                
+    # Local fallback
+    return {"stdout": f"File {filename} is already present locally.", "stderr": "", "exit_code": 0, "sandbox_type": "process"}
+
+
+def run_upload_sandbox_file(db, session_id: str, args: dict):
+    from models import SandboxConfig
+    from encryption_utils import decrypt_key
+    from sandbox.remote_runner import remote_runner
+    import os
+    
+    local_path = args.get("local_path")
+    if not local_path:
+        return {"stdout": "", "stderr": "Error: local_path is required", "exit_code": 1, "sandbox_type": "process"}
+        
+    if not os.path.exists(local_path):
+        return {"stdout": "", "stderr": f"Error: Local file {local_path} does not exist.", "exit_code": 1, "sandbox_type": "process"}
+        
+    filename = os.path.basename(local_path)
+    with open(local_path, "rb") as f:
+        content = f.read()
+        
+    config = db.query(SandboxConfig).filter(SandboxConfig.is_active == True).first()
+    if config and config.provider == "azure":
+        client_id = decrypt_key(config.azure_client_id_encrypted)
+        client_secret = decrypt_key(config.azure_client_secret_encrypted)
+        tenant_id = decrypt_key(config.azure_tenant_id_encrypted)
+        pool_endpoint = config.azure_session_pool_endpoint
+        if client_id and client_secret and tenant_id and pool_endpoint:
+            try:
+                remote_runner.upload_file_azure(client_id, client_secret, tenant_id, pool_endpoint, session_id, filename, content)
+                return {"stdout": f"Successfully uploaded {filename} to Azure ACA Sandbox workspace.", "stderr": "", "exit_code": 0, "sandbox_type": "azure_aca"}
+            except Exception as e:
+                return {"stdout": "", "stderr": f"Failed to upload file to sandbox: {str(e)}", "exit_code": 1, "sandbox_type": "azure_aca"}
+                
+    return {"stdout": f"Uploaded {filename} to local sandbox workspace.", "stderr": "", "exit_code": 0, "sandbox_type": "process"}
 
 skill_engine = SkillEngine()

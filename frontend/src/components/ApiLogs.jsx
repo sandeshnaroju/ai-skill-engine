@@ -145,6 +145,10 @@ export default function ApiLogs() {
               <option value="DOCKER">Docker Sandbox</option>
               <option value="PROCESS">Process Sandbox</option>
               <option value="HTTP_API">HTTP REST API</option>
+              <option value="E2B">E2B Sandbox</option>
+              <option value="AZURE_ACA">Azure ACA Sandbox</option>
+              <option value="FLY_IO">Fly.io Sandbox</option>
+              <option value="AWS_LAMBDA">AWS Lambda Sandbox</option>
             </select>
           </div>
 
