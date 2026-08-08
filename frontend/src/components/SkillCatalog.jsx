@@ -1,18 +1,45 @@
 import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Cpu, RefreshCw, Layers, Search, Code, Plus, Edit, Trash2, X, Check, Save, FileText, Database, HardDrive, Box, Filter, ChevronLeft, ChevronRight } from 'lucide-react';
 import AsyncSearchableDropdown from './AsyncSearchableDropdown';
 
 export default function SkillCatalog() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [skills, setSkills] = useState([]);
   const [toolsSchema, setToolsSchema] = useState([]);
   const [apps, setApps] = useState([]);
   const [selectedAppId, setSelectedAppId] = useState('');
   const [loading, setLoading] = useState(false);
-  const [search, setSearch] = useState('');
 
-  // Pagination state
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(6);
+  // Syncing with URL parameters
+  const page = parseInt(searchParams.get('page') || '1', 10);
+  const pageSize = parseInt(searchParams.get('page_size') || '6', 10);
+  const search = searchParams.get('search') || '';
+
+  const setPage = (val) => {
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set('page', typeof val === 'function' ? val(page).toString() : val.toString());
+    setSearchParams(nextParams);
+  };
+
+  const setPageSize = (val) => {
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set('page_size', typeof val === 'function' ? val(pageSize).toString() : val.toString());
+    nextParams.set('page', '1');
+    setSearchParams(nextParams);
+  };
+
+  const setSearch = (val) => {
+    const nextParams = new URLSearchParams(searchParams);
+    if (val) {
+      nextParams.set('search', val);
+    } else {
+      nextParams.delete('search');
+    }
+    nextParams.set('page', '1');
+    setSearchParams(nextParams);
+  };
+
   const [totalPages, setTotalPages] = useState(1);
   const [totalItems, setTotalItems] = useState(0);
 

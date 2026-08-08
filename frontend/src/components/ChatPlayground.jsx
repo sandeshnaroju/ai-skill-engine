@@ -1,17 +1,33 @@
 import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Send, Bot, User, Terminal, Sparkles, Trash2, Check, Copy, Activity, Code2, Globe, Plus, MessageSquare, Brain, ChevronDown, ChevronUp, Cpu, ShieldCheck, Box, Key, Download, X, History, FileText, Sparkle, Sliders, Paperclip, Maximize2, Minimize2, Loader } from 'lucide-react';
 import AsyncSearchableDropdown from './AsyncSearchableDropdown';
 import ProChat from 'prochat';
 
 export default function ChatPlayground() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [initialSessionId] = useState(() => `session_${Math.floor(1000 + Math.random() * 9000)}`);
   const [sessions, setSessions] = useState([]);
-  const [activeSessionId, setActiveSessionId] = useState('');
+
+  const activeSessionId = searchParams.get('session_id') || '';
+
+  const setActiveSessionId = (id) => {
+    const nextParams = new URLSearchParams(searchParams);
+    if (id) {
+      nextParams.set('session_id', id);
+    } else {
+      nextParams.delete('session_id');
+    }
+    setSearchParams(nextParams);
+  };
 
   const [messages, setMessages] = useState([]);
 
   useEffect(() => {
-    if (initialSessionId) {
+    const urlSessionId = searchParams.get('session_id');
+    if (urlSessionId) {
+      setSessions([{ id: urlSessionId, name: `Session ${urlSessionId}`, lastTime: 'Just now' }]);
+    } else if (initialSessionId) {
       setSessions([{ id: initialSessionId, name: 'New Chat Session #1', lastTime: 'Just now' }]);
       setActiveSessionId(initialSessionId);
       setMessages([
@@ -24,20 +40,42 @@ export default function ChatPlayground() {
       ]);
     }
   }, [initialSessionId]);
-
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [liveThought, setLiveThought] = useState('');
   const [executedTools, setExecutedTools] = useState([]);
-  const [apiKey, setApiKey] = useState('');
-  const [selectedAppId, setSelectedAppId] = useState('');
-  const [selectedModel, setSelectedModel] = useState('');
+  const [tenants, setTenants] = useState([]);
+  const selectedTenantId = searchParams.get('tenant') || '';
+  const setSelectedTenantId = (val) => {
+    const nextParams = new URLSearchParams(searchParams);
+    if (val) nextParams.set('tenant', val);
+    else nextParams.delete('tenant');
+    setSearchParams(nextParams);
+  };
+  const activeTenant = tenants.find(t => t.id === selectedTenantId) || tenants[0];
+  const apiKey = activeTenant ? activeTenant.api_key : '';
+
+  const selectedAppId = searchParams.get('app_id') || '';
+  const selectedModel = searchParams.get('model') || '';
+
+  const setSelectedAppId = (val) => {
+    const nextParams = new URLSearchParams(searchParams);
+    if (val) nextParams.set('app_id', val);
+    else nextParams.delete('app_id');
+    setSearchParams(nextParams);
+  };
+
+  const setSelectedModel = (val) => {
+    const nextParams = new URLSearchParams(searchParams);
+    if (val) nextParams.set('model', val);
+    else nextParams.delete('model');
+    setSearchParams(nextParams);
+  };
 
   // Custom tenant models list
   const [tenantModels, setTenantModels] = useState([]);
 
   const [apps, setApps] = useState([]);
-  const [tenants, setTenants] = useState([]);
   const [copiedIdx, setCopiedIdx] = useState(null);
   const [expandedReasoning, setExpandedReasoning] = useState({});
 
@@ -313,6 +351,12 @@ export default function ChatPlayground() {
     }
   };
 
+  useEffect(() => {
+    if (activeSessionId && apiKey) {
+      fetchSessionMessages(activeSessionId, apiKey);
+    }
+  }, [activeSessionId, apiKey]);
+
   const loadMetaData = async () => {
     try {
       const [appsRes, tenantsRes] = await Promise.all([
@@ -322,16 +366,30 @@ export default function ChatPlayground() {
       const appsData = await appsRes.json();
       const tenantsData = await tenantsRes.json();
 
-      setApps(appsData || []);
+      const appsList = appsData?.items || appsData || [];
+      setApps(appsList);
       setTenants(tenantsData || []);
 
-      let keyToUse = apiKey;
-      if (tenantsData.length > 0 && !apiKey) {
-        keyToUse = tenantsData[0].api_key;
-        setApiKey(keyToUse);
+      // Auto-select first tenant if none selected
+      let tenantIdToUse = selectedTenantId;
+      if (tenantsData.length > 0 && !selectedTenantId) {
+        tenantIdToUse = tenantsData[0].id;
+        setSelectedTenantId(tenantIdToUse);
       }
 
+      const activeT = tenantsData.find(t => t.id === tenantIdToUse) || tenantsData[0];
+      const keyToUse = activeT ? activeT.api_key : '';
       fetchSessionsList(keyToUse);
+
+      // Always fetch tenant models on load (enables model dropdown auto-population)
+      if (keyToUse) {
+        fetchTenantModels(keyToUse);
+      }
+
+      // Auto-select first app if none is in URL
+      if (appsList.length > 0 && !selectedAppId) {
+        setSelectedAppId(appsList[0].id);
+      }
     } catch (e) {
       console.error('Failed to load playground metadata:', e);
     }
@@ -353,10 +411,14 @@ export default function ChatPlayground() {
         const nonProchat = (data || []).filter(
           m => m.provider !== 'prochat' && !m.model_name.toLowerCase().includes('genui')
         );
-        if (nonProchat.length > 0) {
-          setSelectedModel(nonProchat[0].model_name);
-        } else {
-          setSelectedModel('');
+        // Only auto-select first model if no model is already set or the URL model doesn't exist
+        const urlModelExists = selectedModel && nonProchat.some(m => m.model_name === selectedModel);
+        if (!urlModelExists) {
+          if (nonProchat.length > 0) {
+            setSelectedModel(nonProchat[0].model_name);
+          } else {
+            setSelectedModel('');
+          }
         }
       }
     } catch (e) {
@@ -1496,13 +1558,11 @@ export default function ChatPlayground() {
                   Tenant Access Key
                 </label>
                 <AsyncSearchableDropdown
-                  value={apiKey}
+                  value={selectedTenantId}
                   onChange={(val) => {
-                    setApiKey(val);
-                    fetchSessionsList(val);
-                    fetchTenantModels(val);
+                    setSelectedTenantId(val);
                   }}
-                  initialLabel={tenants.find(t => t.api_key === apiKey)?.name ? `🔑 ${tenants.find(t => t.api_key === apiKey).name}` : ''}
+                  initialLabel={tenants.find(t => t.id === selectedTenantId)?.name ? `🔑 ${tenants.find(t => t.id === selectedTenantId).name}` : ''}
                   fetchOptions={async (searchTerm) => {
                     const url = `/api/v1/tenants?search=${encodeURIComponent(searchTerm || '')}&page_size=10&page=1`;
                     const res = await fetch(url);
@@ -1515,7 +1575,7 @@ export default function ChatPlayground() {
                       return newTs;
                     });
                     return (data.items || []).map(t => ({
-                      value: t.api_key,
+                      value: t.id,
                       label: `🔑 ${t.name}`
                     }));
                   }}
@@ -1556,6 +1616,7 @@ export default function ChatPlayground() {
                 <AsyncSearchableDropdown
                   value={selectedAppId}
                   onChange={(val) => setSelectedAppId(val)}
+                  initialLabel={apps.find(a => a.id === selectedAppId)?.name ? `📦 ${apps.find(a => a.id === selectedAppId).name}` : ''}
                   fetchOptions={async (searchTerm) => {
                     const url = `/api/v1/apps?search=${encodeURIComponent(searchTerm || '')}&page_size=10&page=1`;
                     const res = await fetch(url);

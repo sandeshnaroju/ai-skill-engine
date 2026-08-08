@@ -1,17 +1,64 @@
 import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Terminal, Send, Play, Copy, Check, Info, Cpu, Code2, ToggleLeft, ToggleRight, Database } from 'lucide-react';
 import AsyncSearchableDropdown from './AsyncSearchableDropdown';
 import ProChat from 'prochat';
 
 export default function ApiTester() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [tenants, setTenants] = useState([]);
   const [apps, setApps] = useState([]);
-  const [selectedTenantKey, setSelectedTenantKey] = useState('');
-  const [model, setModel] = useState('');
-  const [appId, setAppId] = useState('');
-  const [prochatModel, setProchatModel] = useState('');
-  const [message, setMessage] = useState('Check disk space and system uptime');
-  const [stream, setStream] = useState(true);
+  const selectedTenantId = searchParams.get('tenant') || '';
+  const setSelectedTenantId = (val) => {
+    const nextParams = new URLSearchParams(searchParams);
+    if (val) nextParams.set('tenant', val);
+    else nextParams.delete('tenant');
+    setSearchParams(nextParams);
+  };
+  const activeTenant = tenants.find(t => t.id === selectedTenantId) || tenants[0];
+  const selectedTenantKey = activeTenant ? activeTenant.api_key : '';
+
+  // URL State Sync
+  const model = searchParams.get('model') || '';
+  const appId = searchParams.get('app_id') || '';
+  const prochatModel = searchParams.get('prochat_model') || '';
+  const message = searchParams.get('message') || 'Check disk space and system uptime';
+  const stream = searchParams.get('stream') !== 'false';
+
+  const setModel = (val) => {
+    const nextParams = new URLSearchParams(searchParams);
+    if (val) nextParams.set('model', val);
+    else nextParams.delete('model');
+    setSearchParams(nextParams);
+  };
+
+  const setAppId = (val) => {
+    const nextParams = new URLSearchParams(searchParams);
+    if (val) nextParams.set('app_id', val);
+    else nextParams.delete('app_id');
+    setSearchParams(nextParams);
+  };
+
+  const setProchatModel = (val) => {
+    const nextParams = new URLSearchParams(searchParams);
+    if (val) nextParams.set('prochat_model', val);
+    else nextParams.delete('prochat_model');
+    setSearchParams(nextParams);
+  };
+
+  const setMessage = (val) => {
+    const nextParams = new URLSearchParams(searchParams);
+    if (val) nextParams.set('message', val);
+    else nextParams.delete('message');
+    setSearchParams(nextParams);
+  };
+
+  const setStream = (val) => {
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set('stream', val ? 'true' : 'false');
+    setSearchParams(nextParams);
+  };
+
   const [userDataPairs, setUserDataPairs] = useState([{ key: 'api_key', value: 'example_secret_key' }]);
 
   const handleAddUserDataPair = () => {
@@ -113,11 +160,27 @@ export default function ApiTester() {
       const tenantsData = await tenantsRes.json();
       const appsData = await appsRes.json();
 
+      const appsList = appsData?.items || appsData || [];
       setTenants(tenantsData || []);
-      setApps(appsData || []);
+      setApps(appsList);
 
-      if (tenantsData && tenantsData.length > 0) {
-        setSelectedTenantKey(tenantsData[0].api_key);
+      // Auto-select first tenant if none selected
+      let tenantIdToUse = selectedTenantId;
+      if (tenantsData && tenantsData.length > 0 && !selectedTenantId) {
+        tenantIdToUse = tenantsData[0].id;
+        setSelectedTenantId(tenantIdToUse);
+      }
+
+      // Resolve key from selected/default tenant and load its models
+      const activeT = tenantsData.find(t => t.id === tenantIdToUse) || tenantsData[0];
+      const keyToUse = activeT ? activeT.api_key : '';
+      if (keyToUse) {
+        fetchTenantModels(keyToUse);
+      }
+
+      // Auto-select first app if none is in URL
+      if (appsList.length > 0 && !appId) {
+        setAppId(appsList[0].id);
       }
     } catch (e) {
       console.error('Failed to load metadata:', e);
@@ -140,10 +203,14 @@ export default function ApiTester() {
         const nonProchat = (data || []).filter(
           m => m.provider !== 'prochat' && !m.model_name.toLowerCase().includes('genui')
         );
-        if (nonProchat.length > 0) {
-          setModel(nonProchat[0].model_name);
-        } else {
-          setModel('');
+        // Only auto-select first model if no model is set or URL model doesn't exist in list
+        const urlModelExists = model && nonProchat.some(m => m.model_name === model);
+        if (!urlModelExists) {
+          if (nonProchat.length > 0) {
+            setModel(nonProchat[0].model_name);
+          } else {
+            setModel('');
+          }
         }
       }
     } catch (e) {
@@ -375,9 +442,9 @@ export default function ApiTester() {
             <label style={{ fontSize: '0.76rem', color: 'var(--text-sub)', fontWeight: '600' }}>Auth Tenant Key</label>
             <div style={{ width: '220px' }}>
               <AsyncSearchableDropdown
-                value={selectedTenantKey}
-                onChange={(val) => setSelectedTenantKey(val)}
-                initialLabel={tenants.find(t => t.api_key === selectedTenantKey)?.name ? `${tenants.find(t => t.api_key === selectedTenantKey).name} (${selectedTenantKey.substring(0, 10)}...)` : ''}
+                value={selectedTenantId}
+                onChange={(val) => setSelectedTenantId(val)}
+                initialLabel={tenants.find(t => t.id === selectedTenantId)?.name ? `${tenants.find(t => t.id === selectedTenantId).name} (••••${(tenants.find(t => t.id === selectedTenantId).api_key || '').slice(-4)})` : ''}
                 fetchOptions={async (searchTerm) => {
                   const url = `/api/v1/tenants?search=${encodeURIComponent(searchTerm || '')}&page_size=10&page=1`;
                   const res = await fetch(url);
@@ -390,8 +457,8 @@ export default function ApiTester() {
                     return newTs;
                   });
                   return (data.items || []).map(t => ({
-                    value: t.api_key,
-                    label: `${t.name} (${t.api_key.substring(0, 10)}...)`
+                    value: t.id,
+                    label: `${t.name} (••••${t.api_key.slice(-4)})`
                   }));
                 }}
                 placeholder="Select Tenant"
@@ -430,10 +497,18 @@ export default function ApiTester() {
                 <AsyncSearchableDropdown
                   value={appId}
                   onChange={(val) => setAppId(val)}
+                  initialLabel={apps.find(a => a.id === appId)?.name ? `📦 ${apps.find(a => a.id === appId).name}` : ''}
                   fetchOptions={async (searchTerm) => {
                     const url = `/api/v1/apps?search=${encodeURIComponent(searchTerm || '')}&page_size=10&page=1`;
                     const res = await fetch(url);
                     const data = await res.json();
+                    setApps(prev => {
+                      const newApps = [...prev];
+                      (data.items || []).forEach(a => {
+                        if (!newApps.find(existing => existing.id === a.id)) newApps.push(a);
+                      });
+                      return newApps;
+                    });
                     return [
                       { value: "", label: "No App Filter (All Skills)" },
                       ...(data.items || []).map(a => ({

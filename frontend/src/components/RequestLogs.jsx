@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { FileText, RefreshCw, ChevronLeft, ChevronRight, X, Clock, CheckCircle, AlertCircle, Loader, Terminal, Cpu, ChevronDown, ChevronUp, Search } from 'lucide-react';
 import AsyncSearchableDropdown from './AsyncSearchableDropdown';
 
@@ -176,19 +177,73 @@ function RequestDrawer({ requestId, onClose }) {
 }
 
 export default function RequestLogs() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [page, setPage] = useState(1);
-  const [pageSize] = useState(20);
+
+  // URL State Sync
+  const page = parseInt(searchParams.get('page') || '1', 10);
+  const pageSize = parseInt(searchParams.get('page_size') || '20', 10);
+  const filterSource = searchParams.get('source') || '';
+  const filterStatus = searchParams.get('status') || '';
+  const searchMsg = searchParams.get('search') || '';
+  const selectedTenant = searchParams.get('tenant') || '';
+  const selectedId = searchParams.get('selected_id') || null;
+
+  const setPage = (val) => {
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set('page', typeof val === 'function' ? val(page).toString() : val.toString());
+    setSearchParams(nextParams);
+  };
+
+  const setPageSize = (val) => {
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set('page_size', typeof val === 'function' ? val(pageSize).toString() : val.toString());
+    nextParams.set('page', '1');
+    setSearchParams(nextParams);
+  };
+
+  const setFilterSource = (val) => {
+    const nextParams = new URLSearchParams(searchParams);
+    if (val) nextParams.set('source', val);
+    else nextParams.delete('source');
+    nextParams.set('page', '1');
+    setSearchParams(nextParams);
+  };
+
+  const setFilterStatus = (val) => {
+    const nextParams = new URLSearchParams(searchParams);
+    if (val) nextParams.set('status', val);
+    else nextParams.delete('status');
+    nextParams.set('page', '1');
+    setSearchParams(nextParams);
+  };
+
+  const setSearchMsg = (val) => {
+    const nextParams = new URLSearchParams(searchParams);
+    if (val) nextParams.set('search', val);
+    else nextParams.delete('search');
+    nextParams.set('page', '1');
+    setSearchParams(nextParams);
+  };
+
+  const setSelectedTenant = (val) => {
+    const nextParams = new URLSearchParams(searchParams);
+    if (val) nextParams.set('tenant', val);
+    else nextParams.delete('tenant');
+    nextParams.set('page', '1');
+    setSearchParams(nextParams);
+  };
+
+  const setSelectedId = (val) => {
+    const nextParams = new URLSearchParams(searchParams);
+    if (val) nextParams.set('selected_id', val);
+    else nextParams.delete('selected_id');
+    setSearchParams(nextParams);
+  };
+
   const [totalPages, setTotalPages] = useState(1);
   const [totalItems, setTotalItems] = useState(0);
-  const [selectedId, setSelectedId] = useState(null);
-
-  // Filters
-  const [filterSource, setFilterSource] = useState('');
-  const [filterStatus, setFilterStatus] = useState('');
-  const [searchMsg, setSearchMsg] = useState('');
-  const [selectedTenant, setSelectedTenant] = useState('');
 
   const fetchRequests = useCallback(async () => {
     setLoading(true);

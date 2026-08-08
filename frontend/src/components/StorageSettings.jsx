@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { HardDrive, UploadCloud, Server, Check, X, Loader, Save, Zap, Eye, EyeOff } from 'lucide-react';
 
 const PROVIDERS = [
@@ -93,7 +94,14 @@ function Field({ id, label, value, onChange, placeholder, type = 'text' }) {
 }
 
 export default function StorageSettings() {
-  const [provider, setProvider] = useState('local');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const provider = searchParams.get('provider') || 'local';
+
+  const setProvider = (val) => {
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set('provider', val);
+    setSearchParams(nextParams);
+  };
   const [form, setForm] = useState({
     bucket_name: '',
     region: 'us-east-1',
