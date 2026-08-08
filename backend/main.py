@@ -1,4 +1,8 @@
 import os
+import smtplib
+import secrets
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from typing import Optional, List, Any, Union
 from fastapi import FastAPI, Depends, HTTPException, Header, Response, Cookie, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
@@ -13,6 +17,52 @@ from models import Tenant, ExecutionLog, ChatRequest, User
 from auth import get_current_tenant, generate_api_key, hash_password, verify_password, get_current_user
 from skill_registry import skill_registry
 from skill_engine import skill_engine
+
+# SMTP Configuration
+SMTP_HOST = os.environ.get("SMTP_HOST")
+SMTP_PORT_STR = os.environ.get("SMTP_PORT", "587")
+SMTP_PORT = int(SMTP_PORT_STR) if SMTP_PORT_STR.isdigit() else 587
+SMTP_USERNAME = os.environ.get("SMTP_USERNAME")
+SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD")
+SMTP_SENDER = os.environ.get("SMTP_SENDER", SMTP_USERNAME)
+
+def is_smtp_configured() -> bool:
+    return bool(SMTP_HOST and SMTP_USERNAME and SMTP_PASSWORD)
+
+def send_otp_email(to_email: str, otp: str):
+    if not is_smtp_configured():
+        return
+    
+    msg = MIMEMultipart()
+    msg['From'] = SMTP_SENDER
+    msg['To'] = to_email
+    msg['Subject'] = "Verify Your Account - OTP Verification"
+    
+    body = f"""
+    <div style="font-family: 'Inter', system-ui, sans-serif; background-color: #0a0f1d; color: #f8fafc; padding: 40px; border-radius: 16px; max-width: 500px; margin: auto; border: 1px solid rgba(255,255,255,0.08);">
+        <div style="text-align: center; margin-bottom: 24px;">
+            <h2 style="font-size: 24px; font-weight: 800; margin: 0 0 6px 0; color: #ffffff;">Welcome to AI Skill Engine</h2>
+            <p style="font-size: 14px; color: #94a3b8; margin: 0;">Please use the verification code below to verify your account.</p>
+        </div>
+        <div style="background: rgba(255,255,255,0.05); border-radius: 12px; padding: 24px; text-align: center; border: 1px solid rgba(255,255,255,0.05); margin-bottom: 24px;">
+            <span style="font-size: 36px; font-weight: 800; letter-spacing: 6px; color: #8b5cf6;">{otp}</span>
+        </div>
+        <p style="font-size: 12px; color: #64748b; text-align: center; margin: 0;">This code is valid for 15 minutes. If you did not register for an account, you can safely ignore this email.</p>
+    </div>
+    """
+    
+    msg.attach(MIMEText(body, 'html'))
+    
+    try:
+        server = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10)
+        server.starttls()
+        server.login(SMTP_USERNAME, SMTP_PASSWORD)
+        server.sendmail(SMTP_SENDER, to_email, msg.as_string())
+        server.quit()
+        print(f"DEBUG: Verification OTP email sent to {to_email}")
+    except Exception as e:
+        print(f"ERROR: Failed to send verification email to {to_email}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to send verification email. Please contact support or check server settings.")
 
 # Initialize/Verify database tables on startup
 init_db()
@@ -116,6 +166,17 @@ class ResetPasswordRequest(BaseModel):
     token: str
     new_password: str
 
+class VerifyOtpRequest(BaseModel):
+    email: str
+    otp: str
+
+class ResendOtpRequest(BaseModel):
+    email: str
+
+class ChangePasswordRequest(BaseModel):
+    old_password: str
+    new_password: str
+
 # --- Endpoints ---
 
 @app.post("/api/v1/auth/register")
@@ -128,10 +189,41 @@ def register_user(payload: UserRegister, db: Session = Depends(get_db)):
     
     existing = db.query(User).filter(User.email == email_clean).first()
     if existing:
-        raise HTTPException(status_code=400, detail="Email already registered")
+        if existing.is_verified:
+            raise HTTPException(status_code=400, detail="Email already registered")
+        
+        hashed = hash_password(payload.password)
+        existing.hashed_password = hashed
+        
+        smtp_enabled = is_smtp_configured()
+        if smtp_enabled:
+            otp = "".join(secrets.choice("0123456789") for _ in range(6))
+            existing.verification_otp = otp
+            existing.verification_otp_expires = dt.datetime.utcnow() + dt.timedelta(minutes=15)
+            db.commit()
+            send_otp_email(existing.email, otp)
+            return {"message": "User registered successfully. Please verify your email with the OTP sent.", "verification_required": True}
+        else:
+            existing.is_verified = True
+            existing.verification_otp = None
+            existing.verification_otp_expires = None
+            db.commit()
+            return {"message": "User registered successfully", "verification_required": False}
         
     hashed = hash_password(payload.password)
     user = User(email=email_clean, hashed_password=hashed)
+    
+    smtp_enabled = is_smtp_configured()
+    if smtp_enabled:
+        otp = "".join(secrets.choice("0123456789") for _ in range(6))
+        user.is_verified = False
+        user.verification_otp = otp
+        user.verification_otp_expires = dt.datetime.utcnow() + dt.timedelta(minutes=15)
+    else:
+        user.is_verified = True
+        user.verification_otp = None
+        user.verification_otp_expires = None
+
     db.add(user)
     db.commit()
     db.refresh(user)
@@ -146,7 +238,11 @@ def register_user(payload: UserRegister, db: Session = Depends(get_db)):
     db.add(tenant)
     db.commit()
     
-    return {"message": "User registered successfully"}
+    if smtp_enabled:
+        send_otp_email(user.email, otp)
+        return {"message": "User registered successfully. Please verify your email with the OTP sent.", "verification_required": True}
+    
+    return {"message": "User registered successfully", "verification_required": False}
 
 @app.post("/api/v1/auth/login")
 def login_user(payload: UserLogin, response: Response, db: Session = Depends(get_db)):
@@ -155,6 +251,9 @@ def login_user(payload: UserLogin, response: Response, db: Session = Depends(get
     if not user or not verify_password(payload.password, user.hashed_password):
         raise HTTPException(status_code=401, detail="Invalid email or password")
         
+    if not user.is_verified:
+        raise HTTPException(status_code=401, detail="Please verify your email address before logging in.")
+
     session_token = generate_api_key("session_")
     user.session_token = session_token
     db.commit()
@@ -169,6 +268,49 @@ def login_user(payload: UserLogin, response: Response, db: Session = Depends(get
         secure=False # Set to True in production with HTTPS
     )
     return {"message": "Logged in successfully", "email": user.email}
+
+@app.post("/api/v1/auth/verify-otp")
+def verify_otp(payload: VerifyOtpRequest, db: Session = Depends(get_db)):
+    email_clean = payload.email.strip().lower()
+    user = db.query(User).filter(User.email == email_clean).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    if user.is_verified:
+        return {"message": "User is already verified"}
+    
+    if not user.verification_otp or user.verification_otp != payload.otp:
+        raise HTTPException(status_code=400, detail="Invalid OTP code")
+    
+    if user.verification_otp_expires and user.verification_otp_expires < dt.datetime.utcnow():
+        raise HTTPException(status_code=400, detail="OTP code has expired. Please request a new one.")
+    
+    user.is_verified = True
+    user.verification_otp = None
+    user.verification_otp_expires = None
+    db.commit()
+    return {"message": "Email verified successfully"}
+
+@app.post("/api/v1/auth/resend-otp")
+def resend_otp(payload: ResendOtpRequest, db: Session = Depends(get_db)):
+    email_clean = payload.email.strip().lower()
+    user = db.query(User).filter(User.email == email_clean).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+        
+    if user.is_verified:
+        return {"message": "User is already verified"}
+        
+    if not is_smtp_configured():
+        raise HTTPException(status_code=400, detail="SMTP is not configured on this server")
+        
+    otp = "".join(secrets.choice("0123456789") for _ in range(6))
+    user.verification_otp = otp
+    user.verification_otp_expires = dt.datetime.utcnow() + dt.timedelta(minutes=15)
+    db.commit()
+    
+    send_otp_email(user.email, otp)
+    return {"message": "A new verification code has been sent to your email."}
 
 @app.post("/api/v1/auth/logout")
 def logout_user(response: Response, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -230,6 +372,20 @@ def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db))
     db.commit()
     
     return {"message": "Password reset successfully"}
+
+@app.post("/api/v1/auth/change-password")
+def change_password(payload: ChangePasswordRequest, response: Response, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if not verify_password(payload.old_password, current_user.hashed_password):
+        raise HTTPException(status_code=400, detail="Invalid current password")
+        
+    if len(payload.new_password) < 6:
+        raise HTTPException(status_code=400, detail="New password must be at least 6 characters")
+        
+    current_user.hashed_password = hash_password(payload.new_password)
+    current_user.session_token = None # Log out current session
+    db.commit()
+    response.delete_cookie(key="session_token")
+    return {"message": "Password changed successfully"}
 
 UPLOAD_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "sandbox", "uploads"))
 OUTPUT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "sandbox", "outputs"))

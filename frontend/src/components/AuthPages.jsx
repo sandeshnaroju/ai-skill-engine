@@ -2,12 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { Mail, Lock, CheckCircle, AlertTriangle, ArrowRight, Zap, RefreshCw, HelpCircle, ArrowLeft } from 'lucide-react';
 
 export default function AuthPages({ onLoginSuccess }) {
-  // Modes: 'login', 'register', 'forgot', 'reset'
+  // Modes: 'login', 'register', 'forgot', 'reset', 'otp'
   const [mode, setMode] = useState('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [resetToken, setResetToken] = useState('');
+  const [otpCode, setOtpCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -43,6 +44,11 @@ export default function AuthPages({ onLoginSuccess }) {
       }, 500);
     } catch (err) {
       setError(err.message);
+      if (err.message.includes('verify your email')) {
+        setTimeout(() => {
+          setMode('otp');
+        }, 1500);
+      }
     } finally {
       setLoading(false);
     }
@@ -65,10 +71,67 @@ export default function AuthPages({ onLoginSuccess }) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || 'Registration failed');
-      setSuccess('Registration successful! You can now log in.');
-      setMode('login');
+      
+      if (data.verification_required) {
+        setSuccess('Registration successful! Please enter the OTP sent to your email.');
+        setTimeout(() => {
+          setMode('otp');
+        }, 1500);
+      } else {
+        setSuccess('Registration successful! You can now log in.');
+        setMode('login');
+      }
       setPassword('');
       setConfirmPassword('');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerifyOtp = async (e) => {
+    e.preventDefault();
+    setError('');
+    setSuccess('');
+    if (otpCode.length !== 6) {
+      setError('Please enter a 6-digit OTP code');
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await fetch('/api/v1/auth/verify-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, otp: otpCode }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Verification failed');
+      setSuccess('Email verified successfully! You can now log in.');
+      setOtpCode('');
+      setTimeout(() => {
+        setMode('login');
+      }, 1500);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResendOtp = async () => {
+    setError('');
+    setSuccess('');
+    setLoading(true);
+    try {
+      const res = await fetch('/api/v1/auth/resend-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Resend failed');
+      setSuccess('Verification code resent successfully.');
     } catch (err) {
       setError(err.message);
     } finally {
@@ -172,12 +235,14 @@ export default function AuthPages({ onLoginSuccess }) {
             {mode === 'register' && 'Create Account'}
             {mode === 'forgot' && 'Reset Password'}
             {mode === 'reset' && 'Set New Password'}
+            {mode === 'otp' && 'Verify Your Email'}
           </h2>
           <p style={{ fontSize: '0.88rem', color: '#94a3b8', margin: 0 }}>
             {mode === 'login' && 'Sign in to access your skills dashboard'}
             {mode === 'register' && 'Register to manage models and custom skills'}
             {mode === 'forgot' && 'Enter your email to receive a password reset link'}
             {mode === 'reset' && 'Please choose a strong password'}
+            {mode === 'otp' && `Enter the 6-digit verification code sent to ${email}`}
           </p>
         </div>
 
@@ -585,6 +650,98 @@ export default function AuthPages({ onLoginSuccess }) {
             >
               {loading ? <RefreshCw className="spin" size={18} /> : 'Save New Password'}
             </button>
+          </form>
+        )}
+
+        {mode === 'otp' && (
+          <form onSubmit={handleVerifyOtp} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <label style={{ fontSize: '0.8rem', fontWeight: '600', color: '#94a3b8' }}>Verification Code</label>
+              <div style={{ position: 'relative' }}>
+                <Lock size={16} color="#64748b" style={{ position: 'absolute', left: '12px', top: '14px' }} />
+                <input
+                  type="text"
+                  required
+                  maxLength={6}
+                  placeholder="123456"
+                  value={otpCode}
+                  onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ''))}
+                  style={{
+                    width: '100%',
+                    padding: '12px 12px 12px 38px',
+                    borderRadius: '8px',
+                    border: '1px solid rgba(255,255,255,0.1)',
+                    background: '#1e293b',
+                    color: '#ffffff',
+                    fontSize: '1.2rem',
+                    fontWeight: '700',
+                    letterSpacing: '0.3em',
+                    textAlign: 'center',
+                    boxSizing: 'border-box'
+                  }}
+                />
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              style={{
+                width: '100%',
+                padding: '12px',
+                borderRadius: '8px',
+                border: 'none',
+                background: 'linear-gradient(135deg, var(--primary-violet, #8b5cf6), var(--primary-indigo, #6366f1))',
+                color: '#ffffff',
+                fontWeight: '700',
+                fontSize: '0.9rem',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                marginTop: '8px'
+              }}
+            >
+              {loading ? <RefreshCw className="spin" size={18} /> : 'Verify Code'}
+            </button>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '8px' }}>
+              <button
+                type="button"
+                onClick={handleResendOtp}
+                disabled={loading}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--primary-emerald, #10b981)',
+                  fontSize: '0.82rem',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  padding: 0
+                }}
+              >
+                Resend Code
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setMode('login')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  background: 'none',
+                  border: 'none',
+                  color: '#94a3b8',
+                  fontSize: '0.82rem',
+                  cursor: 'pointer',
+                  padding: 0
+                }}
+              >
+                <ArrowLeft size={16} /> Back to Sign In
+              </button>
+            </div>
           </form>
         )}
       </div>

@@ -13,11 +13,20 @@ if [ ! -f .env ]; then
     echo "GEMINI_API_KEY=" > .env
     echo "# To use PostgreSQL instead of local SQLite, uncomment and configure:" >> .env
     echo "# DATABASE_URL=postgresql://user:password@localhost:5432/dbname" >> .env
+    echo "" >> .env
+    echo "# SMTP Configuration (Optional - used for OTP email verification):" >> .env
+    echo "# SMTP_HOST=" >> .env
+    echo "# SMTP_PORT=587" >> .env
+    echo "# SMTP_USERNAME=" >> .env
+    echo "# SMTP_PASSWORD=" >> .env
+    echo "# SMTP_SENDER=" >> .env
 fi
 
 # Load environment variables from .env if present
 if [ -f .env ]; then
-    export $(grep -v '^#' .env | xargs 2>/dev/null) || true
+    set -a
+    source .env
+    set +a
 fi
 
 # Stop and remove any running container with the same name to prevent conflicts
@@ -37,9 +46,15 @@ docker run -d \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -v "$(pwd)/sandbox:/app/sandbox" \
   -v "$(pwd)/skill_manager.db:/app/skill_manager.db" \
-  -v "$(pwd)/.env:/app/.env" \
   -e HOST_SANDBOX_DIR="$(pwd)/sandbox" \
   -e DATABASE_URL="$DATABASE_URL" \
+  -e GEMINI_API_KEY="$GEMINI_API_KEY" \
+  -e PROCHAT_API_KEY="$PROCHAT_API_KEY" \
+  -e SMTP_HOST="$SMTP_HOST" \
+  -e SMTP_PORT="$SMTP_PORT" \
+  -e SMTP_USERNAME="$SMTP_USERNAME" \
+  -e SMTP_PASSWORD="$SMTP_PASSWORD" \
+  -e SMTP_SENDER="$SMTP_SENDER" \
   --restart unless-stopped \
   ai-skill-engine-app
 
