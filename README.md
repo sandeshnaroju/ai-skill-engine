@@ -74,9 +74,11 @@ You can run the pre-built image directly from Docker Hub without cloning the sou
      -v "$(pwd)/sandbox:/app/sandbox" \
      -v "$(pwd)/skill_manager.db:/app/skill_manager.db" \
      -e HOST_SANDBOX_DIR="$(pwd)/sandbox" \
+     -e DATABASE_URL="sqlite:////app/skill_manager.db" \
      --restart unless-stopped \
      sandeshnaroju/ai-skill-engine:latest
    ```
+   *(Note: Set `DATABASE_URL` environment variable if you want to use an external PostgreSQL database instead of the default local SQLite db)*
 
 2. **Access the application**:
    Open **http://localhost:2704** in your browser.
@@ -140,6 +142,71 @@ Running with Docker compiles the React frontend and packages the FastAPI server 
 
 5. **Access the application**:
    Open **http://localhost:2704** in your browser.
+
+## ⚙️ Environment Variables
+
+You can configure several features of the AI Skill Engine (like SMTP for email OTP verification) by setting environment variables.
+
+### Key Configuration Variables
+
+| Variable | Description | Example |
+| --- | --- | --- |
+| `DATABASE_URL` | Connection URI of your database (defaults to local SQLite `skill_manager.db`) | `postgresql://postgres:password@localhost:5432/dbname` |
+| `SMTP_HOST` | Hostname of the SMTP server to send OTP codes | `smtp.gmail.com` |
+| `SMTP_PORT` | Port of the SMTP server (default: 587) | `587` |
+| `SMTP_USERNAME` | Username for SMTP server | `user@gmail.com` |
+| `SMTP_PASSWORD` | Password or App Password for SMTP server | `your-smtp-password` |
+| `SMTP_SENDER` | Sender email address (default: `SMTP_USERNAME`) | `no-reply@mycompany.com` |
+
+---
+
+### Passing Environment Variables to Docker
+
+There are two primary ways to supply these environment variables to the container:
+
+#### Method A: Using a `.env` file (Recommended)
+1. Create a `.env` file in your root workspace:
+   ```env
+   SMTP_HOST=smtp.gmail.com
+   SMTP_PORT=587
+   SMTP_USERNAME=your-email@gmail.com
+   SMTP_PASSWORD=your-app-password
+   ```
+2. When starting the container:
+   - **For local run scripts (`run_docker.sh`)**: The script automatically mounts this file into `/app/.env` where `python-dotenv` loads it automatically.
+   - **For custom Docker commands**: Include the `--env-file` parameter:
+     ```bash
+     docker run -d \
+       --name ai_skill_engine \
+       -p 2704:2704 \
+       -v /var/run/docker.sock:/var/run/docker.sock \
+       -v "$(pwd)/sandbox:/app/sandbox" \
+       -v "$(pwd)/skill_manager.db:/app/skill_manager.db" \
+       --env-file "$(pwd)/.env" \
+       -e HOST_SANDBOX_DIR="$(pwd)/sandbox" \
+       --restart unless-stopped \
+       sandeshnaroju/ai-skill-engine:latest
+     ```
+
+#### Method B: Using `-e` CLI flags
+Pass environment variables directly into the command line when running the container:
+```bash
+docker run -d \
+  --name ai_skill_engine \
+  -p 2704:2704 \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v "$(pwd)/sandbox:/app/sandbox" \
+  -v "$(pwd)/skill_manager.db:/app/skill_manager.db" \
+  -e HOST_SANDBOX_DIR="$(pwd)/sandbox" \
+  -e SMTP_HOST="smtp.gmail.com" \
+  -e SMTP_PORT="587" \
+  -e SMTP_USERNAME="user@gmail.com" \
+  -e SMTP_PASSWORD="your-app-password" \
+  --restart unless-stopped \
+  sandeshnaroju/ai-skill-engine:latest
+```
+
+---
 
 ## 🔑 Configuring Models
 

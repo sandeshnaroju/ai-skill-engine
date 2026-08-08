@@ -54,8 +54,24 @@ def init_db():
         db_creation_status["fresh_start"] = True
         db_creation_status["details"] = f"Creating missing tables: {', '.join(missing_tables)}..."
         db_creation_status["progress"] = 25
-    else:
-        print("Database check: All required tables already exist. Continuing.")
+    if inspector.has_table("users"):
+        columns = [c["name"] for c in inspector.get_columns("users")]
+        db = SessionLocal()
+        try:
+            if "is_verified" not in columns:
+                db.execute(text("ALTER TABLE users ADD COLUMN is_verified BOOLEAN DEFAULT 1"))
+                print("Migration: Added 'is_verified' column to users table")
+            if "verification_otp" not in columns:
+                db.execute(text("ALTER TABLE users ADD COLUMN verification_otp TEXT"))
+                print("Migration: Added 'verification_otp' column to users table")
+            if "verification_otp_expires" not in columns:
+                db.execute(text("ALTER TABLE users ADD COLUMN verification_otp_expires DATETIME"))
+                print("Migration: Added 'verification_otp_expires' column to users table")
+            db.commit()
+        except Exception as e:
+            print(f"Migration warning: Could not update users table columns: {e}")
+        finally:
+            db.close()
 
     if inspector.has_table("mcp_servers"):
         columns = [c["name"] for c in inspector.get_columns("mcp_servers")]

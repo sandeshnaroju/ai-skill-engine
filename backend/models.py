@@ -13,6 +13,9 @@ class User(Base):
     session_token = Column(String, nullable=True, index=True)
     reset_token = Column(String, nullable=True)
     reset_token_expires = Column(DateTime, nullable=True)
+    is_verified = Column(Boolean, default=True)
+    verification_otp = Column(String, nullable=True)
+    verification_otp_expires = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     tenants = relationship("Tenant", back_populates="user", cascade="all, delete-orphan")
