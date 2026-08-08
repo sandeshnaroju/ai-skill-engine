@@ -1,17 +1,24 @@
 # ⚡ AI Skill Engine
 
-> **Self-hosted Chatbot Skill Server & MCP Hub**
+> **Readymade self-hostable backend server for chatbots — with a built-in admin dashboard.**
 
-A lightweight FastAPI server that gives any chatbot superpowers — sandboxed code execution, shell commands, HTTP APIs, and MCP tool calls — through modular **Skills**. Drop-in compatible with the OpenAI API.
+Connect your chatbot with a single Chat Completion API call. AI Skill Engine handles the rest — multi-turn tool execution, sandboxed code runs, MCP integrations, generative UI rendering via ProChat, audit logs, and a full visual admin dashboard — all in one self-hosted package. Drop-in compatible with the OpenAI API.
 
-![Dashboard](https://img.shields.io/badge/dashboard-React-blueviolet) ![API](https://img.shields.io/badge/API-OpenAI%20Compatible-green) ![License](https://img.shields.io/badge/license-MIT-blue)
+![Dashboard](https://img.shields.io/badge/dashboard-React-blueviolet) ![API](https://img.shields.io/badge/API-OpenAI%20Compatible-green) ![License](https://img.shields.io/badge/license-Apache%202.0-blue)
 
 ---
 
-## ✨ What It Does ?
-Standard AI chatbots are like brainy conversationalists—they can write and talk, but they cannot perform actions on your server (like run calculations, browse files, or call web APIs) on their own. **AI Skill Engine** gives your chatbot "hands and feet" by offering ready-to-use capabilities.
+> [!NOTE]
+> **Cloud-Hosted Setup Coming Soon!** ☁️
+> We are building a fully managed cloud version of AI Skill Engine. If you want to skip self-hosting and deployment maintenance, stay tuned!
 
-Here is what your chatbot can now do for your business right out of the box:
+---
+
+## ✨ What It Does
+
+Standard AI chatbots are great conversationalists — but they can't act. They can't run code, call your APIs, or touch your files without a backend to bridge that gap. **AI Skill Engine** is that backend, ready to self-host in minutes.
+
+Point your chatbot at this server's single `/api/v1/chat/completions` endpoint and immediately unlock:
 
 1. **Read & Analyze Uploaded Documents**: Instantly read, search, and extract key details from uploaded contracts, receipts, or PDF files.
 2. **Connect to Web APIs**: Retrieve live information, query third-party services, and trigger external API requests automatically.
@@ -21,8 +28,9 @@ Here is what your chatbot can now do for your business right out of the box:
 6. **No-Code Tool Customization**: Extend your chatbot's abilities by adding, editing, or enabling new capabilities (Skills) directly from a visual dashboard catalog.
 7. **Secure, Sandboxed Execution**: Run calculations and custom scripts inside safe, isolated containers to keep your servers and business data protected.
 8. **Universal Remote (MCP Hub)**: Connect your chatbot directly to databases, GitHub, or filesystems using standard Model Context Protocol.
-9. **OpenAI Drop-in Upgrade**: Supercharge your existing AI application instantly by pointing its API URL to this engine.
-10. **Stunning Dashboard & Timeline Audits**: View chatbot thoughts, tool triggers, and sandbox console logs in a visual turn-by-turn timeline.
+9. **Generative UI with ProChat**: Return dynamic, interactive UI components (charts, forms, dashboards) directly inside the chat response — no extra frontend code needed.
+10. **OpenAI Drop-in Upgrade**: Supercharge your existing AI application instantly by pointing its API URL to this engine.
+11. **Built-in Admin Dashboard**: View chatbot thoughts, tool triggers, sandbox logs, token usage, and costs in a beautiful visual turn-by-turn timeline.
 
 ---
 
@@ -221,6 +229,24 @@ This lets you register different models for different tenants independently.
 
 ---
 
+### 🎨 Enabling Generative UI with ProChat
+
+AI Skill Engine supports **ProChat** — a generative UI protocol that lets your chatbot respond with rich, interactive UI components (data tables, forms, charts) rendered directly inside the chat interface.
+
+To enable ProChat, each tenant needs a ProChat model registered alongside their regular LLM:
+
+1. **Create an account** at [prochat.dev](https://prochat.dev) and generate an API key from your dashboard.
+2. Go to **Tenants & Keys** in the Admin Dashboard → click **Manage** on your tenant.
+3. Click **Register Model** and fill in:
+   - **Provider**: `prochat`
+   - **Model Name**: the model identifier from your prochat.dev dashboard (e.g. `genui-mars-0.1`)
+   - **API Key**: your ProChat API key from prochat.dev
+4. Save the model.
+
+Once registered, pass the `prochat_model` field in your API request (see [API Usage](#-api-usage) below) to activate generative UI for that call.
+
+> 💡 **How it works**: When you include `"prochat_model": "genui-mars-0.1"` in your chat completion request, AI Skill Engine runs your regular LLM as usual. Once the final answer is ready, it forwards the full conversation (including the LLM's response) to the ProChat API. ProChat returns a rendered UI component — such as a data table, chart, or form — which is streamed back alongside the text response and displayed inline in the chat. Your tenant must have a model registered with `provider: prochat` for this to work.
+
 ## 📦 Sandbox Environments
 
 AI Skill Engine runs python code and bash scripts inside secure, isolated sandboxes. You can select and configure the active sandbox environment directly from the **Sandbox Settings** page in the dashboard:
@@ -284,6 +310,7 @@ Content-Type: application/json
 | `session_id` | string | `"default_session"` | Arbitrary ID to label this conversation in execution logs |
 | `app_id` | string | `null` | UUID of an App group — scopes available tools to that App's skills only |
 | `user_data` | object | `null` | Key-value pairs (credentials, API keys, tokens) dynamically resolved inside skill tools (e.g. URLs, headers, arguments) during action runs. Keep secrets hidden from the LLM. |
+| `prochat_model` | string | `null` | ProChat model name (e.g. `genui-mars-0.1`) — when set, AI Skill Engine forwards the conversation to ProChat after the LLM responds, generating a rich UI component rendered inline in the chat. Requires a `prochat` provider model registered for the tenant. |
 
 > **Note:** API client conversations are **not** stored in the chat history. Only Dashboard Chat Playground sessions are persisted. Tool execution results are always logged in the API Execution Logs.
 
@@ -306,6 +333,7 @@ stream = client.chat.completions.create(
     extra_body={
         "session_id": "user_123_thread_1",    # labels this call in execution logs
         "app_id": "your-app-group-uuid",       # scopes tools to this App's skills only
+        "prochat_model": "genui-mars-0.1",     # optional: enable ProChat generative UI
         "user_data": {
             "openweathermap_api_key": "YOUR_SECRET_KEY"  # resolved in weather skill parameters
         }
@@ -328,11 +356,14 @@ curl -X POST http://localhost:2704/api/v1/chat/completions \
     "stream": false,
     "session_id": "user_123_thread_1",
     "app_id": "your-app-group-uuid",
+    "prochat_model": "genui-mars-0.1",
     "user_data": {
       "openweathermap_api_key": "YOUR_SECRET_KEY"
     }
   }'
 ```
+
+> 📝 **`prochat_model`** (optional): Pass the ProChat model name (e.g. `genui-mars-0.1`) to enable generative UI on this request. Requires a model with `provider: prochat` registered for your tenant on prochat.dev.
 
 ---
 
@@ -392,33 +423,9 @@ npx -y @modelcontextprotocol/server-memory
 | API Tester | `/api-tester` | Built-in HTTP client to test the chat endpoint |
 | API Documentation | `/docs` | Interactive API reference |
 
----
 
-## 📁 Project Structure
 
-```
-ai-skill-engine/
-├── backend/
-│   ├── main.py              # FastAPI app & REST endpoints
-│   ├── skill_engine.py      # LLM orchestration & tool dispatch
-│   ├── skill_registry.py    # Skill & MCP tool discovery
-│   ├── models.py            # SQLAlchemy models
-│   ├── llm_client.py        # Multi-provider LLM client
-│   ├── encryption_utils.py  # API key encryption
-│   └── executors/           # Docker / Process / HTTP / MCP executors
-├── frontend/src/
-│   ├── App.jsx              # Routing & sidebar nav
-│   └── components/          # Dashboard page components
-├── skills/
-│   ├── system_diagnostics/  # Shell tools (uptime, disk, CPU)
-│   ├── code_interpreter/    # Sandboxed Python execution
-│   ├── ip_info/             # HTTP IP geolocation
-│   └── sample_api/          # Example REST API skill
-└── run_server.sh            # Start script
-```
-
----
 
 ## 📄 License
 
-MIT — free for personal and commercial use.
+[Apache License 2.0](./LICENSE) — free for personal and commercial use, with attribution.

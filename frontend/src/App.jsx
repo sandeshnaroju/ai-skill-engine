@@ -1,14 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { Key, Layers, MessageSquare, Database, Server, ShieldCheck, Cpu, BookOpen, Sun, Moon, Activity, Box, PanelLeftClose, PanelLeftOpen, Menu, Zap, Terminal, FileText, DollarSign, LogOut, User as UserIcon, HardDrive } from 'lucide-react';
+import { useLocation, useNavigate, Routes, Route, Navigate } from 'react-router-dom';
+import { Key, Layers, MessageSquare, Database, ShieldCheck, Cpu, BookOpen, Sun, Moon, Activity, Box, PanelLeftClose, PanelLeftOpen, Zap, Terminal, FileText, DollarSign, LogOut, User as UserIcon, HardDrive } from 'lucide-react';
 import TenantManager from './components/TenantManager';
 import SkillCatalog from './components/SkillCatalog';
 import ChatPlayground from './components/ChatPlayground';
-import AuditLogs from './components/AuditLogs';
+import LogViewer from './components/LogViewer';
 import ApiDocs from './components/ApiDocs';
 import McpServerManager from './components/McpServerManager';
 import AppManager from './components/AppManager';
 import ApiTester from './components/ApiTester';
-import ApiLogs from './components/ApiLogs';
 import RequestLogs from './components/RequestLogs';
 import UsageSummary from './components/UsageSummary';
 import AuthPages from './components/AuthPages';
@@ -33,14 +33,9 @@ export default function App() {
     { id: 'docs', label: 'API Documentation', icon: BookOpen },
   ];
 
-  const getTabFromPath = () => {
-    const raw = window.location.pathname.replace(/^\//, '').trim();
-    if (raw === 'profile') return 'profile';
-    const valid = navItems.find((n) => n.id === raw);
-    return valid ? valid.id : 'playground';
-  };
-
-  const [activeTab, setActiveTab] = useState(() => getTabFromPath());
+  const location = useLocation();
+  const navigate = useNavigate();
+  const activeTab = location.pathname.replace(/^\//, '').trim() || 'playground';
   const [theme, setTheme] = useState(() => localStorage.getItem('app_theme') || 'dark');
   const [stats, setStats] = useState({ skillsCount: 4, tenantsCount: 1, logsCount: 0 });
   const [dbStatus, setDbStatus] = useState({ ready: false, details: 'Connecting to database...', progress: 0, fresh_start: false });
@@ -116,31 +111,8 @@ export default function App() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  useEffect(() => {
-    const handlePopState = () => {
-      const currentPath = window.location.pathname.replace(/^\//, '').trim();
-      const valid = navItems.find((n) => n.id === currentPath);
-      if (valid) {
-        setActiveTab(valid.id);
-      } else {
-        setActiveTab('playground');
-      }
-    };
-
-    const initialTab = getTabFromPath();
-    if (window.location.pathname !== `/${initialTab}`) {
-      window.history.replaceState(null, '', `/${initialTab}`);
-    }
-
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
-  }, []);
-
   const handleTabChange = (tabId) => {
-    setActiveTab(tabId);
-    if (window.location.pathname !== `/${tabId}`) {
-      window.history.pushState(null, '', `/${tabId}`);
-    }
+    navigate(`/${tabId}`);
   };
 
   const toggleTheme = () => {
@@ -500,20 +472,38 @@ export default function App() {
 
         {/* Main Content Component */}
         <main style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-          {activeTab === 'playground' && <ChatPlayground />}
-          {activeTab === 'apps' && <AppManager />}
-          {activeTab === 'skills' && <SkillCatalog />}
-          {activeTab === 'mcp' && <McpServerManager />}
-          {activeTab === 'tenants' && <TenantManager />}
-          {activeTab === 'storage' && <StorageSettings />}
-          {activeTab === 'sandbox' && <SandboxSettings />}
-          {activeTab === 'usage' && <UsageSummary />}
-          {activeTab === 'logs' && <AuditLogs />}
-          {activeTab === 'apilogs' && <ApiLogs />}
-          {activeTab === 'requestlogs' && <RequestLogs />}
-          {activeTab === 'docs' && <ApiDocs />}
-          {activeTab === 'tester' && <ApiTester />}
-          {activeTab === 'profile' && <Profile />}
+          <Routes>
+            <Route path="/playground" element={<ChatPlayground />} />
+            <Route path="/apps" element={<AppManager />} />
+            <Route path="/skills" element={<SkillCatalog />} />
+            <Route path="/mcp" element={<McpServerManager />} />
+            <Route path="/tenants" element={<TenantManager />} />
+            <Route path="/storage" element={<StorageSettings />} />
+            <Route path="/sandbox" element={<SandboxSettings />} />
+            <Route path="/usage" element={<UsageSummary />} />
+            <Route path="/logs" element={
+              <LogViewer
+                requestSource="dashboard"
+                title="Sandbox Audit Logs"
+                subtitle="Audit history of execution traces triggered exclusively by the Dashboard Chat Playground."
+                icon={Database}
+              />
+            } />
+            <Route path="/apilogs" element={
+              <LogViewer
+                requestSource="api"
+                title="API Client Execution Logs"
+                subtitle="Audit history of execution traces triggered exclusively by external integrations and customer API client completions."
+                icon={Terminal}
+              />
+            } />
+            <Route path="/requestlogs" element={<RequestLogs />} />
+            <Route path="/docs" element={<ApiDocs />} />
+            <Route path="/tester" element={<ApiTester />} />
+            <Route path="/profile" element={<Profile />} />
+            <Route path="/" element={<Navigate to="/playground" replace />} />
+            <Route path="*" element={<Navigate to="/playground" replace />} />
+          </Routes>
         </main>
       </div>
     </div>

@@ -1,20 +1,56 @@
 import React, { useState, useEffect } from 'react';
-import { Database, RefreshCw, CheckCircle, AlertTriangle, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Terminal } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
+import { RefreshCw, CheckCircle, AlertTriangle, ChevronDown, ChevronUp, ChevronLeft, ChevronRight } from 'lucide-react';
 import AsyncSearchableDropdown from './AsyncSearchableDropdown';
 
-export default function ApiLogs() {
+export default function LogViewer({ requestSource, title, subtitle, icon: IconComponent }) {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(false);
-  
-  // Pagination & Filtering state
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Pagination & Filtering state driven by URL search params
+  const page = parseInt(searchParams.get('page') || '1', 10);
+  const pageSize = parseInt(searchParams.get('page_size') || '20', 10);
+  const filterType = searchParams.get('sandbox') || 'ALL';
+  const selectedTenant = searchParams.get('tenant') || 'ALL';
+  const selectedModel = searchParams.get('model') || 'ALL';
+
+  const setPage = (val) => {
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set('page', typeof val === 'function' ? val(page).toString() : val.toString());
+    setSearchParams(nextParams);
+  };
+
+  const setPageSize = (val) => {
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set('page_size', typeof val === 'function' ? val(pageSize).toString() : val.toString());
+    nextParams.set('page', '1');
+    setSearchParams(nextParams);
+  };
+
+  const setFilterType = (val) => {
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set('sandbox', val);
+    nextParams.set('page', '1');
+    setSearchParams(nextParams);
+  };
+
+  const setSelectedTenant = (val) => {
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set('tenant', val);
+    nextParams.set('page', '1');
+    setSearchParams(nextParams);
+  };
+
+  const setSelectedModel = (val) => {
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set('model', val);
+    nextParams.set('page', '1');
+    setSearchParams(nextParams);
+  };
+
   const [totalPages, setTotalPages] = useState(1);
   const [totalItems, setTotalItems] = useState(0);
-  
-  const [filterType, setFilterType] = useState('ALL');
-  const [selectedTenant, setSelectedTenant] = useState('ALL');
-  const [selectedModel, setSelectedModel] = useState('ALL');
   
   // Lists for dropdown filters
   const [uniqueTenants, setUniqueTenants] = useState([]);
@@ -41,7 +77,7 @@ export default function ApiLogs() {
       const queryParams = new URLSearchParams({
         page: page.toString(),
         page_size: pageSize.toString(),
-        request_source: 'api',
+        request_source: requestSource,
         tenant_name: selectedTenant,
         model_name: selectedModel,
         sandbox_type: filterType
@@ -81,10 +117,10 @@ export default function ApiLogs() {
       <div className="glass-box" style={{ padding: '20px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
         <div>
           <h2 style={{ fontSize: '1.25rem', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <Terminal size={22} color="var(--primary-cyan)" /> API Client Execution Logs
+            {IconComponent && <IconComponent size={22} color="var(--primary-cyan)" />} {title}
           </h2>
           <p style={{ color: 'var(--text-sub)', fontSize: '0.88rem', marginTop: '4px' }}>
-            Audit history of execution traces triggered exclusively by external integrations and customer API client completions.
+            {subtitle}
           </p>
         </div>
 
@@ -97,7 +133,7 @@ export default function ApiLogs() {
             <div style={{ width: '160px' }}>
               <AsyncSearchableDropdown
                 value={selectedTenant}
-                onChange={(val) => { setSelectedTenant(val); setPage(1); }}
+                onChange={setSelectedTenant}
                 fetchOptions={async (searchTerm) => {
                   const url = `/api/v1/logs/filters?search_tenant=${encodeURIComponent(searchTerm || '')}`;
                   const res = await fetch(url);
@@ -118,7 +154,7 @@ export default function ApiLogs() {
             <div style={{ width: '160px' }}>
               <AsyncSearchableDropdown
                 value={selectedModel}
-                onChange={(val) => { setSelectedModel(val); setPage(1); }}
+                onChange={setSelectedModel}
                 fetchOptions={async (searchTerm) => {
                   const url = `/api/v1/logs/filters?search_model=${encodeURIComponent(searchTerm || '')}`;
                   const res = await fetch(url);
@@ -138,7 +174,7 @@ export default function ApiLogs() {
             <span style={{ fontSize: '0.78rem', color: 'var(--text-sub)', fontWeight: '600' }}>Sandbox:</span>
             <select
               value={filterType}
-              onChange={(e) => { setFilterType(e.target.value); setPage(1); }}
+              onChange={(e) => setFilterType(e.target.value)}
               style={{ fontSize: '0.82rem', padding: '6px 12px' }}
             >
               <option value="ALL">All Sandboxes</option>
@@ -153,7 +189,7 @@ export default function ApiLogs() {
           </div>
 
           <button className="btn-outline" onClick={fetchLogs} disabled={loading} style={{ padding: '8px 12px' }}>
-            <RefreshCw size={15} className={loading ? 'spin' : ''} /> Refresh Logs
+            <RefreshCw size={15} className={loading ? 'spin' : ''} /> Refresh
           </button>
         </div>
       </div>
@@ -176,7 +212,9 @@ export default function ApiLogs() {
             {logs.length === 0 ? (
               <tr>
                 <td colSpan={7} style={{ padding: '36px', textAlign: 'center', color: 'var(--text-muted)' }}>
-                  No execution logs recorded from external API clients. Call completions from your application!
+                  {requestSource === 'dashboard'
+                    ? 'No execution logs recorded in the playground sandbox yet.'
+                    : 'No execution logs recorded from API clients yet.'}
                 </td>
               </tr>
             ) : (
@@ -233,7 +271,7 @@ export default function ApiLogs() {
                         <td colSpan={7} style={{ padding: '16px', background: '#04060b', borderBottom: '1px solid var(--border-subtle)' }}>
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                             <div>
-                              <div style={{ fontSize: '0.8rem', fontWeight: '600', color: 'var(--text-sub)', marginBottom: '6px' }}>Executed Command / Code</div>
+                               <div style={{ fontSize: '0.8rem', fontWeight: '600', color: 'var(--text-sub)', marginBottom: '6px' }}>Executed Command / Code</div>
                               <pre className="code-display" style={{ maxHeight: '140px' }}>{log.command}</pre>
                             </div>
                             <div>

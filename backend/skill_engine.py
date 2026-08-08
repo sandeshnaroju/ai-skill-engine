@@ -131,6 +131,52 @@ class SkillEngine:
             print(f"Error calling ProChat completions: {e}")
             return None, None
 
+    def _build_messages_list(
+        self,
+        db: Session,
+        persist: bool,
+        session_obj,
+        user_message: str,
+        allowed_skills
+    ) -> list:
+        msgs = [{"role": "system", "content": skill_registry.get_system_instructions(allowed_skills=allowed_skills)}]
+        if persist and session_obj:
+            db_messages = db.query(ChatMessage).filter(
+                ChatMessage.session_id == session_obj.id
+            ).order_by(ChatMessage.created_at.asc()).all()
+
+            for msg in db_messages:
+                if msg.role == "assistant" and msg.tool_calls:
+                    item = {
+                        "role": "assistant",
+                        "content": msg.content if msg.content else None
+                    }
+                    try:
+                        item["tool_calls"] = json.loads(msg.tool_calls)
+                    except Exception:
+                        pass
+                    msgs.append(item)
+                elif msg.role == "tool":
+                    msgs.append({
+                        "role": "tool",
+                        "tool_call_id": msg.tool_call_id or "call_default",
+                        "content": msg.content or ""
+                    })
+                else:
+                    content_val = msg.content or ""
+                    if isinstance(content_val, str) and (content_val.startswith("[") or content_val.startswith("{")):
+                        try:
+                            content_val = json.loads(content_val)
+                        except Exception:
+                            pass
+                    msgs.append({
+                        "role": msg.role,
+                        "content": content_val
+                    })
+        else:
+            msgs.append({"role": "user", "content": user_message})
+        return msgs
+
     def process_chat(
         self,
         db: Session,
@@ -196,47 +242,7 @@ class SkillEngine:
                 if app_obj:
                     allowed_skills = [m.skill_name for m in app_obj.skills]
 
-            # Build messages list
-            def build_messages_list():
-                msgs = [{"role": "system", "content": skill_registry.get_system_instructions(allowed_skills=allowed_skills)}]
-                if persist and session_obj:
-                    db_messages = db.query(ChatMessage).filter(
-                        ChatMessage.session_id == session_obj.id
-                    ).order_by(ChatMessage.created_at.asc()).all()
-
-                    for msg in db_messages:
-                        if msg.role == "assistant" and msg.tool_calls:
-                            item = {
-                                "role": "assistant",
-                                "content": msg.content if msg.content else None
-                            }
-                            try:
-                                item["tool_calls"] = json.loads(msg.tool_calls)
-                            except Exception:
-                                pass
-                            msgs.append(item)
-                        elif msg.role == "tool":
-                            msgs.append({
-                                "role": "tool",
-                                "tool_call_id": msg.tool_call_id or "call_default",
-                                "content": msg.content or ""
-                            })
-                        else:
-                            content_val = msg.content or ""
-                            if isinstance(content_val, str) and (content_val.startswith("[") or content_val.startswith("{")):
-                                try:
-                                    content_val = json.loads(content_val)
-                                except Exception:
-                                    pass
-                            msgs.append({
-                                "role": msg.role,
-                                "content": content_val
-                            })
-                else:
-                    msgs.append({"role": "user", "content": user_message})
-                return msgs
-
-            messages = build_messages_list()
+            messages = self._build_messages_list(db, persist, session_obj, user_message, allowed_skills)
             if not model_name:
                 from models import TenantLLM
                 first_model = db.query(TenantLLM).filter(
@@ -643,46 +649,7 @@ class SkillEngine:
             }
             yield f"data: {json.dumps(init_reasoning)}\n\n"
 
-            def build_messages_list():
-                msgs = [{"role": "system", "content": skill_registry.get_system_instructions(allowed_skills=allowed_skills)}]
-                if persist and session_obj:
-                    db_messages = db.query(ChatMessage).filter(
-                        ChatMessage.session_id == session_obj.id
-                    ).order_by(ChatMessage.created_at.asc()).all()
-
-                    for msg in db_messages:
-                        if msg.role == "assistant" and msg.tool_calls:
-                            item = {
-                                "role": "assistant",
-                                "content": msg.content if msg.content else None
-                            }
-                            try:
-                                item["tool_calls"] = json.loads(msg.tool_calls)
-                            except Exception:
-                                pass
-                            msgs.append(item)
-                        elif msg.role == "tool":
-                            msgs.append({
-                                "role": "tool",
-                                "tool_call_id": msg.tool_call_id or "call_default",
-                                "content": msg.content or ""
-                            })
-                        else:
-                            content_val = msg.content or ""
-                            if isinstance(content_val, str) and (content_val.startswith("[") or content_val.startswith("{")):
-                                try:
-                                    content_val = json.loads(content_val)
-                                except Exception:
-                                    pass
-                            msgs.append({
-                                "role": msg.role,
-                                "content": content_val
-                            })
-                else:
-                    msgs.append({"role": "user", "content": user_message})
-                return msgs
-
-            messages = build_messages_list()
+            messages = self._build_messages_list(db, persist, session_obj, user_message, allowed_skills)
             if not model_name:
                 from models import TenantLLM
                 first_model = db.query(TenantLLM).filter(
