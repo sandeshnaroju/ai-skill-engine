@@ -8,6 +8,8 @@ services:
     container_name: ai_skill_engine
     ports:
       - "2704:2704"
+    env_file:
+      - .env
     environment:
       - HOST_SANDBOX_DIR=${PWD}/sandbox
       - DATABASE_URL=${DATABASE_URL}
@@ -16,5 +18,4 @@ services:
       - ./sandbox:/app/sandbox
       - ./skills:/app/skills
       - ./skill_manager.db:/app/skill_manager.db
-      - ./.env:/app/.env
     restart: unless-stopped

@@ -1,11 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { User, Mail, Calendar, Shield, Cpu, Key, Copy, Check } from 'lucide-react';
+import { User, Mail, Calendar, Shield, Cpu, Key, Copy, Check, Lock, AlertTriangle } from 'lucide-react';
 
 export default function Profile() {
   const [profile, setProfile] = useState(null);
   const [tenant, setTenant] = useState(null);
   const [copied, setCopied] = useState(false);
   const [loading, setLoading] = useState(true);
+
+  // Password change states
+  const [oldPassword, setOldPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const [passwordLoading, setPasswordLoading] = useState(false);
 
   useEffect(() => {
     const fetchProfileData = async () => {
@@ -15,7 +23,7 @@ export default function Profile() {
           fetch('/api/v1/tenants')
         ]);
         if (meRes.ok) {
-          const meData = await meRes.ok ? await meRes.json() : null;
+          const meData = await meRes.json();
           setProfile(meData);
         }
         if (tenantsRes.ok) {
@@ -37,6 +45,41 @@ export default function Profile() {
     navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
+  };
+
+  const handleChangePassword = async (e) => {
+    e.preventDefault();
+    setError('');
+    setSuccess('');
+    if (newPassword !== confirmPassword) {
+      setError('New passwords do not match');
+      return;
+    }
+    if (newPassword.length < 6) {
+      setError('New password must be at least 6 characters');
+      return;
+    }
+    setPasswordLoading(true);
+    try {
+      const res = await fetch('/api/v1/auth/change-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ old_password: oldPassword, new_password: newPassword })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Failed to change password');
+      setSuccess('Password changed successfully! Logging out...');
+      setOldPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setTimeout(() => {
+        window.location.reload();
+      }, 1500);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setPasswordLoading(false);
+    }
   };
 
   if (loading) {
@@ -171,6 +214,150 @@ export default function Profile() {
           </div>
         </div>
       )}
+
+      {/* Change Password Card */}
+      <div className="glass-box" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <div>
+          <h4 style={{ fontSize: '1.05rem', fontWeight: '700', color: 'var(--text-main)', margin: '0 0 4px 0' }}>
+            Change Password
+          </h4>
+          <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: 0 }}>
+            Ensure your account stays secure by updating your password regularly.
+          </p>
+        </div>
+
+        {error && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+            background: 'rgba(239, 68, 68, 0.1)',
+            border: '1px solid rgba(239, 68, 68, 0.2)',
+            borderRadius: '8px',
+            padding: '10px 14px',
+            fontSize: '0.82rem',
+            color: '#fca5a5'
+          }}>
+            <AlertTriangle size={16} style={{ flexShrink: 0 }} />
+            <span>{error}</span>
+          </div>
+        )}
+
+        {success && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+            background: 'rgba(16, 185, 129, 0.1)',
+            border: '1px solid rgba(16, 185, 129, 0.2)',
+            borderRadius: '8px',
+            padding: '10px 14px',
+            fontSize: '0.82rem',
+            color: '#a7f3d0'
+          }}>
+            <Check size={16} style={{ flexShrink: 0 }} />
+            <span>{success}</span>
+          </div>
+        )}
+
+        <form onSubmit={handleChangePassword} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <label style={{ fontSize: '0.78rem', fontWeight: '600', color: 'var(--text-muted)' }}>Current Password</label>
+            <div style={{ position: 'relative' }}>
+              <Lock size={14} color="var(--text-muted)" style={{ position: 'absolute', left: '12px', top: '12px' }} />
+              <input
+                type="password"
+                required
+                placeholder="Current password"
+                value={oldPassword}
+                onChange={(e) => setOldPassword(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '10px 12px 10px 34px',
+                  borderRadius: '8px',
+                  border: '1px solid var(--border-subtle)',
+                  background: 'var(--bg-input)',
+                  color: 'var(--text-main)',
+                  fontSize: '0.85rem',
+                  boxSizing: 'border-box'
+                }}
+              />
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <label style={{ fontSize: '0.78rem', fontWeight: '600', color: 'var(--text-muted)' }}>New Password</label>
+            <div style={{ position: 'relative' }}>
+              <Lock size={14} color="var(--text-muted)" style={{ position: 'absolute', left: '12px', top: '12px' }} />
+              <input
+                type="password"
+                required
+                placeholder="At least 6 characters"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '10px 12px 10px 34px',
+                  borderRadius: '8px',
+                  border: '1px solid var(--border-subtle)',
+                  background: 'var(--bg-input)',
+                  color: 'var(--text-main)',
+                  fontSize: '0.85rem',
+                  boxSizing: 'border-box'
+                }}
+              />
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <label style={{ fontSize: '0.78rem', fontWeight: '600', color: 'var(--text-muted)' }}>Confirm New Password</label>
+            <div style={{ position: 'relative' }}>
+              <Lock size={14} color="var(--text-muted)" style={{ position: 'absolute', left: '12px', top: '12px' }} />
+              <input
+                type="password"
+                required
+                placeholder="Confirm new password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '10px 12px 10px 34px',
+                  borderRadius: '8px',
+                  border: '1px solid var(--border-subtle)',
+                  background: 'var(--bg-input)',
+                  color: 'var(--text-main)',
+                  fontSize: '0.85rem',
+                  boxSizing: 'border-box'
+                }}
+              />
+            </div>
+          </div>
+
+          <button
+            type="submit"
+            disabled={passwordLoading}
+            style={{
+              width: '100%',
+              padding: '10px',
+              borderRadius: '8px',
+              border: 'none',
+              background: 'linear-gradient(135deg, var(--primary-violet), var(--primary-indigo))',
+              color: '#ffffff',
+              fontWeight: '700',
+              fontSize: '0.85rem',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '6px',
+              marginTop: '4px',
+              boxShadow: 'var(--shadow-glow)'
+            }}
+          >
+            {passwordLoading ? 'Updating...' : 'Update Password'}
+          </button>
+        </form>
+      </div>
     </div>
   );
 }

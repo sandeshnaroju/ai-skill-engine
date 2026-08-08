@@ -19,7 +19,9 @@ fi
 
 # Load environment variables from .env if present
 if [ -f .env ]; then
-    export $(grep -v '^#' .env | xargs 2>/dev/null) || true
+    set -a
+    source .env
+    set +a
 fi
 
 # Stop and remove any running container with the same name to prevent conflicts
@@ -39,9 +41,15 @@ docker run -d \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -v "$(pwd)/sandbox:/app/sandbox" \
   -v "$(pwd)/skill_manager.db:/app/skill_manager.db" \
-  -v "$(pwd)/.env:/app/.env" \
   -e HOST_SANDBOX_DIR="$(pwd)/sandbox" \
   -e DATABASE_URL="$DATABASE_URL" \
+  -e GEMINI_API_KEY="$GEMINI_API_KEY" \
+  -e PROCHAT_API_KEY="$PROCHAT_API_KEY" \
+  -e SMTP_HOST="$SMTP_HOST" \
+  -e SMTP_PORT="$SMTP_PORT" \
+  -e SMTP_USERNAME="$SMTP_USERNAME" \
+  -e SMTP_PASSWORD="$SMTP_PASSWORD" \
+  -e SMTP_SENDER="$SMTP_SENDER" \
   --restart unless-stopped \
   "$DOCKER_IMAGE"
 
