@@ -1,13 +1,29 @@
 import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Cpu, Plus, RefreshCw, Trash2, Check, Terminal, Globe, Layers, ShieldCheck, Zap, ChevronLeft, ChevronRight } from 'lucide-react';
 
 export default function McpServerManager() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [servers, setServers] = useState([]);
   const [loading, setLoading] = useState(false);
   
-  // Pagination state
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(5);
+  // Syncing with URL parameters
+  const page = parseInt(searchParams.get('page') || '1', 10);
+  const pageSize = parseInt(searchParams.get('page_size') || '5', 10);
+
+  const setPage = (val) => {
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set('page', typeof val === 'function' ? val(page).toString() : val.toString());
+    setSearchParams(nextParams);
+  };
+
+  const setPageSize = (val) => {
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set('page_size', typeof val === 'function' ? val(pageSize).toString() : val.toString());
+    nextParams.set('page', '1');
+    setSearchParams(nextParams);
+  };
+
   const [totalPages, setTotalPages] = useState(1);
   const [totalItems, setTotalItems] = useState(0);
 

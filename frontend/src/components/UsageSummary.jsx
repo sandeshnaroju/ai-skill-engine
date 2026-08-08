@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { DollarSign, Activity, Cpu, Key, RefreshCw, Layers, TrendingUp, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import AsyncSearchableDropdown from './AsyncSearchableDropdown';
 
@@ -17,15 +18,53 @@ function SourceBadge({ source }) {
 }
 
 export default function UsageSummary() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [data, setData] = useState({ items: [], totals: { request_count: 0, prompt_tokens: 0, completion_tokens: 0, cost_usd: 0 } });
   const [loading, setLoading] = useState(false);
-  const [selectedTenant, setSelectedTenant] = useState('');
-  const [searchModel, setSearchModel] = useState('');
-  const [selectedSource, setSelectedSource] = useState('ALL');
 
-  // Pagination state
-  const [page, setPage] = useState(1);
-  const [pageSize] = useState(10);
+  // URL state sync
+  const page = parseInt(searchParams.get('page') || '1', 10);
+  const pageSize = parseInt(searchParams.get('page_size') || '10', 10);
+  const selectedTenant = searchParams.get('tenant') || '';
+  const searchModel = searchParams.get('model') || '';
+  const selectedSource = searchParams.get('source') || 'ALL';
+
+  const setPage = (val) => {
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set('page', typeof val === 'function' ? val(page).toString() : val.toString());
+    setSearchParams(nextParams);
+  };
+
+  const setPageSize = (val) => {
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set('page_size', typeof val === 'function' ? val(pageSize).toString() : val.toString());
+    nextParams.set('page', '1');
+    setSearchParams(nextParams);
+  };
+
+  const setSelectedTenant = (val) => {
+    const nextParams = new URLSearchParams(searchParams);
+    if (val) nextParams.set('tenant', val);
+    else nextParams.delete('tenant');
+    nextParams.set('page', '1');
+    setSearchParams(nextParams);
+  };
+
+  const setSearchModel = (val) => {
+    const nextParams = new URLSearchParams(searchParams);
+    if (val) nextParams.set('model', val);
+    else nextParams.delete('model');
+    nextParams.set('page', '1');
+    setSearchParams(nextParams);
+  };
+
+  const setSelectedSource = (val) => {
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set('source', val);
+    nextParams.set('page', '1');
+    setSearchParams(nextParams);
+  };
+
   const [totalPages, setTotalPages] = useState(1);
   const [totalItems, setTotalItems] = useState(0);
 
@@ -63,20 +102,17 @@ export default function UsageSummary() {
     fetchUsageData();
   }, [fetchUsageData]);
 
-  // Reset page when filters change
+  // Handlers - note: each setter already resets page to 1 in one batch write
   const handleTenantChange = (val) => {
     setSelectedTenant(val);
-    setPage(1);
   };
 
   const handleModelChange = (e) => {
     setSearchModel(e.target.value);
-    setPage(1);
   };
 
   const handleSourceChange = (e) => {
     setSelectedSource(e.target.value);
-    setPage(1);
   };
 
   const formatCost = (val) => {

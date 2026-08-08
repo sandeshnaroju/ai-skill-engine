@@ -1,16 +1,32 @@
 import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Key, Plus, ShieldCheck, Copy, Check, Server, Terminal, Code, Trash2, Cpu, Layers, Globe, Activity, X, ChevronLeft, ChevronRight } from 'lucide-react';
 
 export default function TenantManager() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [tenants, setTenants] = useState([]);
   const [newTenantName, setNewTenantName] = useState('');
   const [loading, setLoading] = useState(false);
   const [copiedKey, setCopiedKey] = useState(null);
   const [selectedTenant, setSelectedTenant] = useState(null);
 
-  // Tenants Pagination state
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(6);
+  // Tenants Pagination state from URL
+  const page = parseInt(searchParams.get('page') || '1', 10);
+  const pageSize = parseInt(searchParams.get('page_size') || '6', 10);
+
+  const setPage = (val) => {
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set('page', typeof val === 'function' ? val(page).toString() : val.toString());
+    setSearchParams(nextParams);
+  };
+
+  const setPageSize = (val) => {
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set('page_size', typeof val === 'function' ? val(pageSize).toString() : val.toString());
+    nextParams.set('page', '1');
+    setSearchParams(nextParams);
+  };
+
   const [totalPages, setTotalPages] = useState(1);
   const [totalItems, setTotalItems] = useState(0);
 
@@ -22,9 +38,23 @@ export default function TenantManager() {
   const [baseUrl, setBaseUrl] = useState('');
   const [registryLoading, setRegistryLoading] = useState(false);
   
-  // Model Configs Pagination state
-  const [modelPage, setModelPage] = useState(1);
-  const [modelPageSize, setModelPageSize] = useState(4);
+  // Model Configs Pagination state from URL
+  const modelPage = parseInt(searchParams.get('model_page') || '1', 10);
+  const modelPageSize = parseInt(searchParams.get('model_page_size') || '4', 10);
+
+  const setModelPage = (val) => {
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set('model_page', typeof val === 'function' ? val(modelPage).toString() : val.toString());
+    setSearchParams(nextParams);
+  };
+
+  const setModelPageSize = (val) => {
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set('model_page_size', typeof val === 'function' ? val(modelPageSize).toString() : val.toString());
+    nextParams.set('model_page', '1');
+    setSearchParams(nextParams);
+  };
+
   const [modelTotalPages, setModelTotalPages] = useState(1);
   const [modelTotalItems, setModelTotalItems] = useState(0);
   
@@ -185,7 +215,7 @@ export default function TenantManager() {
 
   const snippetCurl = `curl -X POST http://localhost:8000/api/v1/chat/completions \\
   -H "Content-Type: application/json" \\
-  -H "X-API-Key: ${selectedTenant?.api_key || 'YOUR_TENANT_API_KEY'}" \\
+  -H "X-API-Key: ${selectedTenant ? `${'•'.repeat(Math.max(0, (selectedTenant.api_key || '').length - 4))}${(selectedTenant.api_key || '').slice(-4)}` : 'YOUR_TENANT_API_KEY'}" \\
   -d '\''{
     "messages": [{"role": "user", "content": "Check server uptime"}],
     "session_id": "chatbot_user_101",
@@ -276,7 +306,7 @@ export default function TenantManager() {
 
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'var(--bg-input)', padding: '8px 12px', borderRadius: '8px' }}>
                     <code style={{ fontSize: '0.8rem', color: 'var(--primary-cyan)', flex: 1, wordBreak: 'break-all' }}>
-                      {t.api_key}
+                      {'•'.repeat(Math.max(0, (t.api_key || '').length - 4))}{(t.api_key || '').slice(-4)}
                     </code>
                     <button
                       className="btn-outline"
