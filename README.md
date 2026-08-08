@@ -4,7 +4,13 @@
 
 Connect your chatbot with a single Chat Completion API call. AI Skill Engine handles the rest — multi-turn tool execution, sandboxed code runs, MCP integrations, generative UI rendering via ProChat, audit logs, and a full visual admin dashboard — all in one self-hosted package. Drop-in compatible with the OpenAI API.
 
-![Dashboard](https://img.shields.io/badge/dashboard-React-blueviolet) ![API](https://img.shields.io/badge/API-OpenAI%20Compatible-green) ![License](https://img.shields.io/badge/license-MIT-blue)
+![Dashboard](https://img.shields.io/badge/dashboard-React-blueviolet) ![API](https://img.shields.io/badge/API-OpenAI%20Compatible-green) ![License](https://img.shields.io/badge/license-Apache%202.0-blue)
+
+---
+
+> [!NOTE]
+> **Cloud-Hosted Setup Coming Soon!** ☁️
+> We are building a fully managed cloud version of AI Skill Engine. If you want to skip self-hosting and deployment maintenance, stay tuned!
 
 ---
 
@@ -417,33 +423,9 @@ npx -y @modelcontextprotocol/server-memory
 | API Tester | `/api-tester` | Built-in HTTP client to test the chat endpoint |
 | API Documentation | `/docs` | Interactive API reference |
 
----
 
-## 📁 Project Structure
 
-```
-ai-skill-engine/
-├── backend/
-│   ├── main.py              # FastAPI app & REST endpoints
-│   ├── skill_engine.py      # LLM orchestration & tool dispatch
-│   ├── skill_registry.py    # Skill & MCP tool discovery
-│   ├── models.py            # SQLAlchemy models
-│   ├── llm_client.py        # Multi-provider LLM client
-│   ├── encryption_utils.py  # API key encryption
-│   └── executors/           # Docker / Process / HTTP / MCP executors
-├── frontend/src/
-│   ├── App.jsx              # Routing & sidebar nav
-│   └── components/          # Dashboard page components
-├── skills/
-│   ├── system_diagnostics/  # Shell tools (uptime, disk, CPU)
-│   ├── code_interpreter/    # Sandboxed Python execution
-│   ├── ip_info/             # HTTP IP geolocation
-│   └── sample_api/          # Example REST API skill
-└── run_server.sh            # Start script
-```
-
----
 
 ## 📄 License
 
-MIT — free for personal and commercial use.
+[Apache License 2.0](./LICENSE) — free for personal and commercial use, with attribution.
