@@ -38,6 +38,7 @@ class SkillRegistry:
                         metadata["body"] = markdown_body
                         metadata["filepath"] = filepath
                         metadata["source"] = "file"
+                        metadata["created_at"] = mtime
                         
                         self.file_skills_cache[filepath] = metadata
                         self.file_mtimes[filepath] = mtime
@@ -87,6 +88,7 @@ class SkillRegistry:
                         metadata["source"] = "database"
                         metadata["db_id"] = dbs.id
                         metadata["content"] = dbs.content
+                        metadata["created_at"] = dbs.created_at.timestamp() if dbs.created_at else 0.0
                         self.skills[skill_name] = metadata
                     except Exception as e:
                         print(f"Error parsing DB custom skill {dbs.name}: {e}")
@@ -120,7 +122,8 @@ class SkillRegistry:
                             "tools": tools_def,
                             "body": f"Skill auto-generated from external MCP Server {srv.name}.",
                             "source": "mcp_server",
-                            "mcp_server_id": srv.id
+                            "mcp_server_id": srv.id,
+                            "created_at": srv.created_at.timestamp() if srv.created_at else 0.0
                         }
                     except Exception as ex:
                         print(f"Error loading tools for MCP server {srv.name}: {ex}")
@@ -139,7 +142,8 @@ class SkillRegistry:
                 "description": data.get("description", ""),
                 "tools_count": len(data.get("tools", [])),
                 "source": data.get("source", "file"),
-                "db_id": data.get("db_id")
+                "db_id": data.get("db_id"),
+                "created_at": data.get("created_at", 0.0)
             })
         return result
 

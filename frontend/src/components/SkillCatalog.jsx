@@ -13,7 +13,7 @@ export default function SkillCatalog() {
 
   // Syncing with URL parameters
   const page = parseInt(searchParams.get('page') || '1', 10);
-  const pageSize = parseInt(searchParams.get('page_size') || '6', 10);
+  const pageSize = parseInt(searchParams.get('page_size') || '15', 10);
   const search = searchParams.get('search') || '';
 
   const setPage = (val) => {
@@ -50,6 +50,18 @@ export default function SkillCatalog() {
   const [skillNameInput, setSkillNameInput] = useState('');
   const [skillContentInput, setSkillContentInput] = useState('');
   const [saving, setSaving] = useState(false);
+
+  // Generator Wizard State
+  const [showGenModal, setShowGenModal] = useState(false);
+  const [genStep, setGenStep] = useState(1);
+  const [genModels, setGenModels] = useState([]);
+  const [genModelIndex, setGenModelIndex] = useState('');
+  const [genName, setGenName] = useState('');
+  const [genDesc, setGenDesc] = useState('');
+  const [genApiCalls, setGenApiCalls] = useState([]);
+  const [genInputsSecrets, setGenInputsSecrets] = useState('');
+  const [genBehavior, setGenBehavior] = useState('');
+  const [generating, setGenerating] = useState(false);
 
   const defaultSkillTemplate = `---
 name: my_new_skill
@@ -108,6 +120,111 @@ Provide instructions for the LLM on how to resolve queries using this skill.
     setSkillContentInput(defaultSkillTemplate);
     setIsEditing(false);
     setShowModal(true);
+  };
+
+  const handleOpenGenerator = async () => {
+    setGenStep(1);
+    setGenName('');
+    setGenDesc('');
+    setGenApiCalls([]);
+    setGenInputsSecrets('');
+    setGenBehavior('');
+    setGenModelIndex('');
+    setShowGenModal(true);
+
+    try {
+      const res = await fetch('/api/v1/generator/models');
+      if (res.ok) {
+        const data = await res.json();
+        setGenModels(data || []);
+        if (data && data.length > 0) {
+          setGenModelIndex('0');
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load generator models:', err);
+    }
+  };
+
+  const handleAddApiCall = () => {
+    setGenApiCalls([...genApiCalls, { method: 'GET', url: '', headers: [], query_params: [], body: '' }]);
+  };
+
+  const handleRemoveApiCall = (index) => {
+    const updated = [...genApiCalls];
+    updated.splice(index, 1);
+    setGenApiCalls(updated);
+  };
+
+  const handleApiFieldChange = (index, field, value) => {
+    const updated = [...genApiCalls];
+    updated[index][field] = value;
+    setGenApiCalls(updated);
+  };
+
+  const handleAddKeyValue = (apiIndex, type) => {
+    const updated = [...genApiCalls];
+    if (!updated[apiIndex][type]) {
+      updated[apiIndex][type] = [];
+    }
+    updated[apiIndex][type].push({ key: '', value: '' });
+    setGenApiCalls(updated);
+  };
+
+  const handleRemoveKeyValue = (apiIndex, type, kvIndex) => {
+    const updated = [...genApiCalls];
+    updated[apiIndex][type].splice(kvIndex, 1);
+    setGenApiCalls(updated);
+  };
+
+  const handleKeyValueChange = (apiIndex, type, kvIndex, field, value) => {
+    const updated = [...genApiCalls];
+    updated[apiIndex][type][kvIndex][field] = value;
+    setGenApiCalls(updated);
+  };
+
+  const handleGenerateSkill = async () => {
+    if (!genModelIndex || genModels.length === 0) {
+      alert('Please select a model.');
+      return;
+    }
+    if (!genName.trim()) {
+      alert('Please enter a skill name.');
+      return;
+    }
+    setGenerating(true);
+    const selectedModel = genModels[parseInt(genModelIndex, 10)];
+    try {
+      const res = await fetch('/api/v1/generator/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tenant_id: selectedModel.tenant_id,
+          model_name: selectedModel.model_name,
+          skill_name: genName,
+          description: genDesc,
+          api_calls: genApiCalls,
+          inputs_secrets: genInputsSecrets,
+          behavior: genBehavior
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setShowGenModal(false);
+        setSkillNameInput(genName.trim().toLowerCase().replace(" ", "_"));
+        setSkillContentInput(data.content || '');
+        setIsEditing(false);
+        setShowModal(true);
+      } else {
+        const errData = await res.json();
+        alert(`Generation failed: ${errData.detail || 'unknown error'}`);
+      }
+    } catch (e) {
+      console.error('Failed to generate skill:', e);
+      alert('Network or Server error generating skill.');
+    } finally {
+      setGenerating(false);
+    }
   };
 
   const handleOpenEditModal = async (skill) => {
@@ -244,6 +361,9 @@ Provide instructions for the LLM on how to resolve queries using this skill.
             />
           </div>
 
+          <button className="btn-outline" onClick={handleOpenGenerator} style={{ color: 'var(--primary-cyan)', borderColor: 'rgba(6, 182, 212, 0.4)' }}>
+            <Cpu size={16} /> Interactive Generator
+          </button>
           <button className="btn-gradient" onClick={handleOpenCreateModal}>
             <Plus size={16} /> Create Custom Skill
           </button>
@@ -383,6 +503,275 @@ Provide instructions for the LLM on how to resolve queries using this skill.
                 )}
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Generator Wizard Modal */}
+      {showGenModal && (
+        <div className="modal-overlay" onClick={() => setShowGenModal(false)}>
+          <div className="modal-box" style={{ maxWidth: '650px', width: '95%' }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '14px', marginBottom: '16px' }}>
+              <h3 style={{ fontSize: '1.15rem', fontWeight: '800', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Cpu size={18} color="var(--primary-cyan)" /> Interactive Skill Generator
+              </h3>
+              <button className="btn-outline" onClick={() => setShowGenModal(false)} style={{ padding: '6px', borderRadius: '8px' }}>
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Steps indicator */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px', background: 'var(--bg-card)', padding: '10px 14px', borderRadius: '8px' }}>
+              {['1. Select Model', '2. Core Details', '3. Actions', '4. Behavior'].map((label, idx) => (
+                <span
+                  key={idx}
+                  style={{
+                    fontSize: '0.78rem',
+                    fontWeight: '700',
+                    color: genStep === idx + 1 ? 'var(--primary-cyan)' : 'var(--text-muted)'
+                  }}
+                >
+                  {label}
+                </span>
+              ))}
+            </div>
+
+            {/* Step 1: Model Selection */}
+            {genStep === 1 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <label style={{ fontSize: '0.78rem', color: 'var(--text-sub)', fontWeight: '600' }}>Select Tenant & Model</label>
+                  {genModels.length === 0 ? (
+                    <div style={{ padding: '12px', background: 'rgba(239, 68, 68, 0.06)', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: '8px', fontSize: '0.86rem', color: 'var(--accent-rose)' }}>
+                      No active models found. Please configure a Model under **Tenants & Keys** first.
+                    </div>
+                  ) : (
+                    <select
+                      value={genModelIndex}
+                      onChange={(e) => setGenModelIndex(e.target.value)}
+                      style={{ width: '100%', padding: '10px', borderRadius: '8px', background: 'var(--bg-input)', color: 'var(--text-main)', border: '1px solid var(--border-subtle)' }}
+                    >
+                      {genModels.map((m, idx) => (
+                        <option key={idx} value={idx}>
+                          🔑 {m.tenant_name} — {m.model_name} ({m.provider})
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+                <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '14px', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                  <button type="button" className="btn-outline" onClick={() => setShowGenModal(false)}>Cancel</button>
+                  <button type="button" className="btn-gradient" disabled={genModels.length === 0} onClick={() => setGenStep(2)}>Next Step</button>
+                </div>
+              </div>
+            )}
+
+            {/* Step 2: Core Details */}
+            {genStep === 2 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <label style={{ fontSize: '0.78rem', color: 'var(--text-sub)', fontWeight: '600' }}>Skill Name</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. check_weather"
+                    value={genName}
+                    onChange={(e) => setGenName(e.target.value)}
+                    required
+                  />
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <label style={{ fontSize: '0.78rem', color: 'var(--text-sub)', fontWeight: '600' }}>Description (What does it do?)</label>
+                  <textarea
+                    placeholder="e.g. Fetches current weather reports and forecasts for a location."
+                    value={genDesc}
+                    onChange={(e) => setGenDesc(e.target.value)}
+                    style={{ height: '80px', resize: 'none' }}
+                  />
+                </div>
+                <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '14px', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                  <button type="button" className="btn-outline" onClick={() => setGenStep(1)}>Back</button>
+                  <button type="button" className="btn-gradient" disabled={!genName.trim()} onClick={() => setGenStep(3)}>Next Step</button>
+                </div>
+              </div>
+            )}
+
+            {/* Step 3: Tooling requirements */}
+            {genStep === 3 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', maxHeight: '420px', overflowY: 'auto', paddingRight: '8px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '0.84rem', fontWeight: '700', color: 'var(--text-sub)' }}>API Calls / Tools</span>
+                  <button type="button" className="btn-outline" onClick={handleAddApiCall} style={{ padding: '4px 10px', fontSize: '0.76rem' }}>
+                    <Plus size={12} /> Add API Call
+                  </button>
+                </div>
+
+                {genApiCalls.length === 0 ? (
+                  <div style={{ padding: '16px', border: '1px dashed var(--border-subtle)', borderRadius: '8px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.84rem' }}>
+                    No API calls added yet. Click "Add API Call" to register HTTP tools for this skill.
+                  </div>
+                ) : (
+                  genApiCalls.map((api, apiIdx) => (
+                    <div key={apiIdx} style={{ background: 'var(--bg-card)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column', gap: '10px', position: 'relative' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontSize: '0.82rem', fontWeight: '800', color: 'var(--primary-cyan)' }}>API Call #{apiIdx + 1}</span>
+                        <button type="button" className="btn-outline" onClick={() => handleRemoveApiCall(apiIdx)} style={{ padding: '4px 8px', fontSize: '0.74rem', color: 'var(--accent-rose)', borderColor: 'rgba(244, 63, 94, 0.2)' }}>
+                          <Trash2 size={12} /> Remove
+                        </button>
+                      </div>
+
+                      <div style={{ display: 'flex', gap: '10px' }}>
+                        <select
+                          value={api.method}
+                          onChange={(e) => handleApiFieldChange(apiIdx, 'method', e.target.value)}
+                          style={{ width: '100px', background: 'var(--bg-input)', border: '1px solid var(--border-subtle)', borderRadius: '6px' }}
+                        >
+                          <option>GET</option>
+                          <option>POST</option>
+                          <option>PUT</option>
+                          <option>DELETE</option>
+                        </select>
+                        <input
+                          type="text"
+                          placeholder="https://api.example.com/endpoint"
+                          value={api.url}
+                          onChange={(e) => handleApiFieldChange(apiIdx, 'url', e.target.value)}
+                          style={{ flex: 1 }}
+                        />
+                      </div>
+
+                      {/* Headers Key-Value list */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontSize: '0.76rem', color: 'var(--text-sub)', fontWeight: '600' }}>Headers (e.g. Content-Type, Authorization)</span>
+                          <button type="button" onClick={() => handleAddKeyValue(apiIdx, 'headers')} style={{ background: 'none', border: 'none', color: 'var(--primary-cyan)', fontSize: '0.74rem', cursor: 'pointer', padding: 0 }}>
+                            + Add Header
+                          </button>
+                        </div>
+                        {(api.headers || []).map((kv, kvIdx) => (
+                          <div key={kvIdx} style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                            <input
+                              type="text"
+                              placeholder="Header Key"
+                              value={kv.key}
+                              onChange={(e) => handleKeyValueChange(apiIdx, 'headers', kvIdx, 'key', e.target.value)}
+                              list="common-headers"
+                              style={{ flex: 1, padding: '4px 8px', fontSize: '0.78rem' }}
+                            />
+                            <datalist id="common-headers">
+                              <option value="Authorization" />
+                              <option value="Content-Type" />
+                              <option value="Accept" />
+                              <option value="User-Agent" />
+                              <option value="X-API-Key" />
+                              <option value="Cache-Control" />
+                              <option value="Origin" />
+                            </datalist>
+                            <input
+                              type="text"
+                              placeholder="Value (or {{user_data.my_secret}})"
+                              value={kv.value}
+                              onChange={(e) => handleKeyValueChange(apiIdx, 'headers', kvIdx, 'value', e.target.value)}
+                              style={{ flex: 2, padding: '4px 8px', fontSize: '0.78rem' }}
+                            />
+                            <button type="button" onClick={() => handleRemoveKeyValue(apiIdx, 'headers', kvIdx)} style={{ background: 'none', border: 'none', color: 'var(--accent-rose)', cursor: 'pointer', padding: '4px' }}>
+                              <X size={14} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Query Parameters Key-Value list */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontSize: '0.76rem', color: 'var(--text-sub)', fontWeight: '600' }}>Query Parameters (e.g. units, api_key)</span>
+                          <button type="button" onClick={() => handleAddKeyValue(apiIdx, 'query_params')} style={{ background: 'none', border: 'none', color: 'var(--primary-cyan)', fontSize: '0.74rem', cursor: 'pointer', padding: 0 }}>
+                            + Add Query Param
+                          </button>
+                        </div>
+                        {(api.query_params || []).map((kv, kvIdx) => (
+                          <div key={kvIdx} style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                            <input
+                              type="text"
+                              placeholder="Param Key"
+                              value={kv.key}
+                              onChange={(e) => handleKeyValueChange(apiIdx, 'query_params', kvIdx, 'key', e.target.value)}
+                              style={{ flex: 1, padding: '4px 8px', fontSize: '0.78rem' }}
+                            />
+                            <input
+                              type="text"
+                              placeholder="Value (or {{user_data.my_secret}})"
+                              value={kv.value}
+                              onChange={(e) => handleKeyValueChange(apiIdx, 'query_params', kvIdx, 'value', e.target.value)}
+                              style={{ flex: 2, padding: '4px 8px', fontSize: '0.78rem' }}
+                            />
+                            <button type="button" onClick={() => handleRemoveKeyValue(apiIdx, 'query_params', kvIdx)} style={{ background: 'none', border: 'none', color: 'var(--accent-rose)', cursor: 'pointer', padding: '4px' }}>
+                              <X size={14} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Body payload (for POST/PUT etc) */}
+                      {['POST', 'PUT', 'PATCH', 'DELETE'].includes(api.method) && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <span style={{ fontSize: '0.76rem', color: 'var(--text-sub)', fontWeight: '600' }}>Request Body / Payload description</span>
+                          <textarea
+                            placeholder="JSON structure or parameters for the API call"
+                            value={api.body || ''}
+                            onChange={(e) => handleApiFieldChange(apiIdx, 'body', e.target.value)}
+                            style={{ height: '50px', resize: 'none', fontSize: '0.78rem' }}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  ))
+                )}
+
+                {/* Inputs & Secrets mapping */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '10px' }}>
+                  <label style={{ fontSize: '0.78rem', color: 'var(--text-sub)', fontWeight: '600' }}>Credentials/Secrets needed (Optional)</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. openweathermap_api_key, bearer_token (from user_data)"
+                    value={genInputsSecrets}
+                    onChange={(e) => setGenInputsSecrets(e.target.value)}
+                  />
+                </div>
+
+                <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '14px', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                  <button type="button" className="btn-outline" onClick={() => setGenStep(2)}>Back</button>
+                  <button type="button" className="btn-gradient" onClick={() => setGenStep(4)}>Next Step</button>
+                </div>
+              </div>
+            )}
+
+            {/* Step 4: Behavior Rules & Generate */}
+            {genStep === 4 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <label style={{ fontSize: '0.78rem', color: 'var(--text-sub)', fontWeight: '600' }}>Behavior & Performance Rules</label>
+                  <textarea
+                    placeholder="Describe how the skill behaves (e.g. If the API returns celsius, convert it to fahrenheit before answering the user. If request fails, explain why elegantly.)"
+                    value={genBehavior}
+                    onChange={(e) => setGenBehavior(e.target.value)}
+                    style={{ height: '140px', resize: 'none' }}
+                  />
+                </div>
+
+                <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '14px', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                  <button type="button" className="btn-outline" onClick={() => setGenStep(3)}>Back</button>
+                  <button
+                    type="button"
+                    className="btn-gradient"
+                    disabled={generating}
+                    onClick={handleGenerateSkill}
+                    style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    {generating ? 'Generating...' : 'Generate Skill Code'}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
