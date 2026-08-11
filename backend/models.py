@@ -35,6 +35,23 @@ class Tenant(Base):
     execution_logs = relationship("ExecutionLog", back_populates="tenant", cascade="all, delete-orphan")
     llms = relationship("TenantLLM", back_populates="tenant", cascade="all, delete-orphan")
     chat_requests = relationship("ChatRequest", back_populates="tenant", cascade="all, delete-orphan")
+    email_config = relationship("EmailConfig", back_populates="tenant", uselist=False, cascade="all, delete-orphan")
+
+class EmailConfig(Base):
+    __tablename__ = "email_configs"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    tenant_id = Column(String, ForeignKey("tenants.id"), nullable=True, unique=True)
+    smtp_host = Column(String, nullable=False)
+    smtp_port = Column(Integer, nullable=False)
+    smtp_username = Column(String, nullable=True)
+    smtp_password_encrypted = Column(String, nullable=True)
+    sender_email = Column(String, nullable=False)
+    use_tls = Column(Boolean, default=True)
+    use_ssl = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    tenant = relationship("Tenant", back_populates="email_config")
 
 class ConversationSession(Base):
     __tablename__ = "conversation_sessions"

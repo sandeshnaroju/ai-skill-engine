@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate, Routes, Route, Navigate } from 'react-router-dom';
-import { Key, Layers, MessageSquare, Database, ShieldCheck, Cpu, BookOpen, Sun, Moon, Activity, Box, PanelLeftClose, PanelLeftOpen, Zap, Terminal, FileText, DollarSign, LogOut, User as UserIcon, HardDrive } from 'lucide-react';
+import { Key, Layers, MessageSquare, Database, ShieldCheck, Cpu, BookOpen, Sun, Moon, Activity, Box, PanelLeftClose, PanelLeftOpen, Zap, Terminal, FileText, DollarSign, LogOut, User as UserIcon, HardDrive, Mail } from 'lucide-react';
 import TenantManager from './components/TenantManager';
 import SkillCatalog from './components/SkillCatalog';
 import ChatPlayground from './components/ChatPlayground';
@@ -16,6 +16,7 @@ import Profile from './components/Profile';
 import StorageSettings from './components/StorageSettings';
 import SandboxSettings from './components/SandboxSettings';
 import UserDataTemplates from './components/UserDataTemplates';
+import EmailSettings from './components/EmailSettings';
 
 export default function App() {
   const navItems = [
@@ -25,6 +26,7 @@ export default function App() {
     { id: 'mcp', label: 'MCP Servers', icon: Cpu },
     { id: 'tenants', label: 'Tenants & Keys', icon: Key },
     { id: 'user-data', label: 'User Data Profiles', icon: Layers },
+    { id: 'email-config', label: 'Email Configuration', icon: Mail },
     { id: 'storage', label: 'Storage', icon: HardDrive },
     { id: 'sandbox', label: 'Sandbox Config', icon: ShieldCheck },
     { id: 'usage', label: 'LLM Cost & Usage', icon: DollarSign },
@@ -481,6 +483,7 @@ export default function App() {
             <Route path="/mcp" element={<McpServerManager />} />
             <Route path="/tenants" element={<TenantManager />} />
             <Route path="/user-data" element={<UserDataTemplates />} />
+            <Route path="/email-config" element={<EmailSettings />} />
             <Route path="/storage" element={<StorageSettings />} />
             <Route path="/sandbox" element={<SandboxSettings />} />
             <Route path="/usage" element={<UsageSummary />} />

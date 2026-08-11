@@ -425,6 +425,8 @@ class SkillEngine:
                                     exec_res = run_download_sandbox_file(db, session_id, exec_args)
                                 elif fn_name == "sandbox_file_manager__upload_sandbox_file":
                                     exec_res = run_upload_sandbox_file(db, session_id, exec_args)
+                                elif fn_name == "email__send_email":
+                                    exec_res = run_send_email_tool(db, exec_args, tenant)
                                 else:
                                     exec_res = sandbox_manager.execute(command=exec_command, code=code, session_id=session_id)
                                     exec_res = map_local_generated_files_to_tenant(exec_res, tenant_name=tenant_name)
@@ -902,6 +904,8 @@ class SkillEngine:
                                     exec_res = run_download_sandbox_file(db, session_id, exec_args)
                                 elif fn_name == "sandbox_file_manager__upload_sandbox_file":
                                     exec_res = run_upload_sandbox_file(db, session_id, exec_args)
+                                elif fn_name == "email__send_email":
+                                    exec_res = run_send_email_tool(db, exec_args, tenant)
                                 else:
                                     exec_res = sandbox_manager.execute(command=exec_command, code=code, session_id=session_id)
                                     exec_res = map_local_generated_files_to_tenant(exec_res, tenant_name=tenant_name)
@@ -1307,6 +1311,97 @@ class SkillEngine:
             yield "data: [DONE]\n\n"
         finally:
             db.close()
+
+def run_send_email_tool(db, args: dict, tenant) -> dict:
+    import time
+    start_time = time.time()
+    
+    to_email = args.get("to_email")
+    subject = args.get("subject")
+    body = args.get("body")
+    
+    if not to_email or not subject or not body:
+        return {
+            "stdout": "",
+            "stderr": "Error: to_email, subject, and body are required parameters.",
+            "exit_code": 1,
+            "execution_time_ms": int((time.time() - start_time) * 1000),
+            "sandbox_type": "host"
+        }
+        
+    if not tenant:
+        return {
+            "stdout": "",
+            "stderr": "Error: No tenant context provided to execute SMTP emailing.",
+            "exit_code": 1,
+            "execution_time_ms": int((time.time() - start_time) * 1000),
+            "sandbox_type": "host"
+        }
+        
+    from models import EmailConfig
+    from encryption_utils import decrypt_key
+    import smtplib
+    from email.mime.text import MIMEText
+    from email.mime.multipart import MIMEMultipart
+    
+    config = db.query(EmailConfig).filter(EmailConfig.tenant_id == tenant.id).first()
+    if not config:
+        return {
+            "stdout": "",
+            "stderr": "Error: SMTP configuration has not been set up for this tenant. Please visit Email Configuration settings in the dashboard.",
+            "exit_code": 1,
+            "execution_time_ms": int((time.time() - start_time) * 1000),
+            "sandbox_type": "host"
+        }
+        
+    password = None
+    if config.smtp_password_encrypted:
+        try:
+            password = decrypt_key(config.smtp_password_encrypted)
+        except Exception as e:
+            return {
+                "stdout": "",
+                "stderr": f"Error decrypting SMTP password: {str(e)}",
+                "exit_code": 1,
+                "execution_time_ms": int((time.time() - start_time) * 1000),
+                "sandbox_type": "host"
+            }
+            
+    try:
+        msg = MIMEMultipart()
+        msg['From'] = config.sender_email
+        msg['To'] = to_email
+        msg['Subject'] = subject
+        msg.attach(MIMEText(body, "html" if ("<html" in body.lower() or "<body" in body.lower() or "<div" in body.lower()) else "plain"))
+        
+        if config.use_ssl:
+            server = smtplib.SMTP_SSL(config.smtp_host, config.smtp_port, timeout=12)
+        else:
+            server = smtplib.SMTP(config.smtp_host, config.smtp_port, timeout=12)
+            if config.use_tls:
+                server.starttls()
+                
+        if config.smtp_username:
+            server.login(config.smtp_username, password)
+            
+        server.sendmail(config.sender_email, to_email, msg.as_string())
+        server.quit()
+        
+        return {
+            "stdout": f"Email successfully sent to {to_email} with subject: '{subject}'",
+            "stderr": "",
+            "exit_code": 0,
+            "execution_time_ms": int((time.time() - start_time) * 1000),
+            "sandbox_type": "host"
+        }
+    except Exception as e:
+        return {
+            "stdout": "",
+            "stderr": f"SMTP delivery failed: {str(e)}",
+            "exit_code": 1,
+            "execution_time_ms": int((time.time() - start_time) * 1000),
+            "sandbox_type": "host"
+        }
 
 def run_upload_to_storage_tool(db, args: dict, tenant) -> dict:
     filename = args.get("filename")
