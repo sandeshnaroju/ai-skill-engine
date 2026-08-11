@@ -302,7 +302,7 @@ export default function LogViewer({ requestSource, title, subtitle, icon: IconCo
               <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Page Size:</span>
               <select
                 value={pageSize}
-                onChange={(e) => { setPageSize(parseInt(e.target.value)); setPage(1); }}
+                onChange={(e) => setPageSize(parseInt(e.target.value))}
                 style={{ fontSize: '0.8rem', padding: '4px 8px', width: '70px' }}
               >
                 <option value={10}>10</option>
