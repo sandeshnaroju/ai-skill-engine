@@ -248,6 +248,11 @@ Provide instructions for the LLM on how to resolve queries using this skill.
   const handleSaveSkill = async (e) => {
     e.preventDefault();
     if (!skillNameInput.trim()) return;
+    const nameValid = /^[a-z0-9_]+$/.test(skillNameInput.trim());
+    if (!nameValid) {
+      alert('Skill name can only contain lowercase letters, numbers, and underscores (_). No spaces or special characters allowed.');
+      return;
+    }
     setSaving(true);
     try {
       const res = await fetch('/api/v1/skills', {
@@ -477,10 +482,19 @@ Provide instructions for the LLM on how to resolve queries using this skill.
                   type="text"
                   placeholder="e.g. system_monitor"
                   value={skillNameInput}
-                  onChange={(e) => setSkillNameInput(e.target.value)}
+                  onChange={(e) => {
+                    // Only allow lowercase letters, numbers, and underscores
+                    const filtered = e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '');
+                    setSkillNameInput(filtered);
+                  }}
                   disabled={isEditing}
                   required
                 />
+                {skillNameInput && !/^[a-z0-9_]+$/.test(skillNameInput) && (
+                  <span style={{ fontSize: '0.72rem', color: '#ef4444', marginTop: '3px' }}>
+                    Only letters (a–z), numbers, and underscores allowed — no spaces.
+                  </span>
+                )}
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -497,7 +511,7 @@ Provide instructions for the LLM on how to resolve queries using this skill.
               <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '14px', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
                 <button type="button" className="btn-outline" onClick={() => setShowModal(false)} style={{ padding: '8px 16px' }}>Cancel</button>
                 {(!isEditing || (isEditing && skills.find(s=>s.name === editingSkillName)?.source === 'database')) && (
-                  <button type="submit" className="btn-gradient" disabled={saving || !skillNameInput.trim()} style={{ padding: '8px 20px' }}>
+                  <button type="submit" className="btn-gradient" disabled={saving || !skillNameInput.trim() || !/^[a-z0-9_]+$/.test(skillNameInput.trim())} style={{ padding: '8px 20px' }}>
                     {saving ? 'Saving...' : 'Save Skill'}
                   </button>
                 )}
@@ -509,8 +523,8 @@ Provide instructions for the LLM on how to resolve queries using this skill.
 
       {/* Generator Wizard Modal */}
       {showGenModal && (
-        <div className="modal-overlay" onClick={() => setShowGenModal(false)}>
-          <div className="modal-box" style={{ maxWidth: '650px', width: '95%' }} onClick={(e) => e.stopPropagation()}>
+        <div className="modal-overlay">
+          <div className="modal-box" style={{ maxWidth: '960px', width: '98%', maxHeight: '90vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '14px', marginBottom: '16px' }}>
               <h3 style={{ fontSize: '1.15rem', fontWeight: '800', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <Cpu size={18} color="var(--primary-cyan)" /> Interactive Skill Generator
@@ -640,22 +654,22 @@ Provide instructions for the LLM on how to resolve queries using this skill.
                       </div>
 
                       {/* Headers Key-Value list */}
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <span style={{ fontSize: '0.76rem', color: 'var(--text-sub)', fontWeight: '600' }}>Headers (e.g. Content-Type, Authorization)</span>
-                          <button type="button" onClick={() => handleAddKeyValue(apiIdx, 'headers')} style={{ background: 'none', border: 'none', color: 'var(--primary-cyan)', fontSize: '0.74rem', cursor: 'pointer', padding: 0 }}>
+                          <span style={{ fontSize: '0.78rem', color: 'var(--text-sub)', fontWeight: '600' }}>Headers (e.g. Content-Type, Authorization)</span>
+                          <button type="button" onClick={() => handleAddKeyValue(apiIdx, 'headers')} style={{ background: 'none', border: 'none', color: 'var(--primary-cyan)', fontSize: '0.76rem', cursor: 'pointer', padding: 0 }}>
                             + Add Header
                           </button>
                         </div>
                         {(api.headers || []).map((kv, kvIdx) => (
-                          <div key={kvIdx} style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                          <div key={kvIdx} style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
                             <input
                               type="text"
                               placeholder="Header Key"
                               value={kv.key}
                               onChange={(e) => handleKeyValueChange(apiIdx, 'headers', kvIdx, 'key', e.target.value)}
                               list="common-headers"
-                              style={{ flex: 1, padding: '4px 8px', fontSize: '0.78rem' }}
+                              style={{ flex: 1, padding: '8px 12px', fontSize: '0.84rem' }}
                             />
                             <datalist id="common-headers">
                               <option value="Authorization" />
@@ -671,41 +685,41 @@ Provide instructions for the LLM on how to resolve queries using this skill.
                               placeholder="Value (or {{user_data.my_secret}})"
                               value={kv.value}
                               onChange={(e) => handleKeyValueChange(apiIdx, 'headers', kvIdx, 'value', e.target.value)}
-                              style={{ flex: 2, padding: '4px 8px', fontSize: '0.78rem' }}
+                              style={{ flex: 2, padding: '8px 12px', fontSize: '0.84rem' }}
                             />
                             <button type="button" onClick={() => handleRemoveKeyValue(apiIdx, 'headers', kvIdx)} style={{ background: 'none', border: 'none', color: 'var(--accent-rose)', cursor: 'pointer', padding: '4px' }}>
-                              <X size={14} />
+                              <X size={15} />
                             </button>
                           </div>
                         ))}
                       </div>
 
                       {/* Query Parameters Key-Value list */}
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <span style={{ fontSize: '0.76rem', color: 'var(--text-sub)', fontWeight: '600' }}>Query Parameters (e.g. units, api_key)</span>
-                          <button type="button" onClick={() => handleAddKeyValue(apiIdx, 'query_params')} style={{ background: 'none', border: 'none', color: 'var(--primary-cyan)', fontSize: '0.74rem', cursor: 'pointer', padding: 0 }}>
+                          <span style={{ fontSize: '0.78rem', color: 'var(--text-sub)', fontWeight: '600' }}>Query Parameters (e.g. units, api_key)</span>
+                          <button type="button" onClick={() => handleAddKeyValue(apiIdx, 'query_params')} style={{ background: 'none', border: 'none', color: 'var(--primary-cyan)', fontSize: '0.76rem', cursor: 'pointer', padding: 0 }}>
                             + Add Query Param
                           </button>
                         </div>
                         {(api.query_params || []).map((kv, kvIdx) => (
-                          <div key={kvIdx} style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                          <div key={kvIdx} style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
                             <input
                               type="text"
                               placeholder="Param Key"
                               value={kv.key}
                               onChange={(e) => handleKeyValueChange(apiIdx, 'query_params', kvIdx, 'key', e.target.value)}
-                              style={{ flex: 1, padding: '4px 8px', fontSize: '0.78rem' }}
+                              style={{ flex: 1, padding: '8px 12px', fontSize: '0.84rem' }}
                             />
                             <input
                               type="text"
                               placeholder="Value (or {{user_data.my_secret}})"
                               value={kv.value}
                               onChange={(e) => handleKeyValueChange(apiIdx, 'query_params', kvIdx, 'value', e.target.value)}
-                              style={{ flex: 2, padding: '4px 8px', fontSize: '0.78rem' }}
+                              style={{ flex: 2, padding: '8px 12px', fontSize: '0.84rem' }}
                             />
                             <button type="button" onClick={() => handleRemoveKeyValue(apiIdx, 'query_params', kvIdx)} style={{ background: 'none', border: 'none', color: 'var(--accent-rose)', cursor: 'pointer', padding: '4px' }}>
-                              <X size={14} />
+                              <X size={15} />
                             </button>
                           </div>
                         ))}
