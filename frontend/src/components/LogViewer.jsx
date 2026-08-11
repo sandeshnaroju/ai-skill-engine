@@ -238,7 +238,7 @@ export default function LogViewer({ requestSource, title, subtitle, icon: IconCo
                       </td>
                       <td style={{ padding: '14px 12px' }}>
                         <code style={{ background: '#04070d', padding: '4px 10px', borderRadius: '6px', fontSize: '0.78rem', color: '#93c5fd' }}>
-                          {log.command.length > 55 ? log.command.substring(0, 55) + '...' : log.command}
+                          {(log.command || '').length > 55 ? (log.command || '').substring(0, 55) + '...' : (log.command || 'N/A')}
                         </code>
                       </td>
                       <td style={{ padding: '14px 12px', color: 'var(--text-sub)' }}>
@@ -272,7 +272,7 @@ export default function LogViewer({ requestSource, title, subtitle, icon: IconCo
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                             <div>
                                <div style={{ fontSize: '0.8rem', fontWeight: '600', color: 'var(--text-sub)', marginBottom: '6px' }}>Executed Command / Code</div>
-                              <pre className="code-display" style={{ maxHeight: '140px' }}>{log.command}</pre>
+                              <pre className="code-display" style={{ maxHeight: '140px' }}>{log.command || 'N/A'}</pre>
                             </div>
                             <div>
                               <div style={{ fontSize: '0.8rem', fontWeight: '600', color: 'var(--text-sub)', marginBottom: '6px' }}>Output (stdout / stderr)</div>

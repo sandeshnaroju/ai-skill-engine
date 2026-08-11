@@ -1120,62 +1120,6 @@ export default function ChatPlayground() {
       >
         {!isProchatActive && renderMessageContent(m.content)}
         {(() => {
-          const genFiles = extractGeneratedFiles(m);
-          if (genFiles.length === 0) return null;
-          return (
-            <div style={{ marginTop: '12px', borderTop: '1px solid var(--border-subtle)', paddingTop: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <div style={{ fontSize: '0.78rem', fontWeight: '600', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <Download size={13} /> Generated Files
-              </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                {genFiles.map((file, fidx) => {
-                  const isImage = /\.(png|jpe?g|gif|webp|svg)$/i.test(file.original_name);
-                  return (
-                    <div key={fidx} style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                      <a
-                        href={file.url}
-                        download={file.original_name}
-                        style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '8px',
-                          background: 'var(--bg-card)',
-                          border: '1px solid var(--border-subtle)',
-                          borderRadius: '8px',
-                          padding: '6px 12px',
-                          fontSize: '0.82rem',
-                          color: 'var(--text-main)',
-                          textDecoration: 'none',
-                          cursor: 'pointer',
-                          transition: 'all 0.2s',
-                        }}
-                        onMouseEnter={(e) => e.currentTarget.style.borderColor = 'var(--primary-violet)'}
-                        onMouseLeave={(e) => e.currentTarget.style.borderColor = 'var(--border-subtle)'}
-                      >
-                        <Download size={14} color="var(--primary-violet)" />
-                        <span>{file.original_name}</span>
-                      </a>
-                      {isImage && (
-                        <img
-                          src={file.url}
-                          alt={file.original_name}
-                          style={{
-                            maxWidth: '240px',
-                            maxHeight: '180px',
-                            borderRadius: '6px',
-                            border: '1px solid var(--border-subtle)',
-                            marginTop: '4px',
-                          }}
-                        />
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          );
-        })()}
-        {(() => {
           const hasUiChunk = m.json;
           if (!hasUiChunk) return null;
           return (
