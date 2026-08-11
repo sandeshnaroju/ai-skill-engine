@@ -25,3 +25,4 @@ Use this skill when users request mathematical calculations, data processing, st
   - Do NOT attempt to run `pip install` or download external packages.
   - Do NOT use libraries that make HTTP/network requests (like `urllib`, `requests`, `socket`, etc.) inside your code.
 - **Environment Variables**: Do NOT query, read, or search for system environment variables (e.g. via `os.environ` or `os.getenv`). Credentials should only be passed explicitly via input arguments if required.
+- **Empty File Workspace**: By default, there are **no readable files or document content** present in the sandbox workspace. Do NOT write scripts attempting to read pre-existing data files from the directory unless you are explicitly creating those files within the code or they have been uploaded and provided in the prompt context. This sandbox is strictly for executing logical computations to get answers.
