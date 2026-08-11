@@ -118,6 +118,7 @@ class PlaygroundChatRequest(BaseModel):
     session_id: Optional[str] = "default_session"
     prochat_model: Optional[str] = None
     user_data: Optional[dict] = None
+    skill_names: Optional[List[str]] = None
 
 class OpenAIStyleMessage(BaseModel):
     role: str
@@ -131,6 +132,7 @@ class OpenAIChatRequest(BaseModel):
     stream: Optional[bool] = False
     prochat_model: Optional[str] = None
     user_data: Optional[dict] = None
+    skill_names: Optional[List[str]] = None
 
 class TenantCreate(BaseModel):
     name: str
@@ -859,6 +861,9 @@ def create_skill(
     current_user: User = Depends(get_current_user)
 ):
     clean_name = payload.skill_name.strip().lower().replace(" ", "_")
+    import re as _re
+    if not _re.match(r'^[a-z0-9_]+$', clean_name):
+        raise HTTPException(status_code=400, detail="Skill name can only contain lowercase letters (a-z), numbers (0-9), and underscores (_). No spaces or special characters allowed.")
     from models import CustomSkill
     
     existing = db.query(CustomSkill).filter(CustomSkill.name == clean_name).first()
@@ -955,7 +960,8 @@ def interact(
         session_id=req.session_id,
         user_message=req.message,
         prochat_model=req.prochat_model,
-        user_data=req.user_data
+        user_data=req.user_data,
+        skill_names=req.skill_names
     )
     return result
 
@@ -973,7 +979,8 @@ def stream_interact(
             session_id=req.session_id,
             user_message=req.message,
             prochat_model=req.prochat_model,
-            user_data=req.user_data
+            user_data=req.user_data,
+            skill_names=req.skill_names
         ),
         media_type="text/event-stream"
     )
@@ -1009,7 +1016,8 @@ def openai_chat_completions(
                     model_name=req.model or "gemini-2.5-flash",
                     request_source=x_request_source,
                     prochat_model=req.prochat_model,
-                    user_data=req.user_data
+                    user_data=req.user_data,
+                    skill_names=req.skill_names
                 ),
                 media_type="text/event-stream"
             )
@@ -1023,7 +1031,8 @@ def openai_chat_completions(
             model_name=req.model,
             request_source=x_request_source,
             prochat_model=req.prochat_model,
-            user_data=req.user_data
+            user_data=req.user_data,
+            skill_names=req.skill_names
         )
 
         return {
@@ -1540,20 +1549,98 @@ def create_mcp_server(
     skill_registry.reload_skills(db=db)
     return {"status": "created", "server_id": srv.id, "name": srv.name}
 
-@app.delete("/api/v1/mcp_servers/{server_id}")
-def delete_mcp_server(
-    server_id: str,
+    skill_registry.reload_skills(db=db)
+    return {"status": "deleted", "server_id": server_id}
+
+
+# --- User Data Template Management Endpoints ---
+
+class UserDataTemplateCreate(BaseModel):
+    name: str
+    description: Optional[str] = None
+    data: dict
+
+
+@app.get("/api/v1/user_data_templates")
+def list_user_data_templates(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    page: Optional[int] = None,
+    page_size: int = 10,
+    search: Optional[str] = None
+):
+    from models import UserDataTemplate
+    import json
+    query = db.query(UserDataTemplate)
+    if search:
+        query = query.filter(UserDataTemplate.name.ilike(f"%{search}%") | UserDataTemplate.description.ilike(f"%{search}%"))
+    query = query.order_by(UserDataTemplate.created_at.desc())
+
+    def serialize(t):
+        try:
+            parsed_data = json.loads(t.data)
+        except Exception:
+            parsed_data = {}
+        return {
+            "id": t.id,
+            "name": t.name,
+            "description": t.description,
+            "data": parsed_data,
+            "created_at": t.created_at.isoformat() if t.created_at else None,
+            "updated_at": t.updated_at.isoformat() if t.updated_at else None
+        }
+    return get_paginated_response(query, page, page_size, serialize)
+
+
+@app.post("/api/v1/user_data_templates")
+def create_or_update_user_data_template(
+    payload: UserDataTemplateCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    from models import McpServer
-    srv = db.query(McpServer).filter(McpServer.id == server_id).first()
-    if not srv:
-        raise HTTPException(status_code=404, detail="MCP server not found")
-    db.delete(srv)
+    from models import UserDataTemplate
+    import json
+    clean_name = payload.name.strip()
+    if not clean_name:
+        raise HTTPException(status_code=400, detail="Name cannot be empty")
+
+    data_str = json.dumps(payload.data)
+
+    existing = db.query(UserDataTemplate).filter(UserDataTemplate.name == clean_name).first()
+    if existing:
+        existing.description = payload.description
+        existing.data = data_str
+        tpl = existing
+    else:
+        tpl = UserDataTemplate(
+            name=clean_name,
+            description=payload.description,
+            data=data_str
+        )
+        db.add(tpl)
     db.commit()
-    skill_registry.reload_skills(db=db)
-    return {"status": "deleted", "server_id": server_id}
+    db.refresh(tpl)
+    return {
+        "status": "success",
+        "template_id": tpl.id,
+        "name": tpl.name,
+        "data": payload.data
+    }
+
+
+@app.delete("/api/v1/user_data_templates/{template_id}")
+def delete_user_data_template(
+    template_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    from models import UserDataTemplate
+    tpl = db.query(UserDataTemplate).filter(UserDataTemplate.id == template_id).first()
+    if not tpl:
+        raise HTTPException(status_code=404, detail="Template not found")
+    db.delete(tpl)
+    db.commit()
+    return {"status": "deleted", "template_id": template_id}
 
 @app.get("/api/v1/tenant/llms")
 def list_tenant_llms(

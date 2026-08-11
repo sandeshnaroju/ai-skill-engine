@@ -15,6 +15,7 @@ import AuthPages from './components/AuthPages';
 import Profile from './components/Profile';
 import StorageSettings from './components/StorageSettings';
 import SandboxSettings from './components/SandboxSettings';
+import UserDataTemplates from './components/UserDataTemplates';
 
 export default function App() {
   const navItems = [
@@ -23,6 +24,7 @@ export default function App() {
     { id: 'skills', label: 'Skills Catalog', icon: Layers },
     { id: 'mcp', label: 'MCP Servers', icon: Cpu },
     { id: 'tenants', label: 'Tenants & Keys', icon: Key },
+    { id: 'user-data', label: 'User Data Profiles', icon: Layers },
     { id: 'storage', label: 'Storage', icon: HardDrive },
     { id: 'sandbox', label: 'Sandbox Config', icon: ShieldCheck },
     { id: 'usage', label: 'LLM Cost & Usage', icon: DollarSign },
@@ -478,6 +480,7 @@ export default function App() {
             <Route path="/skills" element={<SkillCatalog />} />
             <Route path="/mcp" element={<McpServerManager />} />
             <Route path="/tenants" element={<TenantManager />} />
+            <Route path="/user-data" element={<UserDataTemplates />} />
             <Route path="/storage" element={<StorageSettings />} />
             <Route path="/sandbox" element={<SandboxSettings />} />
             <Route path="/usage" element={<UsageSummary />} />

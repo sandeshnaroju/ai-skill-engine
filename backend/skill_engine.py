@@ -188,7 +188,8 @@ class SkillEngine:
         model_name: str = None,
         request_source: str = "api",
         prochat_model: str = None,
-        user_data: dict = None
+        user_data: dict = None,
+        skill_names: list = None
     ) -> dict:
         start_time = time.time()
 
@@ -234,13 +235,22 @@ class SkillEngine:
                 db.add(ChatMessage(session_id=session_obj.id, role="user", content=user_message_db))
                 db.commit()
 
-            # Resolve allowed skills if app_id provided
+            # Resolve allowed skills — merge app_id scoping with per-request skill_names filter
             allowed_skills = None
             if app_id:
                 from models import AppModel, AppSkillMapping
                 app_obj = db.query(AppModel).filter(AppModel.id == app_id).first()
                 if app_obj:
-                    allowed_skills = [m.skill_name for m in app_obj.skills]
+                    app_skills = [m.skill_name for m in app_obj.skills]
+                    if skill_names:
+                        # Intersect: only skills both in the app AND explicitly requested
+                        allowed_skills = [s for s in skill_names if s in app_skills]
+                    else:
+                        allowed_skills = app_skills
+            elif skill_names:
+                # No app_id — use skill_names directly, validated against registry
+                known = set(skill_registry.skills.keys())
+                allowed_skills = [s for s in skill_names if s in known]
 
             messages = self._build_messages_list(db, persist, session_obj, user_message, allowed_skills)
             if not model_name:
@@ -568,7 +578,8 @@ class SkillEngine:
         max_turns: int = 25,
         request_source: str = "api",
         prochat_model: str = None,
-        user_data: dict = None
+        user_data: dict = None,
+        skill_names: list = None
     ):
         start_time = time.time()
 
@@ -627,13 +638,22 @@ class SkillEngine:
                 db.add(ChatMessage(session_id=session_obj.id, role="user", content=user_message_db))
                 db.commit()
 
-            # Resolve allowed skills if app_id provided
+            # Resolve allowed skills — merge app_id scoping with per-request skill_names filter
             allowed_skills = None
             if app_id:
                 from models import AppModel, AppSkillMapping
                 app_obj = db.query(AppModel).filter(AppModel.id == app_id).first()
                 if app_obj:
-                    allowed_skills = [m.skill_name for m in app_obj.skills]
+                    app_skills = [m.skill_name for m in app_obj.skills]
+                    if skill_names:
+                        # Intersect: only skills both in the app AND explicitly requested
+                        allowed_skills = [s for s in skill_names if s in app_skills]
+                    else:
+                        allowed_skills = app_skills
+            elif skill_names:
+                # No app_id — use skill_names directly, validated against registry
+                known = set(skill_registry.skills.keys())
+                allowed_skills = [s for s in skill_names if s in known]
 
             # Emit initial reasoning chunk
             init_reasoning = {

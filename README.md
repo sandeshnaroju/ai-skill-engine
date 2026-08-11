@@ -296,7 +296,8 @@ Content-Type: application/json
   "model": "gemini-2.5-flash",
   "stream": true,
   "session_id": "user_123_thread_1",
-  "app_id": "your-app-group-uuid"
+  "app_id": "your-app-group-uuid",
+  "skill_names": ["system_diagnostics", "weather_fetcher"]
 }
 ```
 
@@ -309,6 +310,7 @@ Content-Type: application/json
 | `stream` | bool | `false` | Stream response as SSE events |
 | `session_id` | string | `"default_session"` | Arbitrary ID to label this conversation in execution logs |
 | `app_id` | string | `null` | UUID of an App group — scopes available tools to that App's skills only |
+| `skill_names` | array of strings | `null` | Direct filter of skill names to load in this request context. If combined with `app_id`, it intersects (only matching skills in both list and App are used). |
 | `user_data` | object | `null` | Key-value pairs (credentials, API keys, tokens) dynamically resolved inside skill tools (e.g. URLs, headers, arguments) during action runs. Keep secrets hidden from the LLM. |
 | `prochat_model` | string | `null` | ProChat model name (e.g. `genui-mars-0.1`) — when set, AI Skill Engine forwards the conversation to ProChat after the LLM responds, generating a rich UI component rendered inline in the chat. Requires a `prochat` provider model registered for the tenant. |
 
@@ -316,7 +318,7 @@ Content-Type: application/json
 
 ### From Python (OpenAI SDK)
 
-The OpenAI SDK doesn't natively support `session_id` / `app_id` / `user_data`, so pass them via `extra_body`:
+The OpenAI SDK doesn't natively support `session_id` / `app_id` / `user_data` / `skill_names`, so pass them via `extra_body`:
 
 ```python
 from openai import OpenAI
@@ -333,6 +335,7 @@ stream = client.chat.completions.create(
     extra_body={
         "session_id": "user_123_thread_1",    # labels this call in execution logs
         "app_id": "your-app-group-uuid",       # scopes tools to this App's skills only
+        "skill_names": ["weather_fetcher"],    # optional: limit execution to specific skills
         "prochat_model": "genui-mars-0.1",     # optional: enable ProChat generative UI
         "user_data": {
             "openweathermap_api_key": "YOUR_SECRET_KEY"  # resolved in weather skill parameters
@@ -356,6 +359,7 @@ curl -X POST http://localhost:2704/api/v1/chat/completions \
     "stream": false,
     "session_id": "user_123_thread_1",
     "app_id": "your-app-group-uuid",
+    "skill_names": ["weather_fetcher"],
     "prochat_model": "genui-mars-0.1",
     "user_data": {
       "openweathermap_api_key": "YOUR_SECRET_KEY"
