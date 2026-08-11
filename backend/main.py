@@ -1411,6 +1411,149 @@ def delete_tenant(
     db.commit()
     return {"status": "deleted", "tenant_id": tenant_id}
 
+class EmailConfigSave(BaseModel):
+    tenant_id: Optional[str] = None
+    smtp_host: str
+    smtp_port: int
+    smtp_username: Optional[str] = None
+    smtp_password: Optional[str] = None
+    sender_email: str
+    use_tls: Optional[bool] = True
+    use_ssl: Optional[bool] = False
+
+class EmailConfigTest(BaseModel):
+    tenant_id: Optional[str] = None
+    test_receiver: str
+
+@app.get("/api/v1/email_config")
+def get_email_config(
+    tenant_id: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    from models import EmailConfig, Tenant
+    query = db.query(EmailConfig)
+    if tenant_id:
+        query = query.filter(EmailConfig.tenant_id == tenant_id)
+    else:
+        if current_user.id != "system":
+            tenant = db.query(Tenant).filter(Tenant.user_id == current_user.id).first()
+            if tenant:
+                query = query.filter(EmailConfig.tenant_id == tenant.id)
+            else:
+                return {}
+    config = query.first()
+    if not config:
+        return {}
+    
+    return {
+        "id": config.id,
+        "tenant_id": config.tenant_id,
+        "smtp_host": config.smtp_host,
+        "smtp_port": config.smtp_port,
+        "smtp_username": config.smtp_username,
+        "sender_email": config.sender_email,
+        "use_tls": config.use_tls,
+        "use_ssl": config.use_ssl,
+        "has_password": bool(config.smtp_password_encrypted)
+    }
+
+@app.post("/api/v1/email_config")
+def save_email_config(
+    payload: EmailConfigSave,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    from models import EmailConfig, Tenant
+    from encryption_utils import encrypt_key
+    
+    t_id = payload.tenant_id
+    if not t_id and current_user.id != "system":
+        tenant = db.query(Tenant).filter(Tenant.user_id == current_user.id).first()
+        if tenant:
+            t_id = tenant.id
+        else:
+            raise HTTPException(status_code=400, detail="User must belong to a tenant to save SMTP config.")
+
+    config = db.query(EmailConfig).filter(EmailConfig.tenant_id == t_id).first()
+    if not config:
+        config = EmailConfig(tenant_id=t_id)
+        db.add(config)
+
+    config.smtp_host = payload.smtp_host
+    config.smtp_port = payload.smtp_port
+    config.smtp_username = payload.smtp_username
+    config.sender_email = payload.sender_email
+    config.use_tls = payload.use_tls if payload.use_tls is not None else True
+    config.use_ssl = payload.use_ssl if payload.use_ssl is not None else False
+
+    if payload.smtp_password:
+        config.smtp_password_encrypted = encrypt_key(payload.smtp_password)
+
+    db.commit()
+    db.refresh(config)
+    return {
+        "status": "success",
+        "config_id": config.id,
+        "has_password": bool(config.smtp_password_encrypted)
+    }
+
+@app.post("/api/v1/email_config/test")
+def test_email_config(
+    payload: EmailConfigTest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    from models import EmailConfig, Tenant
+    from encryption_utils import decrypt_key
+    import smtplib
+    from email.mime.text import MIMEText
+    from email.mime.multipart import MIMEMultipart
+
+    query = db.query(EmailConfig)
+    if payload.tenant_id:
+        query = query.filter(EmailConfig.tenant_id == payload.tenant_id)
+    else:
+        if current_user.id != "system":
+            tenant = db.query(Tenant).filter(Tenant.user_id == current_user.id).first()
+            if tenant:
+                query = query.filter(EmailConfig.tenant_id == tenant.id)
+            else:
+                raise HTTPException(status_code=400, detail="No tenant associated with user.")
+    config = query.first()
+    if not config:
+        raise HTTPException(status_code=404, detail="Email SMTP settings not found. Please configure them first.")
+
+    password = None
+    if config.smtp_password_encrypted:
+        try:
+            password = decrypt_key(config.smtp_password_encrypted)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to decrypt SMTP password: {str(e)}")
+
+    try:
+        msg = MIMEMultipart()
+        msg['From'] = config.sender_email
+        msg['To'] = payload.test_receiver
+        msg['Subject'] = "AI Skill Engine - SMTP Connection Test"
+        msg.attach(MIMEText("This is a test email validating your SMTP mail configuration from the AI Skill Engine Gateway. Your setup is successful!", "plain"))
+
+        if config.use_ssl:
+            server = smtplib.SMTP_SSL(config.smtp_host, config.smtp_port, timeout=10)
+        else:
+            server = smtplib.SMTP(config.smtp_host, config.smtp_port, timeout=10)
+            if config.use_tls:
+                server.starttls()
+        
+        if config.smtp_username:
+            server.login(config.smtp_username, password)
+        
+        server.sendmail(config.sender_email, payload.test_receiver, msg.as_string())
+        server.quit()
+        return {"status": "success", "detail": f"Test email sent successfully to {payload.test_receiver}"}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"SMTP test failed: {str(e)}")
+
 @app.get("/api/v1/logs/filters")
 def get_logs_filters(
     db: Session = Depends(get_db),
