@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Box, Plus, RefreshCw, Trash2, Check, Layers, Cpu, ShieldCheck, Zap, X, Edit, FolderPlus, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Box, Plus, RefreshCw, Trash2, Check, Layers, Cpu, ShieldCheck, Zap, X, Edit, FolderPlus, ChevronLeft, ChevronRight, Copy } from 'lucide-react';
 
 export default function AppManager() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [apps, setApps] = useState([]);
   const [skills, setSkills] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [copiedId, setCopiedId] = useState(null);
 
   // Syncing with URL parameters
   const page = parseInt(searchParams.get('page') || '1', 10);
@@ -206,9 +207,35 @@ export default function AppManager() {
                   </div>
                 </div>
 
-                <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <code style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>App ID: {app.id.substring(0, 8)}...</code>
-                  <div style={{ display: 'flex', gap: '8px' }}>
+                <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <code style={{ fontSize: '0.76rem', color: 'var(--text-sub)', background: 'rgba(0,0,0,0.2)', padding: '2px 6px', borderRadius: '4px', border: '1px solid var(--border-subtle)' }}>
+                        {app.id}
+                      </code>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(app.id);
+                          setCopiedId(app.id);
+                          setTimeout(() => setCopiedId(null), 2000);
+                        }}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: copiedId === app.id ? 'var(--primary-cyan)' : 'var(--text-muted)',
+                          cursor: 'pointer',
+                          padding: '2px',
+                          display: 'flex',
+                          alignItems: 'center'
+                        }}
+                        title="Copy App ID"
+                      >
+                        {copiedId === app.id ? <Check size={12} /> : <Copy size={12} />}
+                      </button>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
                     <button
                       className="btn-outline"
                       onClick={() => handleOpenEditModal(app)}
