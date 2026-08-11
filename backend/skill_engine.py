@@ -39,7 +39,8 @@ PROCHAT_SYSTEM_INSTRUCTION = (
     "response of another LLM assistant. The assistant's response is added in the messages.\n\n"
     "Rules:\n"
     "1. Ensure that all data and information provided in the assistant's response is fully included in the generated UI.\n"
-    "2. Do not leave out, omit, or truncate any data points, figures, or information from the response."
+    "2. Do not leave out, omit, or truncate any data points, figures, or information from the response.\n"
+    "3. Add anchor links wherever you find URLs or file links, ensuring users can download or navigate to them."
 )
 
 import re
@@ -274,9 +275,16 @@ class SkillEngine:
             executed_logs = []
 
             for turn in range(max_turns):
+                # On the very last turn, omit tools to force the LLM to write a text response
                 kwargs = {"model": model_name, "messages": messages}
-                if available_tools:
+                if available_tools and turn < max_turns - 1:
                     kwargs["tools"] = available_tools
+
+                if turn == max_turns - 1:
+                    messages.append({
+                        "role": "user",
+                        "content": "[System Notice: Maximum tool execution turns reached. You can no longer call any tools. Please summarize the tool outputs and provide your final response to the user.]"
+                    })
 
                 try:
                     response = llm.chat.completions.create(**kwargs)
@@ -689,9 +697,16 @@ class SkillEngine:
             available_tools = skill_registry.get_openai_tools(allowed_skills=allowed_skills)
 
             for turn in range(max_turns):
+                # On the very last turn, omit tools to force the LLM to write a text response
                 kwargs = {"model": model_name, "messages": messages, "stream": True}
-                if available_tools:
+                if available_tools and turn < max_turns - 1:
                     kwargs["tools"] = available_tools
+
+                if turn == max_turns - 1:
+                    messages.append({
+                        "role": "user",
+                        "content": "[System Notice: Maximum tool execution turns reached. You can no longer call any tools. Please summarize the tool outputs and provide your final response to the user.]"
+                    })
 
                 turn_reasoning = {
                     "id": f"chatcmpl-{session_id}",
