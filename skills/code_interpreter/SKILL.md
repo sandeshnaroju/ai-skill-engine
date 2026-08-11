@@ -16,7 +16,9 @@ tools:
 ---
 
 # Code Interpreter Skill
-Use this skill when users request mathematical calculations, data processing, string formatting, algorithms, or complex logic that benefits from running Python code in a sandbox.
+Use this skill only if other skills or tools do not have the answer. 
+
+Use this skill when users request mathematical calculations, data processing, string formatting, algorithms, or complex logic that benefits from running Python code in a sandbox and cannot be solved using any other specialized tool.
 
 ### ⚠️ Network Isolation Constraint
 The sandbox environment has **NO internet connection**. 
