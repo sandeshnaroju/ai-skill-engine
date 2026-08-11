@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Terminal, Send, Play, Copy, Check, Info, Cpu, Code2, ToggleLeft, ToggleRight, Database } from 'lucide-react';
+import { Terminal, Send, Play, Copy, Check, Info, Cpu, Code2, ToggleLeft, ToggleRight, Database, X } from 'lucide-react';
 import AsyncSearchableDropdown from './AsyncSearchableDropdown';
 import ProChat from 'prochat';
 
@@ -22,7 +22,7 @@ export default function ApiTester() {
   const model = searchParams.get('model') || '';
   const appId = searchParams.get('app_id') || '';
   const prochatModel = searchParams.get('prochat_model') || '';
-  const message = searchParams.get('message') || 'Check disk space and system uptime';
+  const message = searchParams.has('message') ? (searchParams.get('message') ?? '') : 'Check disk space and system uptime';
   const stream = searchParams.get('stream') !== 'false';
 
   const setModel = (val) => {
@@ -48,8 +48,7 @@ export default function ApiTester() {
 
   const setMessage = (val) => {
     const nextParams = new URLSearchParams(searchParams);
-    if (val) nextParams.set('message', val);
-    else nextParams.delete('message');
+    nextParams.set('message', val);
     setSearchParams(nextParams);
   };
 
@@ -60,6 +59,61 @@ export default function ApiTester() {
   };
 
   const [userDataPairs, setUserDataPairs] = useState([{ key: 'api_key', value: 'example_secret_key' }]);
+  const [templates, setTemplates] = useState([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState('');
+  const [selectedSkillNames, setSelectedSkillNames] = useState([]);
+
+  const fetchTemplates = async () => {
+    try {
+      const res = await fetch('/api/v1/user_data_templates?page_size=100&page=1');
+      const data = await res.json();
+      const items = Array.isArray(data.items) ? data.items : (Array.isArray(data) ? data : []);
+      setTemplates(items);
+    } catch (e) {
+      console.error('Failed to fetch User Data templates:', e);
+    }
+  };
+
+  useEffect(() => {
+    fetchTemplates();
+  }, []);
+
+  const applyTemplate = (tpl) => {
+    if (!tpl) return;
+    let dataObj = {};
+    if (typeof tpl.data === 'string') {
+      try { dataObj = JSON.parse(tpl.data); } catch (e) { dataObj = {}; }
+    } else if (tpl.data && typeof tpl.data === 'object') {
+      dataObj = tpl.data;
+    }
+    const mapped = Object.entries(dataObj).map(([key, value]) => ({ key, value: String(value) }));
+    setUserDataPairs(mapped.length > 0 ? mapped : [{ key: '', value: '' }]);
+  };
+
+  const handleTemplateChange = async (tplId) => {
+    setSelectedTemplateId(tplId);
+    if (!tplId) {
+      setUserDataPairs([{ key: '', value: '' }]);
+      return;
+    }
+    // First try the already-fetched list
+    const tpl = templates.find(t => String(t.id) === String(tplId));
+    if (tpl) {
+      applyTemplate(tpl);
+      return;
+    }
+    // If not in list (e.g. search result not in initial fetch), fetch by ID directly
+    try {
+      const res = await fetch(`/api/v1/user_data_templates?search=&page=1&page_size=100`);
+      const data = await res.json();
+      const items = Array.isArray(data.items) ? data.items : (Array.isArray(data) ? data : []);
+      setTemplates(items);
+      const found = items.find(t => String(t.id) === String(tplId));
+      if (found) applyTemplate(found);
+    } catch (e) {
+      console.error('Failed to fetch template by id:', e);
+    }
+  };
 
   const handleAddUserDataPair = () => {
     setUserDataPairs([...userDataPairs, { key: '', value: '' }]);
@@ -275,6 +329,9 @@ export default function ApiTester() {
     if (userDataPayload) {
       payload.user_data = userDataPayload;
     }
+    if (selectedSkillNames.length > 0) {
+      payload.skill_names = selectedSkillNames;
+    }
 
     try {
       logText(`Sending HTTP request...`);
@@ -407,7 +464,8 @@ export default function ApiTester() {
     stream: stream,
     ...(appId && { app_id: appId }),
     ...(prochatModel.trim() && { prochat_model: prochatModel.trim() }),
-    ...(userDataPayloadForCurl && { user_data: userDataPayloadForCurl })
+    ...(userDataPayloadForCurl && { user_data: userDataPayloadForCurl }),
+    ...(selectedSkillNames.length > 0 && { skill_names: selectedSkillNames })
   };
 
   const curlCommand = `curl -X POST http://localhost:8000/api/v1/chat/completions \\
@@ -636,7 +694,91 @@ export default function ApiTester() {
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <label style={{ fontSize: '0.76rem', color: 'var(--text-sub)', fontWeight: '600' }}>Skill Filter (Optional)</label>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', minHeight: '28px' }}>
+              {selectedSkillNames.map(name => (
+                <span key={name} style={{
+                  display: 'inline-flex', alignItems: 'center', gap: '4px',
+                  padding: '3px 8px', borderRadius: '12px', fontSize: '0.72rem',
+                  background: 'rgba(139,92,246,0.15)', border: '1px solid rgba(139,92,246,0.3)',
+                  color: 'var(--primary-violet)'
+                }}>
+                  🧩 {name}
+                  <button type="button" onClick={() => setSelectedSkillNames(prev => prev.filter(s => s !== name))}
+                    style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'inherit', padding: '0 2px', lineHeight: 1, display: 'flex', alignItems: 'center' }}>
+                    <X size={10} />
+                  </button>
+                </span>
+              ))}
+            </div>
+            <AsyncSearchableDropdown
+              value=''
+              onChange={(val) => { if (val && !selectedSkillNames.includes(val)) setSelectedSkillNames(prev => [...prev, val]); }}
+              fetchOptions={async (searchTerm) => {
+                const res = await fetch(`/api/v1/skills?search=${encodeURIComponent(searchTerm || '')}&page_size=30&page=1`);
+                const data = await res.json();
+                const items = Array.isArray(data.items) ? data.items : (Array.isArray(data) ? data : []);
+                return items.filter(s => !selectedSkillNames.includes(s.name)).map(s => ({ value: s.name, label: `🧩 ${s.name}` }));
+              }}
+              placeholder="Add skill to filter..."
+            />
+            {selectedSkillNames.length > 0 && (
+              <button type="button" onClick={() => setSelectedSkillNames([])}
+                style={{ alignSelf: 'flex-start', fontSize: '0.71rem', color: 'var(--text-muted)', background: 'transparent', border: 'none', cursor: 'pointer', padding: 0 }}>
+                Clear all filters
+              </button>
+            )}
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             <label style={{ fontSize: '0.76rem', color: 'var(--text-sub)', fontWeight: '600' }}>User Data Context (Optional)</label>
+            <div style={{ position: 'relative', display: 'flex', gap: '6px', alignItems: 'center' }}>
+              <div style={{ flex: 1 }}>
+                <AsyncSearchableDropdown
+                  value={selectedTemplateId}
+                  onChange={handleTemplateChange}
+                  initialLabel={selectedTemplateId ? `📋 ${templates.find(t => t.id === selectedTemplateId)?.name || 'Loading Profile...'}` : ''}
+                  fetchOptions={async (searchTerm) => {
+                    const url = `/api/v1/user_data_templates?search=${encodeURIComponent(searchTerm || '')}&page_size=20&page=1`;
+                    const res = await fetch(url);
+                    const data = await res.json();
+                    setTemplates(prev => {
+                      const newTs = [...prev];
+                      (data.items || []).forEach(t => {
+                        if (!newTs.find(existing => existing.id === t.id)) newTs.push(t);
+                      });
+                      return newTs;
+                    });
+                    return (data.items || []).map(t => ({
+                      value: t.id,
+                      label: `📋 ${t.name}`
+                    }));
+                  }}
+                  placeholder="Load User Data Profile..."
+                />
+              </div>
+              {selectedTemplateId && (
+                <button
+                  type="button"
+                  onClick={() => handleTemplateChange('')}
+                  title="Clear profile template"
+                  style={{
+                    padding: '7px 8px',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border-subtle)',
+                    background: 'transparent',
+                    cursor: 'pointer',
+                    color: 'var(--text-muted)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    lineHeight: 1,
+                    flexShrink: 0,
+                  }}
+                >
+                  <X size={13} />
+                </button>
+              )}
+            </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               {userDataPairs.map((pair, idx) => (
                 <div key={idx} style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
