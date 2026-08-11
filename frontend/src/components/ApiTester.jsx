@@ -166,6 +166,56 @@ export default function ApiTester() {
     setLogs((prev) => [...prev, `[${new Date().toLocaleTimeString()}] ${text}`]);
   };
 
+  const renderMarkdown = (src) => {
+    if (!src) return '';
+    // 1. Escape HTML
+    let html = src
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+
+    // 2. Parse Code Blocks ```lang ... ```
+    const codeBlockRegex = /```(\w*)\n([\s\S]*?)```/g;
+    html = html.replace(codeBlockRegex, (match, lang, code) => {
+      return `<pre class="code-block"><div class="code-header">${lang || 'code'}</div><code>${code.trim()}</code></pre>`;
+    });
+
+    // 3. Parse Inline Code `code`
+    html = html.replace(/`([^`\n]+)`/g, '<code class="inline-code">$1</code>');
+
+    // 4. Parse Bold **text**
+    html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+
+    // 5. Parse Italic *text*
+    html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+
+    // 5.5 Parse Links [text](url)
+    html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" style="color: var(--primary-cyan); text-decoration: underline; font-weight: 500;">$1</a>');
+
+    // 6. Parse Headings (H1 to H6)
+    html = html.replace(/^# (.*?)$/gm, '<h1>$1</h1>');
+    html = html.replace(/^## (.*?)$/gm, '<h2>$1</h2>');
+    html = html.replace(/^### (.*?)$/gm, '<h3>$1</h3>');
+    html = html.replace(/^#### (.*?)$/gm, '<h4>$1</h4>');
+
+    // 7. Parse Bullet lists
+    html = html.replace(/^\s*[-*+]\s+(.*?)$/gm, '<li>$1</li>');
+    html = html.replace(/(<li>[\s\S]*?<\/li>)/g, '<ul>$1</ul>');
+    html = html.replace(/<\/ul>\s*<ul>/g, '');
+
+    // 8. Convert newlines to breaks
+    const paragraphs = html.split('\n\n').map(p => {
+      const trimmed = p.trim();
+      if (!trimmed) return '';
+      if (trimmed.startsWith('<h') || trimmed.startsWith('<pre') || trimmed.startsWith('<ul') || trimmed.startsWith('<li')) {
+        return trimmed;
+      }
+      return `<p>${trimmed.replace(/\n/g, '<br />')}</p>`;
+    });
+
+    return paragraphs.join('\n');
+  };
+
   const handleFileUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -1040,9 +1090,7 @@ export default function ApiTester() {
                       FINAL RESPONSE CONTENT
                     </div>
                     {streamContent ? (
-                      <div style={{ whiteSpace: 'pre-wrap', lineHeight: '1.6', fontSize: '0.9rem', color: 'var(--text-main)' }}>
-                        {streamContent}
-                      </div>
+                      <div className="markdown-body" style={{ lineHeight: '1.6', fontSize: '0.9rem', color: 'var(--text-main)' }} dangerouslySetInnerHTML={{ __html: renderMarkdown(streamContent) }} />
                     ) : (
                       <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>
                         {loading ? 'Assistant is typing...' : 'Console idle. Run request to see output.'}
