@@ -138,9 +138,13 @@ class SkillEngine:
         persist: bool,
         session_obj,
         user_message: str,
-        allowed_skills
+        allowed_skills,
+        user_data: dict = None
     ) -> list:
-        msgs = [{"role": "system", "content": skill_registry.get_system_instructions(allowed_skills=allowed_skills)}]
+        sys_content = skill_registry.get_system_instructions(allowed_skills=allowed_skills)
+        if user_data:
+            sys_content = resolve_user_data_placeholders(sys_content, user_data)
+        msgs = [{"role": "system", "content": sys_content}]
         if persist and session_obj:
             db_messages = db.query(ChatMessage).filter(
                 ChatMessage.session_id == session_obj.id
@@ -253,7 +257,7 @@ class SkillEngine:
                 known = set(skill_registry.skills.keys())
                 allowed_skills = [s for s in skill_names if s in known]
 
-            messages = self._build_messages_list(db, persist, session_obj, user_message, allowed_skills)
+            messages = self._build_messages_list(db, persist, session_obj, user_message, allowed_skills, user_data)
             if not model_name:
                 from models import TenantLLM
                 first_model = db.query(TenantLLM).filter(
@@ -295,8 +299,11 @@ class SkillEngine:
                         db.add(ChatMessage(session_id=session_obj.id, role="user", content=user_message))
                         db.commit()
 
+                    sys_content = skill_registry.get_system_instructions()
+                    if user_data:
+                        sys_content = resolve_user_data_placeholders(sys_content, user_data)
                     messages = [
-                        {"role": "system", "content": skill_registry.get_system_instructions()},
+                        {"role": "system", "content": sys_content},
                         {"role": "user", "content": user_message}
                     ]
                     kwargs["messages"] = messages
@@ -679,7 +686,7 @@ class SkillEngine:
             }
             yield f"data: {json.dumps(init_reasoning)}\n\n"
 
-            messages = self._build_messages_list(db, persist, session_obj, user_message, allowed_skills)
+            messages = self._build_messages_list(db, persist, session_obj, user_message, allowed_skills, user_data)
             if not model_name:
                 from models import TenantLLM
                 first_model = db.query(TenantLLM).filter(
@@ -731,8 +738,11 @@ class SkillEngine:
                         db.commit()
                         db.add(ChatMessage(session_id=session_obj.id, role="user", content=user_message))
                         db.commit()
+                    sys_content = skill_registry.get_system_instructions()
+                    if user_data:
+                        sys_content = resolve_user_data_placeholders(sys_content, user_data)
                     messages = [
-                        {"role": "system", "content": skill_registry.get_system_instructions()},
+                        {"role": "system", "content": sys_content},
                         {"role": "user", "content": user_message}
                     ]
                     kwargs["messages"] = messages
@@ -1372,7 +1382,8 @@ def run_send_email_tool(db, args: dict, tenant) -> dict:
         msg['From'] = config.sender_email
         msg['To'] = to_email
         msg['Subject'] = subject
-        msg.attach(MIMEText(body, "html" if ("<html" in body.lower() or "<body" in body.lower() or "<div" in body.lower()) else "plain"))
+        is_html = any(tag in body.lower() for tag in ["<html", "<body", "<div", "<p", "<span", "<table", "<h1", "<h2", "<h3", "<ul", "<ol", "<li", "<br", "<a ", "<p>"])
+        msg.attach(MIMEText(body, "html" if is_html else "plain"))
         
         if config.use_ssl:
             server = smtplib.SMTP_SSL(config.smtp_host, config.smtp_port, timeout=12)
