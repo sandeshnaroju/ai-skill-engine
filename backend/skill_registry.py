@@ -189,9 +189,16 @@ class SkillRegistry:
         return None, None
 
     def get_system_instructions(self, allowed_skills: list = None) -> str:
-        instructions = ["You are skill_manager, an enterprise server assistant equipped with business skills and tools.\n"]
+        system_skill = self.skills.get("system")
+        if system_skill and system_skill.get("body"):
+            instructions = [system_skill.get("body").strip() + "\n"]
+        else:
+            instructions = ["You are AI Skill Engine, an enterprise chatbot equipped with advanced tools and skills.\n"]
+
         instructions.append("Active Available Skills:\n")
         for name, data in self.skills.items():
+            if name == "system":
+                continue
             if allowed_skills is not None and len(allowed_skills) > 0 and name not in allowed_skills:
                 continue
             instructions.append(f"### Skill: {name} (Source: {data.get('source', 'file')})")
