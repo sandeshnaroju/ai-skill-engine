@@ -227,7 +227,7 @@ export default function ApiTester() {
 
       const headers = {};
       if (selectedTenantKey) {
-        headers['X-API-Key'] = selectedTenantKey.trim();
+        headers['Authorization'] = `Bearer ${selectedTenantKey.trim()}`;
       }
 
       const res = await fetch('/api/v1/files/upload', {
@@ -299,7 +299,7 @@ export default function ApiTester() {
     if (!key) return;
     try {
       const res = await fetch('/api/v1/tenant/llms', {
-        headers: { 'X-API-Key': key }
+        headers: { 'Authorization': `Bearer ${key}` }
       });
       if (res.ok) {
         const data = await res.json();
@@ -345,7 +345,7 @@ export default function ApiTester() {
 
     const headers = {
       'Content-Type': 'application/json',
-      'X-API-Key': selectedTenantKey.trim(),
+      'Authorization': `Bearer ${selectedTenantKey.trim()}`,
       'X-Request-Source': 'api'
     };
 
@@ -521,7 +521,7 @@ export default function ApiTester() {
   const curlCommand = `curl -X POST http://localhost:8000/api/v1/chat/completions \\
   -H "Content-Type: application/json" \\
   -H "X-Request-Source: api" \\
-  -H "X-API-Key: ${selectedTenantKey || 'YOUR_API_KEY'}" \\
+  -H "Authorization: Bearer ${selectedTenantKey || 'YOUR_API_KEY'}" \\
   -d '${JSON.stringify(requestPayload, null, 2)}'`;
 
   return (
@@ -584,7 +584,7 @@ export default function ApiTester() {
                   fetchOptions={async (searchTerm) => {
                     if (!selectedTenantKey) return [];
                     const url = `/api/v1/tenant/llms?search=${encodeURIComponent(searchTerm || '')}&page_size=10&page=1`;
-                    const res = await fetch(url, { headers: { 'X-API-Key': selectedTenantKey } });
+                    const res = await fetch(url, { headers: { 'Authorization': `Bearer ${selectedTenantKey}` } });
                     const data = await res.json();
                     return (data.items || [])
                       .filter(m => m.provider !== 'prochat' && !m.model_name.toLowerCase().includes('genui'))

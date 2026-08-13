@@ -18,7 +18,7 @@ export default function ApiDocs() {
       stream: {
         curl: `curl -N -X POST http://localhost:8000/api/v1/chat/completions \\
   -H "Content-Type: application/json" \\
-  -H "X-API-Key: sk_mgr_YOUR_TENANT_API_KEY" \\
+  -H "Authorization: Bearer sk_mgr_YOUR_TENANT_API_KEY" \\
   -d '{
     "messages": [
       {"role": "user", "content": "Calculate 20,000 RS at 12% interest for 20 years"}
@@ -48,7 +48,7 @@ for chunk in response_stream:
   method: "POST",
   headers: {
     "Content-Type": "application/json",
-    "X-API-Key": "sk_mgr_YOUR_TENANT_API_KEY"
+    "Authorization": "Bearer sk_mgr_YOUR_TENANT_API_KEY"
   },
   body: JSON.stringify({
     messages: [{ role: "user", content: "Calculate compound interest for 20k @ 12% for 20 yrs" }],
@@ -69,7 +69,7 @@ while (true) {
       sync: {
         curl: `curl -X POST http://localhost:8000/api/v1/chat/completions \\
   -H "Content-Type: application/json" \\
-  -H "X-API-Key: sk_mgr_YOUR_TENANT_API_KEY" \\
+  -H "Authorization: Bearer sk_mgr_YOUR_TENANT_API_KEY" \\
   -d '{
     "messages": [
       {"role": "user", "content": "Check server disk space"}
@@ -82,7 +82,7 @@ while (true) {
 url = "http://localhost:8000/api/v1/chat/completions"
 headers = {
     "Content-Type": "application/json",
-    "X-API-Key": "sk_mgr_YOUR_TENANT_API_KEY"
+    "Authorization": "Bearer sk_mgr_YOUR_TENANT_API_KEY"
 }
 payload = {
     "messages": [{"role": "user", "content": "Check server disk space"}],
@@ -97,7 +97,7 @@ print("Executed Tools:", response["executed_tools"])`,
   method: "POST",
   headers: {
     "Content-Type": "application/json",
-    "X-API-Key": "sk_mgr_YOUR_TENANT_API_KEY"
+    "Authorization": "Bearer sk_mgr_YOUR_TENANT_API_KEY"
   },
   body: JSON.stringify({
     messages: [{ role: "user", content: "Check server disk space" }],
@@ -115,7 +115,7 @@ console.log("Sandbox Audit Runs:", data.executed_tools);`,
       stream: {
         curl: `curl -N -X POST http://localhost:8000/api/v1/chat/completions \\
   -H "Content-Type: application/json" \\
-  -H "X-API-Key: sk_mgr_YOUR_TENANT_API_KEY" \\
+  -H "Authorization: Bearer sk_mgr_YOUR_TENANT_API_KEY" \\
   -d '{
     "messages": [
       {"role": "user", "content": "Generate a sales dashboard chart"}
@@ -165,7 +165,7 @@ for chunk in response_stream:
   method: "POST",
   headers: {
     "Content-Type": "application/json",
-    "X-API-Key": "sk_mgr_YOUR_TENANT_API_KEY"
+    "Authorization": "Bearer sk_mgr_YOUR_TENANT_API_KEY"
   },
   body: JSON.stringify({
     messages: [{ role: "user", content: "Generate a sales dashboard chart" }],
@@ -217,7 +217,7 @@ while (true) {
       sync: {
         curl: `curl -X POST http://localhost:8000/api/v1/chat/completions \\
   -H "Content-Type: application/json" \\
-  -H "X-API-Key: sk_mgr_YOUR_TENANT_API_KEY" \\
+  -H "Authorization: Bearer sk_mgr_YOUR_TENANT_API_KEY" \\
   -d '{
     "messages": [
       {"role": "user", "content": "Generate a sales dashboard chart"}
@@ -231,7 +231,7 @@ while (true) {
 url = "http://localhost:8000/api/v1/chat/completions"
 headers = {
     "Content-Type": "application/json",
-    "X-API-Key": "sk_mgr_YOUR_TENANT_API_KEY"
+    "Authorization": "Bearer sk_mgr_YOUR_TENANT_API_KEY"
 }
 payload = {
     "messages": [{"role": "user", "content": "Generate a sales dashboard chart"}],
@@ -251,7 +251,7 @@ print("ProChat UI Component Code (Code):", message.get("code"))`,
   method: "POST",
   headers: {
     "Content-Type": "application/json",
-    "X-API-Key": "sk_mgr_YOUR_TENANT_API_KEY"
+    "Authorization": "Bearer sk_mgr_YOUR_TENANT_API_KEY"
   },
   body: JSON.stringify({
     messages: [{ role: "user", content: "Generate a sales dashboard chart" }],
@@ -281,6 +281,9 @@ console.log("ProChat UI Component Code (Code):", message.code);`,
         </h2>
         <p style={{ color: 'var(--text-sub)', fontSize: '0.92rem', marginTop: '6px', lineHeight: '1.6' }}>
           `AI Skill Engine` acts as an MCP Client and Security Gateway. It connects to multiple external **MCP (Model Context Protocol) Servers** (Filesystem, Memory, Postgres DB, GitHub, etc.), auto-discovers their tools, and executes them safely when requested by your LLM.
+        </p>
+        <p style={{ color: 'var(--text-muted)', fontSize: '0.82rem', marginTop: '10px', lineHeight: '1.5', background: 'rgba(255,255,255,0.03)', padding: '10px 14px', borderRadius: '8px', borderLeft: '3px solid var(--primary-cyan)' }}>
+          <strong>Authentication Guide:</strong> Authenticate requests using standard HTTP Bearer token format with <code>Authorization: Bearer YOUR_TENANT_API_KEY</code>.
         </p>
 
         <div style={{ display: 'flex', gap: '12px', marginTop: '16px' }}>
