@@ -1,13 +1,10 @@
 import secrets
 import bcrypt
 from typing import Optional
-from fastapi import Header, HTTPException, Depends, Security, Cookie
-from fastapi.security import APIKeyHeader
+from fastapi import Header, HTTPException, Depends, Cookie
 from sqlalchemy.orm import Session
 from database import get_db
 from models import Tenant, User
-
-api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 def generate_api_key(prefix: str = "sk_mgr_") -> str:
     return f"{prefix}{secrets.token_urlsafe(24)}"
@@ -35,13 +32,17 @@ def get_current_user(
     return user
 
 def get_current_tenant(
-    x_api_key: Optional[str] = Security(api_key_header),
+    authorization: Optional[str] = Header(None),
     session_token: Optional[str] = Cookie(None),
     db: Session = Depends(get_db)
 ) -> Tenant:
     # 1. API Key Auth (External API client calls)
-    if x_api_key:
-        tenant = db.query(Tenant).filter(Tenant.api_key == x_api_key, Tenant.is_active == True).first()
+    api_key = None
+    if authorization and authorization.startswith("Bearer "):
+        api_key = authorization.split(" ")[1].strip()
+
+    if api_key:
+        tenant = db.query(Tenant).filter(Tenant.api_key == api_key, Tenant.is_active == True).first()
         if not tenant:
             raise HTTPException(status_code=401, detail="Invalid or inactive API Key")
         return tenant

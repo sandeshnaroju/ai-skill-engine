@@ -286,9 +286,11 @@ For production environments where local files shouldn't be shared directly, use 
 
 ## 🌐 API Usage
 
+You can authenticate HTTP requests using standard HTTP Bearer token headers (supported natively by standard OpenAI SDKs):
+
 ```http
 POST /api/v1/chat/completions
-X-API-Key: sk_asr_YOUR_TENANT_KEY
+Authorization: Bearer sk_asr_YOUR_TENANT_KEY
 Content-Type: application/json
 
 {
@@ -352,7 +354,7 @@ for chunk in stream:
 ```bash
 curl -X POST http://localhost:2704/api/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: sk_asr_YOUR_TENANT_KEY" \
+  -H "Authorization: Bearer sk_asr_YOUR_TENANT_KEY" \
   -d '{
     "messages": [{"role": "user", "content": "Fetch weather in Paris"}],
     "model": "gemini-2.5-flash",
