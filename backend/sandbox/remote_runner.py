@@ -339,7 +339,7 @@ class RemoteRunner:
         token = auth_result["access_token"]
         
         base_url = pool_endpoint.rstrip("/")
-        url = f"{base_url}/files?api-version=2024-02-02-preview&identifier={session_id}"
+        url = f"{base_url}/files/upload?api-version=2024-02-02-preview&identifier={session_id}"
         headers = {"Authorization": f"Bearer {token}"}
         
         files = {"file": (filename, content)}

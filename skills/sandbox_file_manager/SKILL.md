@@ -34,3 +34,8 @@ tools:
 
 # Sandbox File Manager Skill
 Allows listing, uploading, and downloading files directly to/from the execution sandbox environment (Docker, Process, E2B, Azure Container Apps, AWS Lambda, Fly.io).
+
+### ⚠️ Critical Remote Sandbox Guidelines:
+* **Remote File Isolation**: When using a remote sandbox provider (such as Azure ACA or E2B), files generated during code execution (e.g., `animals.txt`) are isolated in the remote sandbox workspace and **cannot** be accessed by other tools (such as `upload_to_storage` or `send_email`).
+* **Download Before Upload**: You **must** call `download_sandbox_file` first to bring any remote-generated file over to the local host server before you can upload it to cloud storage or attach/link it in emails.
+* **Use the Unique Filename**: When you download a sandbox file, the local host saves it with a unique UUID prefix (e.g., `7f650b7dac1a42b78ccfd985b16d83aa_animals.txt`). **You must use this exact unique filename** in any subsequent tool arguments (e.g., `upload_to_storage`), not the original filename (e.g. do not use `animals.txt`). Check the output of the download tool to obtain the unique filename.
