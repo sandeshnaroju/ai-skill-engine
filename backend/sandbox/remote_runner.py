@@ -75,6 +75,13 @@ class RemoteRunner:
                 "sandbox_type": "e2b"
             }
 
+    def _sanitize_azure_session_id(self, session_id: str) -> str:
+        if not session_id:
+            return "default-session"
+        import re
+        sanitized = re.sub(r'[^a-z0-9\-_.]', '-', session_id.lower())
+        return sanitized[:50]
+
     def execute_azure(self, client_id: str, client_secret: str, tenant_id: str, pool_endpoint: str, command: str, code: str = None, timeout: int = 30, session_id: str = None) -> dict:
         start_time = time.time()
         try:
@@ -92,7 +99,7 @@ class RemoteRunner:
             token = auth_result["access_token"]
             
             # 2. Invoke Azure Container Apps Dynamic Session REST API
-            active_session_id = session_id or uuid.uuid4().hex
+            active_session_id = self._sanitize_azure_session_id(session_id)
             api_version = "2024-02-02-preview"
             
             code_to_run = code or f"import subprocess; print(subprocess.check_output({json.dumps(command)}, shell=True).decode('utf-8'))"
@@ -286,7 +293,8 @@ class RemoteRunner:
         token = auth_result["access_token"]
         
         base_url = pool_endpoint.rstrip("/")
-        url = f"{base_url}/files?api-version=2024-02-02-preview&identifier={session_id}"
+        active_session_id = self._sanitize_azure_session_id(session_id)
+        url = f"{base_url}/files?api-version=2024-02-02-preview&identifier={active_session_id}"
         headers = {"Authorization": f"Bearer {token}"}
         
         with httpx.Client() as client:
@@ -318,7 +326,8 @@ class RemoteRunner:
         token = auth_result["access_token"]
         
         base_url = pool_endpoint.rstrip("/")
-        url = f"{base_url}/files/content/{filename}?api-version=2024-02-02-preview&identifier={session_id}"
+        active_session_id = self._sanitize_azure_session_id(session_id)
+        url = f"{base_url}/files/content/{filename}?api-version=2024-02-02-preview&identifier={active_session_id}"
         headers = {"Authorization": f"Bearer {token}"}
         
         with httpx.Client() as client:
@@ -339,7 +348,8 @@ class RemoteRunner:
         token = auth_result["access_token"]
         
         base_url = pool_endpoint.rstrip("/")
-        url = f"{base_url}/files/upload?api-version=2024-02-02-preview&identifier={session_id}"
+        active_session_id = self._sanitize_azure_session_id(session_id)
+        url = f"{base_url}/files/upload?api-version=2024-02-02-preview&identifier={active_session_id}"
         headers = {"Authorization": f"Bearer {token}"}
         
         files = {"file": (filename, content)}

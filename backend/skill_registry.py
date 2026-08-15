@@ -83,7 +83,8 @@ class SkillRegistry:
                             metadata = {"name": dbs.name, "description": dbs.description}
                             markdown_body = dbs.content
 
-                        skill_name = metadata.get("name") or dbs.name
+                        skill_name = dbs.name
+                        metadata["name"] = skill_name
                         metadata["body"] = markdown_body
                         metadata["source"] = "database"
                         metadata["db_id"] = dbs.id

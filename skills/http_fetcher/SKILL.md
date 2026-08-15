@@ -21,4 +21,8 @@ tools:
 
 # HTTP Fetcher Skill
 Use this skill when you need to download datasets, code bases, models, or other public files from external URLs (like GitHub, public buckets, or APIs) so that they can be read by other tools inside the offline sandbox.
+
+> [!IMPORTANT]
+> Files downloaded using this skill are saved to the host filesystem. If a remote sandbox (such as Azure ACA, E2B, or Fly.io) is active, these files are NOT automatically accessible to your code interpreter. You MUST explicitly call `sandbox_file_manager__upload_sandbox_file` to upload the file to the remote sandbox before trying to read it or run python/bash code interpreter tools on it.
+
 Always explain the resulting sandbox path clearly to the user.

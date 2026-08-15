@@ -373,6 +373,286 @@ curl -X POST http://localhost:2704/api/v1/chat/completions \
 
 ---
 
+## 📡 Reading the Stream
+
+When `"stream": true`, the server emits **Server-Sent Events (SSE)**. Each line is prefixed with `data: ` followed by a JSON object. The final event is always `data: [DONE]`.
+
+Every chunk shares this envelope:
+
+```json
+{
+  "id": "chatcmpl-<session_id>",
+  "object": "chat.completion.chunk",
+  "created": 1700000000,
+  "model": "gemini-2.5-flash",
+  "choices": [{ "index": 0, "delta": { ... }, "finish_reason": null }]
+}
+```
+
+The **`delta`** object determines the event type:
+
+---
+
+### 💭 Reasoning / Status Updates
+
+Emitted while the engine is routing, thinking, or executing tools. Safe to display as a status indicator or hide from end users entirely.
+
+```json
+{ "delta": { "reasoning": "Analyzing query & active skills..." } }
+{ "delta": { "reasoning": "Consulting LLM model gemini-2.5-flash (Turn 1)..." } }
+{ "delta": { "reasoning": "Invoking tool weather__get_weather (Skill: weather_fetcher)..." } }
+{ "delta": { "reasoning": "Tool weather__get_weather finished in 312ms (http)." } }
+{ "delta": { "reasoning": "Generating dynamic user interface components..." } }
+```
+
+**Python:**
+```python
+for chunk in stream:
+    delta = chunk.choices[0].delta
+    reasoning = getattr(delta, "reasoning", None) or (delta.model_extra or {}).get("reasoning")
+    if reasoning:
+        print(f"[status] {reasoning}")
+```
+
+---
+
+### 💬 Text Content
+
+The LLM's final answer, streamed token-by-token. Append these to build the full response.
+
+```json
+{ "delta": { "content": "The weather in London is " } }
+{ "delta": { "content": "currently 18°C and cloudy." } }
+```
+
+**Python:**
+```python
+full_response = ""
+for chunk in stream:
+    text = chunk.choices[0].delta.content or ""
+    full_response += text
+    print(text, end="", flush=True)
+```
+
+**JavaScript:**
+```js
+let fullText = "";
+if (delta.content) {
+  fullText += delta.content;
+  appendToUI(delta.content);
+}
+```
+
+---
+
+### 🔧 Tool Call Start
+
+Emitted just before a tool executes. Shows which tool and skill are triggered and with what arguments.
+
+```json
+{
+  "delta": {
+    "reasoning": "Invoking tool weather__get_weather (Skill: weather_fetcher)...",
+    "tool_call": {
+      "name": "weather__get_weather",
+      "arguments": { "city": "London" }
+    }
+  }
+}
+```
+
+**JavaScript:**
+```js
+if (delta.tool_call) {
+  showToolBadge(delta.tool_call.name, delta.tool_call.arguments);
+}
+```
+
+---
+
+### ✅ Tool Result
+
+Emitted after each tool finishes. Contains stdout, stderr, exit code, timing, sandbox type, and any generated file download links.
+
+```json
+{
+  "delta": {
+    "reasoning": "Tool weather__get_weather finished in 312ms (http).",
+    "tool_result": {
+      "tool_name": "weather__get_weather",
+      "skill_name": "weather_fetcher",
+      "stdout": "{\"temp\": 18, \"condition\": \"Cloudy\"}",
+      "stderr": "",
+      "exit_code": 0,
+      "sandbox_type": "http",
+      "execution_time_ms": 312,
+      "generated_files": []
+    }
+  }
+}
+```
+
+**Generated files** (when the tool produces downloadable output):
+```json
+"generated_files": [{
+  "filename": "abc123_report.pdf",
+  "original_name": "report.pdf",
+  "url": "/api/v1/files/download/tenant_name/abc123_report.pdf",
+  "sandbox_path": "sandbox/outputs/tenant_name/abc123_report.pdf"
+}]
+```
+
+**JavaScript:**
+```js
+if (delta.tool_result) {
+  const r = delta.tool_result;
+  console.log(`✔ ${r.tool_name} — exit=${r.exit_code}, ${r.execution_time_ms}ms`);
+  r.generated_files?.forEach(f =>
+    console.log(`  📎 ${f.original_name} → ${f.url}`)
+  );
+}
+```
+
+---
+
+### 🎨 ProChat Generative UI — JSON & Code
+
+When `prochat_model` is set, the engine streams ProChat UI chunks after the text response. `json` is a UI component spec; `code` is optional supporting HTML/JavaScript.
+
+```json
+{ "delta": { "json": { "type": "table", "columns": ["City","Temp"], "rows": [["London","18°C"]] }, "code": null } }
+{ "delta": { "json": null, "code": "<script>renderChart(data)</script>" } }
+```
+
+> 💡 `json` and `code` can arrive in the same chunk or in separate ones. Always accumulate both until `[DONE]`.
+
+**JavaScript:**
+```js
+if (delta.json != null || delta.code != null) {
+  if (delta.json) renderProChatComponent(delta.json);
+  if (delta.code) executeProChatCode(delta.code);
+}
+```
+
+---
+
+### 🏁 Done Event
+
+Sent once just before `data: [DONE]`. Confirms completion and reports total tools called.
+
+```json
+{ "type": "done", "request_id": "req_abc123", "tools_called": 3 }
+```
+
+> ⚠️ This event does **not** have the standard `choices` wrapper — check `raw.type` directly after parsing.
+
+---
+
+### ❌ Error Event
+
+Emitted if the engine encounters an unrecoverable error mid-stream.
+
+```json
+{ "type": "error", "request_id": "req_abc123", "detail": "LLM returned no response after 25 turns." }
+```
+
+---
+
+### 📋 Complete Stream Reader (JavaScript)
+
+Drop-in utility that dispatches all event types via callbacks:
+
+```js
+async function readSkillEngineStream(response, callbacks = {}) {
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    for (const line of decoder.decode(value).split("\n")) {
+      if (!line.startsWith("data: ")) continue;
+      const payload = line.slice(6);
+      if (payload === "[DONE]") { callbacks.onDone?.(); break; }
+
+      const raw = JSON.parse(payload);
+
+      // top-level done / error events (no "choices" wrapper)
+      if (raw.type === "done")  { callbacks.onComplete?.(raw); continue; }
+      if (raw.type === "error") { callbacks.onError?.(raw);    continue; }
+
+      const delta = raw.choices?.[0]?.delta ?? {};
+
+      if (delta.content)                       callbacks.onText?.(delta.content);
+      if (delta.reasoning)                     callbacks.onReasoning?.(delta.reasoning);
+      if (delta.tool_call)                     callbacks.onToolStart?.(delta.tool_call);
+      if (delta.tool_result)                   callbacks.onToolEnd?.(delta.tool_result);
+      if (delta.json != null || delta.code != null)
+                                               callbacks.onProChatUI?.({ json: delta.json, code: delta.code });
+    }
+  }
+}
+
+// Example usage:
+await readSkillEngineStream(response, {
+  onText:      (t)  => appendToChat(t),
+  onReasoning: (r)  => updateStatusBar(r),
+  onToolStart: (tc) => showToolCard(tc.name, tc.arguments),
+  onToolEnd:   (tr) => markToolDone(tr.tool_name, tr.exit_code, tr.generated_files),
+  onProChatUI: (ui) => renderUI(ui.json, ui.code),
+  onComplete:  (ev) => console.log(`Done — ${ev.tools_called} tools ran`),
+  onError:     (ev) => showError(ev.detail),
+});
+```
+
+---
+
+### 📋 Non-Streaming Response
+
+When `"stream": false`, the full result is a single JSON object:
+
+```json
+{
+  "id": "chatcmpl-<session_id>",
+  "object": "chat.completion",
+  "model": "gemini-2.5-flash",
+  "request_id": "req_abc123",
+  "choices": [{
+    "index": 0,
+    "message": {
+      "role": "assistant",
+      "content": "The weather in London is 18°C and cloudy.",
+      "json": { "type": "table", "columns": ["City","Temp"], "rows": [["London","18°C"]] },
+      "code": null
+    },
+    "finish_reason": "stop"
+  }],
+  "executed_tools": [{
+    "id": "log_xyz",
+    "skill_name": "weather_fetcher",
+    "tool_name": "weather__get_weather",
+    "stdout": "{\"temp\": 18}",
+    "stderr": "",
+    "exit_code": 0,
+    "sandbox_type": "http",
+    "execution_time_ms": 312,
+    "generated_files": []
+  }]
+}
+```
+
+| Field | Description |
+|---|---|
+| `message.content` | The LLM's natural-language answer |
+| `message.json` | ProChat UI component spec (only when `prochat_model` is set) |
+| `message.code` | ProChat supporting code (only when `prochat_model` is set) |
+| `executed_tools` | Full audit of every tool run — stdout, stderr, timing, generated files |
+
+
+
+---
+
 
 ## 📝 Creating Skills
 

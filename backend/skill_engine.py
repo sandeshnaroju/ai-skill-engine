@@ -1,218 +1,142 @@
+"""
+skill_engine.py
+Thin orchestrator for the AI Skill Engine chat loop.
+Heavy lifting is delegated to engine sub-modules:
+  engine.tool_executor  — tool dispatch & execution
+  engine.prochat        — ProChat Generative UI helpers
+  engine.session        — session & request persistence
+  engine.messages       — system prompt & message list building
+  engine.usage          — token/cost accounting
+"""
 import json
 import time
 import openai
-from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from sqlalchemy.orm import Session
-from models import Tenant, ConversationSession, ChatMessage, ExecutionLog, ChatRequest
-from llm_client import get_llm_client, get_model_name
-from skill_registry import skill_registry
-from sandbox import sandbox_manager
 
-def update_request_usage(chat_req, usage_obj, input_rate: float, output_rate: float, audio_input_rate: float, audio_output_rate: float):
-    prompt_tokens = 0
-    completion_tokens = 0
-    audio_input_tokens = 0
-    audio_output_tokens = 0
-    
-    if usage_obj:
-        prompt_tokens = getattr(usage_obj, "prompt_tokens", 0) or 0
-        completion_tokens = getattr(usage_obj, "completion_tokens", 0) or 0
-        
-        prompt_details = getattr(usage_obj, "prompt_tokens_details", None)
-        if prompt_details and hasattr(prompt_details, "audio_tokens"):
-            audio_input_tokens = getattr(prompt_details, "audio_tokens", 0) or 0
-            
-        completion_details = getattr(usage_obj, "completion_tokens_details", None)
-        if completion_details and hasattr(completion_details, "audio_tokens"):
-            audio_output_tokens = getattr(completion_details, "audio_tokens", 0) or 0
-            
-    standard_input_tokens = max(0, prompt_tokens - audio_input_tokens)
-    standard_output_tokens = max(0, completion_tokens - audio_output_tokens)
-    
-    chat_req.prompt_tokens = getattr(chat_req, "prompt_tokens", 0) + prompt_tokens
-    chat_req.completion_tokens = getattr(chat_req, "completion_tokens", 0) + completion_tokens
-    
-    cost = (
-        (standard_input_tokens * input_rate) +
-        (standard_output_tokens * output_rate) +
-        (audio_input_tokens * audio_input_rate) +
-        (audio_output_tokens * audio_output_rate)
-    ) / 1000000.0
-    
-    chat_req.cost_usd = round(getattr(chat_req, "cost_usd", 0.0) + cost, 6)
-
-def get_model_rates(db, tenant_id: str, model_name: str):
-    from models import TenantLLM
-    active_model_config = db.query(TenantLLM).filter(
-        TenantLLM.tenant_id == tenant_id,
-        TenantLLM.model_name == model_name,
-        TenantLLM.is_active == True
-    ).first()
-    
-    if active_model_config:
-        return (
-            getattr(active_model_config, "input_rate", 1.0) or 1.0,
-            getattr(active_model_config, "output_rate", 2.0) or 2.0,
-            getattr(active_model_config, "audio_input_rate", 10.0) or 10.0,
-            getattr(active_model_config, "audio_output_rate", 20.0) or 20.0
-        )
-    return (1.0, 2.0, 10.0, 20.0)
-
-PROCHAT_SYSTEM_INSTRUCTION = (
-    "You are a ProChat UI generator. Your job is to return UI for the "
-    "response of another LLM assistant. The assistant's response is added in the messages.\n\n"
-    "Rules:\n"
-    "1. Ensure that all data and information provided in the assistant's response is fully included in the generated UI.\n"
-    "2. Do not leave out, omit, or truncate any data points, figures, or information from the response.\n"
-    "3. Add anchor links wherever you find URLs or file links, ensuring users can download or navigate to them."
+from engine.usage import get_model_rates
+from engine.messages import resolve_user_data_placeholders
+from engine.tool_executor import execute_tool, prefetch_mcp_servers
+from engine.prochat import get_prochat_ui, stream_prochat_ui
+from engine.session import (
+    get_or_create_session, save_message,
+    create_chat_request, finalize_request, resolve_allowed_skills
 )
 
-import re
-from typing import Any
+from models import Tenant, ExecutionLog, ChatMessage
+from llm_client import get_llm_client, get_model_name
+from skill_registry import skill_registry
 
-def resolve_user_data_placeholders(target: Any, user_data: dict) -> Any:
-    if not user_data or not isinstance(user_data, dict):
-        return target
-    
-    if isinstance(target, str):
-        def replace(match):
-            placeholder = match.group(1).strip()
-            if placeholder.startswith("user_data."):
-                key = placeholder[len("user_data."):]
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _chunk(session_id: str, model_name: str, **delta_fields) -> str:
+    """Build and serialise a single SSE chat completion chunk."""
+    return f"data: {json.dumps({'id': f'chatcmpl-{session_id}', 'object': 'chat.completion.chunk', 'created': 1700000000, 'model': model_name, 'choices': [{'index': 0, 'delta': delta_fields, 'finish_reason': None}]})}\n\n"
+
+
+def _build_messages(db, persist, session_obj, user_message, allowed_skills, user_data, client_messages):
+    """Build the messages list for the LLM call."""
+    sys_content = skill_registry.get_system_instructions(allowed_skills=allowed_skills)
+    if user_data:
+        sys_content = resolve_user_data_placeholders(sys_content, user_data)
+    msgs = [{"role": "system", "content": sys_content}]
+
+    if persist and session_obj:
+        db_messages = db.query(ChatMessage).filter(
+            ChatMessage.session_id == session_obj.id
+        ).order_by(ChatMessage.created_at.asc()).all()
+
+        for msg in db_messages:
+            if msg.role == "assistant" and msg.tool_calls:
+                item = {"role": "assistant", "content": msg.content if msg.content else None}
+                try:
+                    item["tool_calls"] = json.loads(msg.tool_calls)
+                except Exception:
+                    pass
+                msgs.append(item)
+            elif msg.role == "tool":
+                msgs.append({"role": "tool", "tool_call_id": msg.tool_call_id or "call_default", "content": msg.content or ""})
             else:
-                key = placeholder
-            
-            parts = key.split(".")
-            val = user_data
-            for part in parts:
-                if isinstance(val, dict) and part in val:
-                    val = val[part]
-                else:
-                    print(f"DEBUG resolve: key '{part}' not found in user_data structure.")
-                    return match.group(0)
-            print(f"DEBUG resolve: Replaced placeholder '{placeholder}' with '{val}'")
-            return str(val)
-            
-        return re.sub(r'\{\{([^}]+)\}\}', replace, target)
-        
-    elif isinstance(target, dict):
-        return {k: resolve_user_data_placeholders(v, user_data) for k, v in target.items()}
-    elif isinstance(target, list):
-        return [resolve_user_data_placeholders(item, user_data) for item in target]
-    return target
-
-class SkillEngine:
-    def _get_prochat_ui(self, db: Session, tenant, messages, final_text: str, prochat_model: str = None) -> tuple:
-        """Helper to fetch UI components from ProChat API (non-streaming).
-        
-        prochat_model: the model name explicitly requested by the user (e.g. 'genui-mars-0.1').
-                       Used to override the model_name stored in TenantLLM config.
-        """
-        from models import TenantLLM
-        from encryption_utils import decrypt_key
-        import requests
-        import json
-
-        config = db.query(TenantLLM).filter(
-            TenantLLM.tenant_id == tenant.id,
-            (TenantLLM.provider == "prochat") | TenantLLM.model_name.ilike("%genui%"),
-            TenantLLM.is_active == True
-        ).first()
-
-        if not config:
-            return None, None
-
-        try:
-            api_key = decrypt_key(config.api_key_encrypted)
-            base_url = config.base_url or "https://www.prochat.dev/apps/api/v1"
-            # Use explicitly requested model name, fall back to DB config, then default
-            resolved_model = prochat_model or config.model_name or "genui-mars-0.1"
-
-            prochat_messages = [
-                {"role": "system", "content": PROCHAT_SYSTEM_INSTRUCTION},
-                {"role": "user", "content": f"Here is the assistant response data:\n\n{final_text}\n\nBased on this response, please present this in the UI."}
-            ]
-
-            headers = {
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json"
-            }
-            payload = {
-                "model": resolved_model,
-                "messages": prochat_messages,
-                "stream": False
-            }
-            
-            res = requests.post(f"{base_url.rstrip('/')}/chat/completions", headers=headers, json=payload, timeout=30)
-            res_json = res.json()
-            content_str = res_json["choices"][0]["message"]["content"]
-            
-            try:
-                content_obj = json.loads(content_str)
-                return content_obj.get("json"), content_obj.get("code")
-            except Exception:
-                return content_str, None
-        except Exception as e:
-            print(f"Error calling ProChat completions: {e}")
-            return None, None
-
-    def _build_messages_list(
-        self,
-        db: Session,
-        persist: bool,
-        session_obj,
-        user_message: str,
-        allowed_skills,
-        user_data: dict = None,
-        client_messages: list = None
-    ) -> list:
-        sys_content = skill_registry.get_system_instructions(allowed_skills=allowed_skills)
-        if user_data:
-            sys_content = resolve_user_data_placeholders(sys_content, user_data)
-        msgs = [{"role": "system", "content": sys_content}]
-        if persist and session_obj:
-            db_messages = db.query(ChatMessage).filter(
-                ChatMessage.session_id == session_obj.id
-            ).order_by(ChatMessage.created_at.asc()).all()
-
-            for msg in db_messages:
-                if msg.role == "assistant" and msg.tool_calls:
-                    item = {
-                        "role": "assistant",
-                        "content": msg.content if msg.content else None
-                    }
+                content_val = msg.content or ""
+                if isinstance(content_val, str) and (content_val.startswith("[") or content_val.startswith("{")):
                     try:
-                        item["tool_calls"] = json.loads(msg.tool_calls)
+                        content_val = json.loads(content_val)
                     except Exception:
                         pass
-                    msgs.append(item)
-                elif msg.role == "tool":
-                    msgs.append({
-                        "role": "tool",
-                        "tool_call_id": msg.tool_call_id or "call_default",
-                        "content": msg.content or ""
-                    })
+                msgs.append({"role": msg.role, "content": content_val})
+    else:
+        if client_messages:
+            for m in client_messages:
+                if m.get("role") == "system":
+                    msgs[0]["content"] += "\n\n" + str(m.get("content", ""))
                 else:
-                    content_val = msg.content or ""
-                    if isinstance(content_val, str) and (content_val.startswith("[") or content_val.startswith("{")):
-                        try:
-                            content_val = json.loads(content_val)
-                        except Exception:
-                            pass
-                    msgs.append({
-                        "role": msg.role,
-                        "content": content_val
-                    })
+                    msgs.append(m)
         else:
-            if client_messages and len(client_messages) > 0:
-                for m in client_messages:
-                    if m.get("role") == "system":
-                        msgs[0]["content"] += "\n\n" + str(m.get("content", ""))
-                    else:
-                        msgs.append(m)
-            else:
-                msgs.append({"role": "user", "content": user_message})
-        return msgs
+            msgs.append({"role": "user", "content": user_message})
+
+    return msgs
+
+
+def _resolve_model(db, tenant, model_name):
+    """Return model_name, falling back to first active tenant model or default."""
+    if model_name:
+        return model_name
+    from models import TenantLLM
+    first = db.query(TenantLLM).filter(
+        TenantLLM.tenant_id == tenant.id,
+        TenantLLM.is_active == True
+    ).first()
+    return first.model_name if first else get_model_name()
+
+
+def _log_and_append_tool_results(db, tenant, session_id, model_name, request_source, request_id,
+                                 results, messages, executed_logs, persist, session_obj):
+    """Persist execution logs and append tool result messages."""
+    for fn_name, args, tc_id, skill_name, command, exec_res, tool_result in results:
+        log_entry = ExecutionLog(
+            tenant_id=tenant.id,
+            session_id=session_id,
+            skill_name=skill_name or "unknown",
+            tool_name=fn_name,
+            command=command,
+            sandbox_type=exec_res.get("sandbox_type", "process"),
+            stdout=exec_res.get("stdout"),
+            stderr=exec_res.get("stderr"),
+            exit_code=exec_res.get("exit_code", 0),
+            execution_time_ms=exec_res.get("execution_time_ms", 0),
+            model_name=model_name,
+            request_source=request_source,
+            request_id=request_id
+        )
+        db.add(log_entry)
+        db.commit()
+        db.refresh(log_entry)
+
+        executed_logs.append({
+            "id": log_entry.id,
+            "skill_name": log_entry.skill_name,
+            "tool_name": log_entry.tool_name,
+            "sandbox_type": log_entry.sandbox_type,
+            "stdout": log_entry.stdout,
+            "stderr": log_entry.stderr,
+            "exit_code": log_entry.exit_code,
+            "execution_time_ms": log_entry.execution_time_ms,
+            "generated_files": exec_res.get("generated_files", [])
+        })
+
+        messages.append({"role": "tool", "tool_call_id": tc_id, "content": tool_result})
+        if persist and session_obj:
+            save_message(db, session_obj, "tool", content=tool_result, tool_call_id=tc_id)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SkillEngine
+# ─────────────────────────────────────────────────────────────────────────────
+
+class SkillEngine:
 
     def process_chat(
         self,
@@ -226,395 +150,135 @@ class SkillEngine:
         request_source: str = "api",
         prochat_model: str = None,
         user_data: dict = None,
-        skill_names: list = None
+        skill_names: list = None,
+        client_messages: list = None,
     ) -> dict:
         start_time = time.time()
-
-        # Only persist conversation history for dashboard requests
         persist = (request_source == "dashboard")
-        session_obj = None
 
-        import json
         user_message_db = json.dumps(user_message) if not isinstance(user_message, str) else user_message
-
-        # --- Create ChatRequest log entry (all sources) ---
-        chat_req = ChatRequest(
-            tenant_id=tenant.id,
-            session_id=session_id,
-            app_id=app_id,
-            model_name=model_name,
-            request_source=request_source,
-            user_message=user_message_db,
-            status="pending"
-        )
-        db.add(chat_req)
-        db.commit()
-        db.refresh(chat_req)
+        chat_req = create_chat_request(db, tenant, session_id, app_id, model_name, request_source, user_message_db)
         request_id = chat_req.id
 
         try:
+            session_obj = None
             if persist:
-                session_obj = db.query(ConversationSession).filter(
-                    ConversationSession.tenant_id == tenant.id,
-                    ConversationSession.session_id == session_id
-                ).first()
+                session_obj = get_or_create_session(db, tenant, session_id)
+                save_message(db, session_obj, "user", content=user_message_db)
 
-                if not session_obj:
-                    session_obj = ConversationSession(
-                        tenant_id=tenant.id,
-                        session_id=session_id
-                    )
-                    db.add(session_obj)
-                    db.commit()
-                    db.refresh(session_obj)
-
-                # Save user message
-                db.add(ChatMessage(session_id=session_obj.id, role="user", content=user_message_db))
-                db.commit()
-
-            # Resolve allowed skills — merge app_id scoping with per-request skill_names filter
-            allowed_skills = None
-            if app_id:
-                from models import AppModel, AppSkillMapping
-                app_obj = db.query(AppModel).filter(AppModel.id == app_id).first()
-                if app_obj:
-                    app_skills = [m.skill_name for m in app_obj.skills]
-                    if skill_names:
-                        # Intersect: only skills both in the app AND explicitly requested
-                        allowed_skills = [s for s in skill_names if s in app_skills]
-            # Check which skills are permitted
-            allowed_skills = self._get_allowed_skills(tenant, app_id, skill_names)
-            messages = self._build_messages_list(db, persist, session_obj, user_message, allowed_skills, user_data, client_messages)
-
-            if not model_name:
-                from models import TenantLLM
-                first_model = db.query(TenantLLM).filter(
-                    TenantLLM.tenant_id == tenant.id,
-                    TenantLLM.is_active == True
-                ).first()
-                if first_model:
-                    model_name = first_model.model_name
-                else:
-                    model_name = get_model_name()
-
-            # Update resolved model name on the request log
+            allowed_skills = resolve_allowed_skills(db, tenant, app_id, skill_names)
+            messages = _build_messages(db, persist, session_obj, user_message, allowed_skills, user_data, client_messages)
+            model_name = _resolve_model(db, tenant, model_name)
             chat_req.model_name = model_name
             db.commit()
 
-            _in_r, _out_r, _au_in_r, _au_out_r = get_model_rates(db, tenant.id, model_name)
-
+            in_r, out_r, au_in_r, au_out_r = get_model_rates(db, tenant.id, model_name)
             llm = get_llm_client(db=db, tenant_id=tenant.id, model_name=model_name)
             available_tools = skill_registry.get_openai_tools(allowed_skills=allowed_skills)
-
             executed_logs = []
 
             for turn in range(max_turns):
-                # On the very last turn, omit tools to force the LLM to write a text response
                 kwargs = {"model": model_name, "messages": messages}
                 if available_tools and turn < max_turns - 1:
                     kwargs["tools"] = available_tools
-
                 if turn == max_turns - 1:
-                    messages.append({
-                        "role": "user",
-                        "content": "[System Notice: Maximum tool execution turns reached. You can no longer call any tools. Please summarize the tool outputs and provide your final response to the user.]"
-                    })
+                    messages.append({"role": "user", "content": "[System Notice: Maximum tool execution turns reached. You can no longer call any tools. Please summarize the tool outputs and provide your final response to the user.]"})
 
                 try:
                     response = llm.chat.completions.create(**kwargs)
-                except openai.BadRequestError as e:
+                except openai.BadRequestError:
                     if persist and session_obj:
                         db.query(ChatMessage).filter(ChatMessage.session_id == session_obj.id).delete()
                         db.commit()
-                        db.add(ChatMessage(session_id=session_obj.id, role="user", content=user_message))
-                        db.commit()
-
+                        save_message(db, session_obj, "user", content=user_message)
                     sys_content = skill_registry.get_system_instructions()
                     if user_data:
                         sys_content = resolve_user_data_placeholders(sys_content, user_data)
-                    messages = [
-                        {"role": "system", "content": sys_content},
-                        {"role": "user", "content": user_message}
-                    ]
+                    messages = [{"role": "system", "content": sys_content}, {"role": "user", "content": user_message}]
                     kwargs["messages"] = messages
                     response = llm.chat.completions.create(**kwargs)
 
                 response_msg = response.choices[0].message
 
                 if response_msg.tool_calls:
+                    # Serialize tool calls
                     tool_calls_dict = []
                     for tc in response_msg.tool_calls:
                         extra = getattr(tc, "extra_content", None)
                         if extra:
-                            if hasattr(extra, "model_dump"):
-                                extra = extra.model_dump()
-                            elif hasattr(extra, "dict"):
-                                extra = extra.dict()
-
-                        item = {
-                            "id": tc.id,
-                            "type": tc.type,
-                            "function": {
-                                "name": tc.function.name,
-                                "arguments": tc.function.arguments or "{}"
-                            }
-                        }
+                            extra = extra.model_dump() if hasattr(extra, "model_dump") else extra.dict() if hasattr(extra, "dict") else extra
+                        item = {"id": tc.id, "type": tc.type, "function": {"name": tc.function.name, "arguments": tc.function.arguments or "{}"}}
                         if extra:
                             item["extra_content"] = extra
                         tool_calls_dict.append(item)
 
                     if persist and session_obj:
-                        db.add(ChatMessage(
-                            session_id=session_obj.id,
-                            role="assistant",
-                            content=response_msg.content,
-                            tool_calls=json.dumps(tool_calls_dict)
-                        ))
-                        db.commit()
+                        save_message(db, session_obj, "assistant", content=response_msg.content, tool_calls=tool_calls_dict)
+                    messages.append({"role": "assistant", "content": response_msg.content if response_msg.content else None, "tool_calls": tool_calls_dict})
 
-                    messages.append({
-                        "role": "assistant",
-                        "content": response_msg.content if response_msg.content else None,
-                        "tool_calls": tool_calls_dict
-                    })
+                    mcp_servers = prefetch_mcp_servers(tool_calls_dict, db)
 
-                    # Pre-resolve MCP servers
-                    mcp_servers = {}
-                    for tc in response_msg.tool_calls:
-                        fn_name = tc.function.name
-                        _, tool_def = skill_registry.find_tool(fn_name)
-                        if tool_def and tool_def.get("type") == "mcp_server":
-                            srv_id = tool_def.get("mcp_server_id")
-                            if srv_id and srv_id not in mcp_servers:
-                                from models import McpServer
-                                srv_obj = db.query(McpServer).filter(McpServer.id == srv_id).first()
-                                if srv_obj:
-                                    mcp_servers[srv_id] = {
-                                        "name": srv_obj.name,
-                                        "transport": srv_obj.transport,
-                                        "command": srv_obj.command,
-                                        "url": srv_obj.url,
-                                        "env": srv_obj.env
-                                    }
-
-                    class SimpleMcpServerObj:
-                        def __init__(self, **kwargs):
-                            for k, v in kwargs.items():
-                                setattr(self, k, v)
-
-                    def execute_one(tc):
-                        fn_name = tc.function.name
+                    def run_one(tc):
+                        fn = tc["function"]["name"]
                         try:
-                            args = json.loads(tc.function.arguments)
+                            args = json.loads(tc["function"]["arguments"])
                         except Exception:
                             args = {}
+                        skill_name, tool_def = skill_registry.find_tool(fn)
+                        command, exec_res, tool_result = execute_tool(fn, args, tool_def, user_data, tenant, session_id, db, mcp_servers)
+                        return fn, args, tc["id"], skill_name, command, exec_res, tool_result
 
-                        skill_name, tool_def = skill_registry.find_tool(fn_name)
-                        if not tool_def:
-                            tool_result = f"Error: Tool {fn_name} not found in skill registry."
-                            exec_res = {"stdout": "", "stderr": tool_result, "exit_code": 1, "execution_time_ms": 0, "sandbox_type": "process"}
-                            command = f"Error: Tool {fn_name}"
-                        else:
-                            import copy
-                            exec_tool_def = resolve_user_data_placeholders(copy.deepcopy(tool_def), user_data)
-                            exec_args = resolve_user_data_placeholders(copy.deepcopy(args), user_data)
-
-                            tool_type = tool_def.get("type", "shell")
-                            if tool_type in ["http", "rest_api", "api"]:
-                                from executors.http_executor import http_executor
-                                exec_res = http_executor.execute(tool_def=exec_tool_def, arguments=exec_args)
-                                command = f"{tool_def.get('method', 'GET')} {tool_def.get('url')} params={json.dumps(args)}"
-                            elif tool_type in ["mcp", "mcp_stdio"]:
-                                from executors.mcp_executor import mcp_executor
-                                exec_res = mcp_executor.execute(tool_def=exec_tool_def, arguments=exec_args)
-                                command = tool_def.get("mcp_command") or tool_def.get("command") or f"MCP Call {fn_name}"
-                            elif tool_type == "mcp_server":
-                                from mcp_manager import mcp_manager
-                                srv_id = tool_def.get("mcp_server_id")
-                                srv_data = mcp_servers.get(srv_id)
-                                if srv_data:
-                                    srv_obj = SimpleMcpServerObj(**srv_data)
-                                    exec_res = mcp_manager.call_tool(srv_obj, exec_tool_def.get("name"), exec_args)
-                                    command = f"MCP Server {srv_obj.name} -> tool {tool_def.get('name')}"
-                                else:
-                                    exec_res = {"stdout": "", "stderr": "MCP Server not found", "exit_code": 1, "execution_time_ms": 0, "sandbox_type": "mcp"}
-                                    command = "MCP Call"
-                            else:
-                                exec_command = exec_tool_def.get("command", "")
-                                command = tool_def.get("command", "")
-                                code = exec_args.get("code") if tool_type == "code" else None
-                                if tool_type == "code" and code:
-                                    command = code
-                                elif not command:
-                                    command = exec_command
-                                tenant_name = tenant.name if tenant else "default"
-                                
-                                # Intercept explicit cloud & HTTP skills to run on host instead of isolated offline sandbox
-                                if fn_name == "cloud_storage__upload_to_storage":
-                                    exec_res = run_upload_to_storage_tool(db, exec_args, tenant)
-                                elif fn_name == "cloud_storage__download_from_storage":
-                                    exec_res = run_download_from_storage_tool(db, exec_args, tenant)
-                                elif fn_name == "http_fetcher__download_public_file":
-                                    exec_res = run_download_public_file_tool(db, exec_args, tenant)
-                                elif fn_name == "sandbox_file_manager__list_sandbox_files":
-                                    exec_res = run_list_sandbox_files(db, session_id)
-                                elif fn_name == "sandbox_file_manager__download_sandbox_file":
-                                    exec_res = run_download_sandbox_file(db, session_id, exec_args)
-                                elif fn_name == "sandbox_file_manager__upload_sandbox_file":
-                                    exec_res = run_upload_sandbox_file(db, session_id, exec_args)
-                                elif fn_name == "email__send_email":
-                                    exec_res = run_send_email_tool(db, exec_args, tenant)
-                                else:
-                                    exec_res = sandbox_manager.execute(command=exec_command, code=code, session_id=session_id)
-                                    exec_res = map_local_generated_files_to_tenant(exec_res, tenant_name=tenant_name)
-
-                            tool_result = exec_res.get("stdout") or exec_res.get("stderr") or "Execution completed cleanly with no output."
-                            generated_files = exec_res.get("generated_files", [])
-                            if generated_files:
-                                files_str = "\n\nGenerated files:\n" + "\n".join(
-                                    f"- {f['original_name']} (URL: {f['url']}, Sandbox Path: {f['sandbox_path']})"
-                                    for f in generated_files
-                                )
-                                tool_result += files_str
-
-                        return tc, skill_name, fn_name, args, command, exec_res, tool_result
-
-                    from concurrent.futures import ThreadPoolExecutor
                     with ThreadPoolExecutor() as executor:
-                        results = list(executor.map(execute_one, response_msg.tool_calls))
+                        results = list(executor.map(run_one, tool_calls_dict))
 
-                    for tc, skill_name, fn_name, args, command, exec_res, tool_result in results:
-                        log_entry = ExecutionLog(
-                            tenant_id=tenant.id,
-                            session_id=session_id,
-                            skill_name=skill_name or "unknown",
-                            tool_name=fn_name,
-                            command=command,
-                            sandbox_type=exec_res.get("sandbox_type", "process"),
-                            stdout=exec_res.get("stdout"),
-                            stderr=exec_res.get("stderr"),
-                            exit_code=exec_res.get("exit_code", 0),
-                            execution_time_ms=exec_res.get("execution_time_ms", 0),
-                            model_name=model_name,
-                            request_source=request_source,
-                            request_id=request_id
-                        )
-                        db.add(log_entry)
-                        db.commit()
-                        db.refresh(log_entry)
-
-                        executed_logs.append({
-                            "id": log_entry.id,
-                            "skill_name": log_entry.skill_name,
-                            "tool_name": log_entry.tool_name,
-                            "sandbox_type": log_entry.sandbox_type,
-                            "stdout": log_entry.stdout,
-                            "stderr": log_entry.stderr,
-                            "exit_code": log_entry.exit_code,
-                            "execution_time_ms": log_entry.execution_time_ms,
-                            "generated_files": exec_res.get("generated_files", [])
-                        })
-
-                        messages.append({
-                            "role": "tool",
-                            "tool_call_id": tc.id,
-                            "content": tool_result
-                        })
-                        if persist and session_obj:
-                            db.add(ChatMessage(
-                                session_id=session_obj.id,
-                                role="tool",
-                                content=tool_result,
-                                tool_call_id=tc.id
-                            ))
-                            db.commit()
+                    _log_and_append_tool_results(db, tenant, session_id, model_name, request_source,
+                                                 request_id, results, messages, executed_logs, persist, session_obj)
 
                 else:
                     final_answer = response_msg.content or ""
-                    
-                    extracted_json = None
-                    extracted_code = None
+                    extracted_json, extracted_code = None, None
                     if prochat_model:
-                        extracted_json, extracted_code = self._get_prochat_ui(db, tenant, messages, final_answer, prochat_model)
+                        extracted_json, extracted_code = get_prochat_ui(db, tenant, messages, final_answer, prochat_model)
 
                     if persist and session_obj:
-                        db.add(ChatMessage(
-                            session_id=session_obj.id,
-                            role="assistant",
-                            content=final_answer,
-                            json=extracted_json,
-                            code=extracted_code
-                        ))
-                        db.commit()
+                        save_message(db, session_obj, "assistant", content=final_answer, json_data=extracted_json, code=extracted_code)
 
-                    # --- Mark ChatRequest completed ---
-                    duration_ms = int((time.time() - start_time) * 1000)
-                    chat_req.assistant_response = final_answer
-                    chat_req.tools_called = len(executed_logs)
-                    chat_req.total_duration_ms = duration_ms
-                    chat_req.status = "completed"
-                    chat_req.completed_at = datetime.utcnow()
-                    update_request_usage(chat_req, getattr(response, "usage", None), _in_r, _out_r, _au_in_r, _au_out_r)
-                    chat_req.status = "completed"
-                    db.commit()
-
+                    finalize_request(db, chat_req, final_answer, executed_logs, start_time,
+                                     getattr(response, "usage", None), in_r, out_r, au_in_r, au_out_r)
                     return {
-                        "response": final_answer,
-                        "json": extracted_json,
-                        "code": extracted_code,
-                        "session_id": session_id,
-                        "request_id": request_id,
-                        "tenant": tenant.name,
-                        "executed_tools": executed_logs
+                        "response": final_answer, "json": extracted_json, "code": extracted_code,
+                        "session_id": session_id, "request_id": request_id,
+                        "tenant": tenant.name, "executed_tools": executed_logs
                     }
 
             # Max turns reached
-            duration_ms = int((time.time() - start_time) * 1000)
             final_res = messages[-1].get("content") or "Reached maximum tool execution turns."
-            
-            extracted_json = None
-            extracted_code = None
+            extracted_json, extracted_code = None, None
             if prochat_model:
-                extracted_json, extracted_code = self._get_prochat_ui(db, tenant, messages, final_res, prochat_model)
-
+                extracted_json, extracted_code = get_prochat_ui(db, tenant, messages, final_res, prochat_model)
             if persist and session_obj:
-                db.add(ChatMessage(
-                    session_id=session_obj.id,
-                    role="assistant",
-                    content=final_res,
-                    json=extracted_json,
-                    code=extracted_code
-                ))
-                db.commit()
-
-            chat_req.assistant_response = final_res
-            chat_req.tools_called = len(executed_logs)
-            chat_req.total_duration_ms = duration_ms
-            chat_req.status = "completed"
-            chat_req.completed_at = datetime.utcnow()
-            update_request_usage(chat_req, getattr(response, "usage", None), _in_r, _out_r, _au_in_r, _au_out_r)
-            chat_req.status = "completed"
-            db.commit()
-
+                save_message(db, session_obj, "assistant", content=final_res, json_data=extracted_json, code=extracted_code)
+            finalize_request(db, chat_req, final_res, executed_logs, start_time,
+                             getattr(response, "usage", None), in_r, out_r, au_in_r, au_out_r)
             return {
-                "response": final_res,
-                "json": extracted_json,
-                "code": extracted_code,
-                "session_id": session_id,
-                "request_id": request_id,
-                "tenant": tenant.name,
-                "executed_tools": executed_logs
+                "response": final_res, "json": extracted_json, "code": extracted_code,
+                "session_id": session_id, "request_id": request_id,
+                "tenant": tenant.name, "executed_tools": executed_logs
             }
 
         except Exception as e:
-            # --- Mark ChatRequest as error ---
-            duration_ms = int((time.time() - start_time) * 1000)
+            import time as _time
             chat_req.status = "error"
             chat_req.error_detail = str(e)
-            chat_req.total_duration_ms = duration_ms
+            chat_req.total_duration_ms = int((_time.time() - start_time) * 1000)
+            from datetime import datetime
             chat_req.completed_at = datetime.utcnow()
             db.commit()
             raise
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Streaming path
+    # ─────────────────────────────────────────────────────────────────────────
 
     def stream_openai_chat(
         self,
@@ -629,157 +293,66 @@ class SkillEngine:
         prochat_model: str = None,
         user_data: dict = None,
         skill_names: list = None,
-        client_messages: list = None
+        client_messages: list = None,
     ):
         start_time = time.time()
-
-        db_incoming = db
-        tenant_incoming = tenant
 
         from database import SessionLocal
         db = SessionLocal()
 
-        # Only persist conversation history for dashboard requests
         persist = (request_source == "dashboard")
         session_obj = None
 
         try:
-            # Re-fetch tenant in local session context to prevent session expired errors
-            tenant = db.query(Tenant).filter(Tenant.id == tenant_incoming.id).first()
-            if not tenant:
-                tenant = tenant_incoming
+            # Re-fetch tenant in local session to avoid detached-instance errors
+            tenant = db.query(Tenant).filter(Tenant.id == tenant.id).first() or tenant
 
-            import json
             user_message_db = json.dumps(user_message) if not isinstance(user_message, str) else user_message
-
-            # --- Create ChatRequest log entry ---
-            chat_req = ChatRequest(
-                tenant_id=tenant.id,
-                session_id=session_id,
-                app_id=app_id,
-                model_name=model_name,
-                request_source=request_source,
-                user_message=user_message_db,
-                status="pending"
-            )
-            db.add(chat_req)
-            db.commit()
-            db.refresh(chat_req)
+            chat_req = create_chat_request(db, tenant, session_id, app_id, model_name, request_source, user_message_db)
             request_id = chat_req.id
 
             executed_logs = []
             final_answer = ""
 
             if persist:
-                session_obj = db.query(ConversationSession).filter(
-                    ConversationSession.tenant_id == tenant.id,
-                    ConversationSession.session_id == session_id
-                ).first()
+                session_obj = get_or_create_session(db, tenant, session_id)
+                save_message(db, session_obj, "user", content=user_message_db)
 
-                if not session_obj:
-                    session_obj = ConversationSession(
-                        tenant_id=tenant.id,
-                        session_id=session_id
-                    )
-                    db.add(session_obj)
-                    db.commit()
-                    db.refresh(session_obj)
+            allowed_skills = resolve_allowed_skills(db, tenant, app_id, skill_names)
 
-                db.add(ChatMessage(session_id=session_obj.id, role="user", content=user_message_db))
-                db.commit()
+            yield _chunk(session_id, model_name, reasoning="Analyzing query & active skills...")
 
-            # Resolve allowed skills — merge app_id scoping with per-request skill_names filter
-            allowed_skills = None
-            if app_id:
-                from models import AppModel, AppSkillMapping
-                app_obj = db.query(AppModel).filter(AppModel.id == app_id).first()
-                if app_obj:
-                    app_skills = [m.skill_name for m in app_obj.skills]
-                    if skill_names:
-                        # Intersect: only skills both in the app AND explicitly requested
-                        allowed_skills = [s for s in skill_names if s in app_skills]
-                    else:
-                        allowed_skills = app_skills
-            elif skill_names:
-                # No app_id — use skill_names directly, validated against registry
-                known = set(skill_registry.skills.keys())
-                allowed_skills = [s for s in skill_names if s in known]
-
-            # Emit initial reasoning chunk
-            init_reasoning = {
-                "id": f"chatcmpl-{session_id}",
-                "object": "chat.completion.chunk",
-                "created": 1700000000,
-                "model": model_name,
-                "choices": [{
-                    "index": 0,
-                    "delta": {"reasoning": "Analyzing query & active skills..."},
-                    "finish_reason": None
-                }]
-            }
-            yield f"data: {json.dumps(init_reasoning)}\n\n"
-
-            messages = self._build_messages_list(db, persist, session_obj, user_message, allowed_skills, user_data, client_messages)
-            if not model_name:
-                from models import TenantLLM
-                first_model = db.query(TenantLLM).filter(
-                    TenantLLM.tenant_id == tenant.id,
-                    TenantLLM.is_active == True
-                ).first()
-                if first_model:
-                    model_name = first_model.model_name
-                else:
-                    model_name = get_model_name()
-
-            # Update resolved model name
+            messages = _build_messages(db, persist, session_obj, user_message, allowed_skills, user_data, client_messages)
+            model_name = _resolve_model(db, tenant, model_name)
             chat_req.model_name = model_name
             db.commit()
 
+            in_r, out_r, au_in_r, au_out_r = get_model_rates(db, tenant.id, model_name)
             llm = get_llm_client(db=db, tenant_id=tenant.id, model_name=model_name)
             available_tools = skill_registry.get_openai_tools(allowed_skills=allowed_skills)
 
             for turn in range(max_turns):
-                # On the very last turn, omit tools to force the LLM to write a text response
                 kwargs = {"model": model_name, "messages": messages, "stream": True}
                 if "gemini" not in model_name.lower():
                     kwargs["stream_options"] = {"include_usage": True}
                 if available_tools and turn < max_turns - 1:
                     kwargs["tools"] = available_tools
-
                 if turn == max_turns - 1:
-                    messages.append({
-                        "role": "user",
-                        "content": "[System Notice: Maximum tool execution turns reached. You can no longer call any tools. Please summarize the tool outputs and provide your final response to the user.]"
-                    })
+                    messages.append({"role": "user", "content": "[System Notice: Maximum tool execution turns reached. You can no longer call any tools. Please summarize the tool outputs and provide your final response to the user.]"})
 
-                turn_reasoning = {
-                    "id": f"chatcmpl-{session_id}",
-                    "object": "chat.completion.chunk",
-                    "created": 1700000000,
-                    "model": model_name,
-                    "choices": [{
-                        "index": 0,
-                        "delta": {"reasoning": f"Consulting LLM model {model_name} (Turn {turn+1})..."},
-                        "finish_reason": None
-                    }]
-                }
-                yield f"data: {json.dumps(turn_reasoning)}\n\n"
+                yield _chunk(session_id, model_name, reasoning=f"Consulting LLM model {model_name} (Turn {turn+1})...")
 
                 try:
                     response_stream = llm.chat.completions.create(**kwargs)
-                except openai.BadRequestError as e:
+                except openai.BadRequestError:
                     if persist and session_obj:
                         db.query(ChatMessage).filter(ChatMessage.session_id == session_obj.id).delete()
                         db.commit()
-                        db.add(ChatMessage(session_id=session_obj.id, role="user", content=user_message))
-                        db.commit()
+                        save_message(db, session_obj, "user", content=user_message)
                     sys_content = skill_registry.get_system_instructions()
                     if user_data:
                         sys_content = resolve_user_data_placeholders(sys_content, user_data)
-                    messages = [
-                        {"role": "system", "content": sys_content},
-                        {"role": "user", "content": user_message}
-                    ]
+                    messages = [{"role": "system", "content": sys_content}, {"role": "user", "content": user_message}]
                     kwargs["messages"] = messages
                     response_stream = llm.chat.completions.create(**kwargs)
 
@@ -792,7 +365,6 @@ class SkillEngine:
                 for chunk in response_stream:
                     if getattr(chunk, "usage", None):
                         last_usage = chunk.usage
-                    
                     if not chunk.choices:
                         continue
                     choice = chunk.choices[0]
@@ -801,18 +373,7 @@ class SkillEngine:
                     if delta.content:
                         full_text += delta.content
                         final_answer = full_text
-                        chunk_data = {
-                            "id": f"chatcmpl-{session_id}",
-                            "object": "chat.completion.chunk",
-                            "created": 1700000000,
-                            "model": model_name,
-                            "choices": [{
-                                "index": 0,
-                                "delta": {"content": delta.content},
-                                "finish_reason": choice.finish_reason
-                            }]
-                        }
-                        yield f"data: {json.dumps(chunk_data)}\n\n"
+                        yield f"data: {json.dumps({'id': f'chatcmpl-{session_id}', 'object': 'chat.completion.chunk', 'created': 1700000000, 'model': model_name, 'choices': [{'index': 0, 'delta': {'content': delta.content}, 'finish_reason': choice.finish_reason}]})}\n\n"
 
                     if delta.tool_calls:
                         for tc in delta.tool_calls:
@@ -824,153 +385,33 @@ class SkillEngine:
                                     tc_idx = id_to_index[tc.id]
                                 else:
                                     tc_idx = last_idx
-
                             last_idx = tc_idx
 
                             if tc_idx not in tool_calls_accumulator:
-                                tool_calls_accumulator[tc_idx] = {
-                                    "id": tc.id or f"call_{tc_idx}",
-                                    "type": "function",
-                                    "function": {"name": "", "arguments": ""}
-                                }
+                                tool_calls_accumulator[tc_idx] = {"id": tc.id or f"call_{tc_idx}", "type": "function", "function": {"name": "", "arguments": ""}}
                             if tc.function and tc.function.name:
                                 tool_calls_accumulator[tc_idx]["function"]["name"] += tc.function.name
                             if tc.function and tc.function.arguments:
                                 tool_calls_accumulator[tc_idx]["function"]["arguments"] += tc.function.arguments
-
                             extra = getattr(tc, "extra_content", None)
                             if extra:
-                                if hasattr(extra, "model_dump"):
-                                    extra = extra.model_dump()
-                                elif hasattr(extra, "dict"):
-                                    extra = extra.dict()
+                                extra = extra.model_dump() if hasattr(extra, "model_dump") else extra.dict() if hasattr(extra, "dict") else extra
                                 tool_calls_accumulator[tc_idx]["extra_content"] = extra
 
                 if tool_calls_accumulator:
                     tool_calls_list = []
-                    for tc_idx, tc_data in tool_calls_accumulator.items():
-                        args_str = tc_data["function"]["arguments"]
-                        if not args_str or not args_str.strip():
+                    for _, tc_data in tool_calls_accumulator.items():
+                        if not tc_data["function"]["arguments"].strip():
                             tc_data["function"]["arguments"] = "{}"
                         tool_calls_list.append(tc_data)
 
                     if persist and session_obj:
-                        db.add(ChatMessage(
-                            session_id=session_obj.id,
-                            role="assistant",
-                            content=full_text if full_text else None,
-                            tool_calls=json.dumps(tool_calls_list)
-                        ))
-                        db.commit()
+                        save_message(db, session_obj, "assistant", content=full_text or None, tool_calls=tool_calls_list)
+                    messages.append({"role": "assistant", "content": full_text or None, "tool_calls": tool_calls_list})
 
-                    messages.append({
-                        "role": "assistant",
-                        "content": full_text if full_text else None,
-                        "tool_calls": tool_calls_list
-                    })
+                    mcp_servers = prefetch_mcp_servers(tool_calls_list, db)
 
-                    # Pre-resolve MCP servers
-                    mcp_servers = {}
-                    for tc in tool_calls_list:
-                        fn_name = tc["function"]["name"]
-                        _, tool_def = skill_registry.find_tool(fn_name)
-                        if tool_def and tool_def.get("type") == "mcp_server":
-                            srv_id = tool_def.get("mcp_server_id")
-                            if srv_id and srv_id not in mcp_servers:
-                                from models import McpServer
-                                srv_obj = db.query(McpServer).filter(McpServer.id == srv_id).first()
-                                if srv_obj:
-                                    mcp_servers[srv_id] = {
-                                        "name": srv_obj.name,
-                                        "transport": srv_obj.transport,
-                                        "command": srv_obj.command,
-                                        "url": srv_obj.url,
-                                        "env": srv_obj.env
-                                    }
-
-                    class SimpleMcpServerObj:
-                        def __init__(self, **kwargs):
-                            for k, v in kwargs.items():
-                                setattr(self, k, v)
-
-                    def execute_one_stream(tc):
-                        fn_name = tc["function"]["name"]
-                        try:
-                            args = json.loads(tc["function"]["arguments"])
-                        except Exception:
-                            args = {}
-
-                        skill_name, tool_def = skill_registry.find_tool(fn_name)
-                        if not tool_def:
-                            tool_result = f"Error: Tool {fn_name} not found in skill registry."
-                            exec_res = {"stdout": "", "stderr": tool_result, "exit_code": 1, "execution_time_ms": 0, "sandbox_type": "process"}
-                            command = f"Error: Tool {fn_name}"
-                        else:
-                            import copy
-                            exec_tool_def = resolve_user_data_placeholders(copy.deepcopy(tool_def), user_data)
-                            exec_args = resolve_user_data_placeholders(copy.deepcopy(args), user_data)
-
-                            tool_type = tool_def.get("type", "shell")
-                            if tool_type in ["http", "rest_api", "api"]:
-                                from executors.http_executor import http_executor
-                                exec_res = http_executor.execute(tool_def=exec_tool_def, arguments=exec_args)
-                                command = f"{tool_def.get('method', 'GET')} {tool_def.get('url')} params={json.dumps(args)}"
-                            elif tool_type in ["mcp", "mcp_stdio"]:
-                                from executors.mcp_executor import mcp_executor
-                                exec_res = mcp_executor.execute(tool_def=exec_tool_def, arguments=exec_args)
-                                command = tool_def.get("mcp_command") or tool_def.get("command") or f"MCP Call {fn_name}"
-                            elif tool_type == "mcp_server":
-                                from mcp_manager import mcp_manager
-                                srv_id = tool_def.get("mcp_server_id")
-                                srv_data = mcp_servers.get(srv_id)
-                                if srv_data:
-                                    srv_obj = SimpleMcpServerObj(**srv_data)
-                                    exec_res = mcp_manager.call_tool(srv_obj, exec_tool_def.get("name"), exec_args)
-                                    command = f"MCP Server {srv_obj.name} -> tool {tool_def.get('name')}"
-                                else:
-                                    exec_res = {"stdout": "", "stderr": "MCP Server not found", "exit_code": 1, "execution_time_ms": 0, "sandbox_type": "mcp"}
-                                    command = "MCP Call"
-                            else:
-                                exec_command = exec_tool_def.get("command", "")
-                                command = tool_def.get("command", "")
-                                code = exec_args.get("code") if tool_type == "code" else None
-                                if tool_type == "code" and code:
-                                    command = code
-                                elif not command:
-                                    command = exec_command
-                                tenant_name = tenant.name if tenant else "default"
-                                
-                                # Intercept explicit cloud & HTTP skills to run on host instead of isolated offline sandbox
-                                if fn_name == "cloud_storage__upload_to_storage":
-                                    exec_res = run_upload_to_storage_tool(db, exec_args, tenant)
-                                elif fn_name == "cloud_storage__download_from_storage":
-                                    exec_res = run_download_from_storage_tool(db, exec_args, tenant)
-                                elif fn_name == "http_fetcher__download_public_file":
-                                    exec_res = run_download_public_file_tool(db, exec_args, tenant)
-                                elif fn_name == "sandbox_file_manager__list_sandbox_files":
-                                    exec_res = run_list_sandbox_files(db, session_id)
-                                elif fn_name == "sandbox_file_manager__download_sandbox_file":
-                                    exec_res = run_download_sandbox_file(db, session_id, exec_args)
-                                elif fn_name == "sandbox_file_manager__upload_sandbox_file":
-                                    exec_res = run_upload_sandbox_file(db, session_id, exec_args)
-                                elif fn_name == "email__send_email":
-                                    exec_res = run_send_email_tool(db, exec_args, tenant)
-                                else:
-                                    exec_res = sandbox_manager.execute(command=exec_command, code=code, session_id=session_id)
-                                    exec_res = map_local_generated_files_to_tenant(exec_res, tenant_name=tenant_name)
-
-                            tool_result = exec_res.get("stdout") or exec_res.get("stderr") or "Execution completed cleanly with no output."
-                            generated_files = exec_res.get("generated_files", [])
-                            if generated_files:
-                                files_str = "\n\nGenerated files:\n" + "\n".join(
-                                    f"- {f['original_name']} (URL: {f['url']}, Sandbox Path: {f['sandbox_path']})"
-                                    for f in generated_files
-                                )
-                                tool_result += files_str
-
-                        return tc, skill_name, fn_name, args, command, exec_res, tool_result
-
-                    # Yield tool start events
+                    # Emit tool-start events
                     for tc in tool_calls_list:
                         fn_name = tc["function"]["name"]
                         try:
@@ -978,731 +419,114 @@ class SkillEngine:
                         except Exception:
                             args = {}
                         skill_name, _ = skill_registry.find_tool(fn_name)
+                        yield _chunk(session_id, model_name,
+                                     reasoning=f"Invoking tool {fn_name} (Skill: {skill_name})...",
+                                     tool_call={"name": fn_name, "arguments": args})
 
-                        tool_start_chunk = {
-                            "id": f"chatcmpl-{session_id}",
-                            "object": "chat.completion.chunk",
-                            "created": 1700000000,
-                            "model": model_name,
-                            "choices": [{
-                                "index": 0,
-                                "delta": {
-                                    "reasoning": f"Invoking tool {fn_name} (Skill: {skill_name})...",
-                                    "tool_call": {"name": fn_name, "arguments": args}
-                                },
-                                "finish_reason": None
-                            }]
-                        }
-                        yield f"data: {json.dumps(tool_start_chunk)}\n\n"
+                    # Execute tools in parallel
+                    def run_one_stream(tc):
+                        fn = tc["function"]["name"]
+                        try:
+                            args = json.loads(tc["function"]["arguments"])
+                        except Exception:
+                            args = {}
+                        skill_name, tool_def = skill_registry.find_tool(fn)
+                        command, exec_res, tool_result = execute_tool(fn, args, tool_def, user_data, tenant, session_id, db, mcp_servers)
+                        return tc, skill_name, fn, args, command, exec_res, tool_result
 
-                    # Execute in parallel
-                    from concurrent.futures import ThreadPoolExecutor, as_completed
                     with ThreadPoolExecutor() as executor:
-                        futures = [executor.submit(execute_one_stream, tc) for tc in tool_calls_list]
-
+                        futures = [executor.submit(run_one_stream, tc) for tc in tool_calls_list]
                         for fut in as_completed(futures):
                             tc, skill_name, fn_name, args, command, exec_res, tool_result = fut.result()
 
                             log_entry = ExecutionLog(
-                                tenant_id=tenant.id,
-                                session_id=session_id,
-                                skill_name=skill_name or "unknown",
-                                tool_name=fn_name,
-                                command=command,
-                                sandbox_type=exec_res.get("sandbox_type", "process"),
-                                stdout=exec_res.get("stdout"),
-                                stderr=exec_res.get("stderr"),
+                                tenant_id=tenant.id, session_id=session_id,
+                                skill_name=skill_name or "unknown", tool_name=fn_name,
+                                command=command, sandbox_type=exec_res.get("sandbox_type", "process"),
+                                stdout=exec_res.get("stdout"), stderr=exec_res.get("stderr"),
                                 exit_code=exec_res.get("exit_code", 0),
                                 execution_time_ms=exec_res.get("execution_time_ms", 0),
-                                model_name=model_name,
-                                request_source=request_source,
-                                request_id=request_id
+                                model_name=model_name, request_source=request_source, request_id=request_id
                             )
                             db.add(log_entry)
                             db.commit()
 
                             executed_logs.append({
-                                "tool_name": fn_name,
-                                "skill_name": skill_name,
+                                "tool_name": fn_name, "skill_name": skill_name,
                                 "exit_code": exec_res.get("exit_code"),
                                 "execution_time_ms": exec_res.get("execution_time_ms"),
                                 "generated_files": exec_res.get("generated_files", [])
                             })
 
-                            tool_end_chunk = {
-                                "id": f"chatcmpl-{session_id}",
-                                "object": "chat.completion.chunk",
-                                "created": 1700000000,
-                                "model": model_name,
-                                "choices": [{
-                                    "index": 0,
-                                    "delta": {
-                                        "reasoning": f"Tool {fn_name} finished in {exec_res.get('execution_time_ms')}ms ({exec_res.get('sandbox_type')}).",
-                                        "tool_result": {
-                                            "tool_name": fn_name,
-                                            "skill_name": skill_name,
-                                            "stdout": exec_res.get("stdout"),
-                                            "stderr": exec_res.get("stderr"),
-                                            "sandbox_type": exec_res.get("sandbox_type"),
-                                            "execution_time_ms": exec_res.get("execution_time_ms"),
-                                            "exit_code": exec_res.get("exit_code"),
-                                            "generated_files": exec_res.get("generated_files", [])
-                                        }
-                                    },
-                                    "finish_reason": None
-                                }]
-                            }
-                            yield f"data: {json.dumps(tool_end_chunk)}\n\n"
+                            yield _chunk(session_id, model_name,
+                                         reasoning=f"Tool {fn_name} finished in {exec_res.get('execution_time_ms')}ms ({exec_res.get('sandbox_type')}).",
+                                         tool_result={
+                                             "tool_name": fn_name, "skill_name": skill_name,
+                                             "stdout": exec_res.get("stdout"), "stderr": exec_res.get("stderr"),
+                                             "sandbox_type": exec_res.get("sandbox_type"),
+                                             "execution_time_ms": exec_res.get("execution_time_ms"),
+                                             "exit_code": exec_res.get("exit_code"),
+                                             "generated_files": exec_res.get("generated_files", [])
+                                         })
 
-                            messages.append({
-                                "role": "tool",
-                                "tool_call_id": tc["id"],
-                                "content": tool_result
-                            })
+                            messages.append({"role": "tool", "tool_call_id": tc["id"], "content": tool_result})
                             if persist and session_obj:
-                                db.add(ChatMessage(
-                                    session_id=session_obj.id,
-                                    role="tool",
-                                    content=tool_result,
-                                    tool_call_id=tc["id"]
-                                ))
-                                db.commit()
+                                save_message(db, session_obj, "tool", content=tool_result, tool_call_id=tc["id"])
+
                 else:
-                    last_extracted_json = None
-                    last_extracted_code = None
-
+                    # Final text response — handle ProChat UI
+                    last_extracted_json, last_extracted_code = None, None
                     if prochat_model:
-                        # 1. Fetch ProChat API config from DB
-                        from models import TenantLLM
-                        from encryption_utils import decrypt_key
-                        import requests
-                        
-                        config = db.query(TenantLLM).filter(
-                            TenantLLM.tenant_id == tenant.id,
-                            (TenantLLM.provider == "prochat") | TenantLLM.model_name.ilike("%genui%"),
-                            TenantLLM.is_active == True
-                        ).first()
-
-                        if not config:
-                            warning_chunk = {
-                                "id": f"chatcmpl-{session_id}",
-                                "object": "chat.completion.chunk",
-                                "created": 1700000000,
-                                "model": model_name,
-                                "choices": [{
-                                    "index": 0,
-                                    "delta": {
-                                        "content": "\n\n⚠️ **ProChat Generative UI config not found.** Please go to the **Tenants & Keys** settings dashboard, select your Tenant, and add a model configuration with provider `prochat` and your API Key to enable this feature."
-                                    },
-                                    "finish_reason": "stop"
-                                }]
-                            }
-                            yield f"data: {json.dumps(warning_chunk)}\n\n"
-                        else:
-                            try:
-                                api_key = decrypt_key(config.api_key_encrypted)
-                                base_url = config.base_url or "https://www.prochat.dev/apps/api/v1"
-                                resolved_model = prochat_model or config.model_name or "genui-mars-0.1"
-
-                                prochat_messages = [
-                                    {"role": "system", "content": PROCHAT_SYSTEM_INSTRUCTION},
-                                    {"role": "user", "content": f"Here is the assistant response data:\n\n{full_text}\n\nBased on this response, please present this in the UI."}
-                                ]
-
-                                # Yield a loading indicator for the status
-                                _loading_chunk = {
-                                    "id": f"chatcmpl-{session_id}",
-                                    "object": "chat.completion.chunk",
-                                    "created": 1700000000,
-                                    "model": model_name,
-                                    "choices": [{
-                                        "index": 0,
-                                        "delta": {"reasoning": "Generating dynamic user interface components..."},
-                                        "finish_reason": None
-                                    }]
-                                }
-                                yield f"data: {json.dumps(_loading_chunk)}\n\n"
-
-                                headers = {
-                                    "Authorization": f"Bearer {api_key}",
-                                    "Content-Type": "application/json"
-                                }
-                                payload = {
-                                    "model": resolved_model,
-                                    "messages": prochat_messages,
-                                    "stream": True
-                                }
-                                
-                                res = requests.post(f"{base_url.rstrip('/')}/chat/completions", headers=headers, json=payload, stream=True, timeout=60)
-                                
-                                for line in res.iter_lines():
-                                    if not line:
-                                        continue
-                                    line_str = line.decode("utf-8").strip()
-                                    if line_str.startswith("data: "):
-                                        data_content = line_str[6:]
-                                        if data_content == "[DONE]":
-                                            break
-                                        try:
-                                            chunk_obj = json.loads(data_content)
-                                            delta = chunk_obj["choices"][0]["delta"]
-                                            content_str = delta.get("content")
-                                            if content_str:
-                                                try:
-                                                    content_obj = json.loads(content_str)
-                                                    extracted_json = content_obj.get("json")
-                                                    extracted_code = content_obj.get("code")
-                                                except Exception:
-                                                    extracted_json = content_str
-                                                    extracted_code = None
-                                                
-                                                if extracted_json:
-                                                    last_extracted_json = extracted_json
-                                                if extracted_code:
-                                                    last_extracted_code = extracted_code
-
-                                                ui_chunk = {
-                                                    "id": f"chatcmpl-{session_id}",
-                                                    "object": "chat.completion.chunk",
-                                                    "created": 1700000000,
-                                                    "model": model_name,
-                                                    "choices": [{
-                                                        "index": 0,
-                                                        "delta": {
-                                                            "json": extracted_json,
-                                                            "code": extracted_code
-                                                        },
-                                                        "finish_reason": None
-                                                    }]
-                                                }
-                                                yield f"data: {json.dumps(ui_chunk)}\n\n"
-                                        except Exception as e:
-                                            print(f"Error parsing ProChat chunk: {e}")
-                            except Exception as e:
-                                print(f"Error calling ProChat completions stream: {e}")
+                        gen = stream_prochat_ui(db, tenant, full_text, prochat_model, session_id, model_name)
+                        try:
+                            while True:
+                                yield next(gen)
+                        except StopIteration as si:
+                            last_extracted_json, last_extracted_code = si.value or (None, None)
 
                     if persist and session_obj:
-                        db.add(ChatMessage(
-                            session_id=session_obj.id,
-                            role="assistant",
-                            content=full_text,
-                            json=last_extracted_json,
-                            code=last_extracted_code
-                        ))
-                        db.commit()
+                        save_message(db, session_obj, "assistant", content=full_text,
+                                     json_data=last_extracted_json, code=last_extracted_code)
 
-                    # --- Mark ChatRequest completed ---
-                    duration_ms = int((time.time() - start_time) * 1000)
-                    chat_req.assistant_response = full_text
-                    chat_req.tools_called = len(executed_logs)
-                    chat_req.total_duration_ms = duration_ms
-                    chat_req.status = "completed"
-                    chat_req.completed_at = datetime.utcnow()
-                    update_request_usage(chat_req, getattr(last_usage, "usage", last_usage) if last_usage else None, _in_r, _out_r, _au_in_r, _au_out_r)
-                    db.commit()
+                    usage_obj = getattr(last_usage, "usage", last_usage) if last_usage else None
+                    finalize_request(db, chat_req, full_text, executed_logs, start_time,
+                                     usage_obj, in_r, out_r, au_in_r, au_out_r)
 
-                    # Emit done with request_id
-                    done_chunk = {
-                        "type": "done",
-                        "request_id": request_id,
-                        "tools_called": len(executed_logs)
-                    }
-                    yield f"data: {json.dumps(done_chunk)}\n\n"
+                    yield f"data: {json.dumps({'type': 'done', 'request_id': request_id, 'tools_called': len(executed_logs)})}\n\n"
                     yield "data: [DONE]\n\n"
                     return
 
-            # Max turns — mark completed
-            duration_ms = int((time.time() - start_time) * 1000)
-            
-            last_extracted_json = None
-            last_extracted_code = None
-
+            # Max turns reached
+            last_extracted_json, last_extracted_code = None, None
             if prochat_model:
-                # Fetch ProChat API config from DB
-                from models import TenantLLM
-                from encryption_utils import decrypt_key
-                import requests
-                
-                config = db.query(TenantLLM).filter(
-                    TenantLLM.tenant_id == tenant.id,
-                    (TenantLLM.provider == "prochat") | TenantLLM.model_name.ilike("%genui%"),
-                    TenantLLM.is_active == True
-                ).first()
-
-                if not config:
-                    warning_chunk = {
-                        "id": f"chatcmpl-{session_id}",
-                        "object": "chat.completion.chunk",
-                        "created": 1700000000,
-                        "model": model_name,
-                        "choices": [{
-                            "index": 0,
-                            "delta": {
-                                "content": "\n\n⚠️ **ProChat Generative UI config not found.** Please go to the **Tenants & Keys** settings dashboard, select your Tenant, and add a model configuration with provider `prochat` and your API Key to enable this feature."
-                            },
-                            "finish_reason": "stop"
-                        }]
-                    }
-                    yield f"data: {json.dumps(warning_chunk)}\n\n"
-                else:
-                    try:
-                        api_key = decrypt_key(config.api_key_encrypted)
-                        base_url = config.base_url or "https://www.prochat.dev/apps/api/v1"
-                        resolved_model = prochat_model or config.model_name or "genui-mars-0.1"
-
-                        prochat_messages = [
-                            {"role": "system", "content": PROCHAT_SYSTEM_INSTRUCTION},
-                            {"role": "user", "content": f"Here is the assistant response data:\n\n{final_answer}\n\nBased on this response, please present this in the UI."}
-                        ]
-
-                        _loading_chunk2 = {
-                            "id": f"chatcmpl-{session_id}",
-                            "object": "chat.completion.chunk",
-                            "created": 1700000000,
-                            "model": model_name,
-                            "choices": [{
-                                "index": 0,
-                                "delta": {"reasoning": "Generating dynamic user interface components..."},
-                                "finish_reason": None
-                            }]
-                        }
-                        yield f"data: {json.dumps(_loading_chunk2)}\n\n"
-
-                        headers = {
-                            "Authorization": f"Bearer {api_key}",
-                            "Content-Type": "application/json"
-                        }
-                        payload = {
-                            "model": resolved_model,
-                            "messages": prochat_messages,
-                            "stream": True
-                        }
-                        
-                        res = requests.post(f"{base_url.rstrip('/')}/chat/completions", headers=headers, json=payload, stream=True, timeout=60)
-                        
-                        for line in res.iter_lines():
-                            if not line:
-                                continue
-                            line_str = line.decode("utf-8").strip()
-                            if line_str.startswith("data: "):
-                                data_content = line_str[6:]
-                                if data_content == "[DONE]":
-                                    break
-                                try:
-                                    chunk_obj = json.loads(data_content)
-                                    delta = chunk_obj["choices"][0]["delta"]
-                                    content_str = delta.get("content")
-                                    if content_str:
-                                        try:
-                                            content_obj = json.loads(content_str)
-                                            extracted_json = content_obj.get("json")
-                                            extracted_code = content_obj.get("code")
-                                        except Exception:
-                                            extracted_json = content_str
-                                            extracted_code = None
-                                        
-                                        if extracted_json:
-                                            last_extracted_json = extracted_json
-                                        if extracted_code:
-                                            last_extracted_code = extracted_code
-
-                                        ui_chunk = {
-                                            "id": f"chatcmpl-{session_id}",
-                                            "object": "chat.completion.chunk",
-                                            "created": 1700000000,
-                                            "model": model_name,
-                                            "choices": [{
-                                                "index": 0,
-                                                "delta": {
-                                                    "json": extracted_json,
-                                                    "code": extracted_code
-                                                },
-                                                "finish_reason": None
-                                            }]
-                                        }
-                                        yield f"data: {json.dumps(ui_chunk)}\n\n"
-                                except Exception as e:
-                                    print(f"Error parsing ProChat chunk: {e}")
-                    except Exception as e:
-                        print(f"Error calling ProChat completions stream: {e}")
+                gen = stream_prochat_ui(db, tenant, final_answer, prochat_model, session_id, model_name)
+                try:
+                    while True:
+                        yield next(gen)
+                except StopIteration as si:
+                    last_extracted_json, last_extracted_code = si.value or (None, None)
 
             if persist and session_obj:
-                db.add(ChatMessage(
-                    session_id=session_obj.id,
-                    role="assistant",
-                    content=final_answer,
-                    json=last_extracted_json,
-                    code=last_extracted_code
-                ))
-                db.commit()
+                save_message(db, session_obj, "assistant", content=final_answer,
+                             json_data=last_extracted_json, code=last_extracted_code)
 
-            chat_req.assistant_response = final_answer
-            chat_req.tools_called = len(executed_logs)
-            chat_req.total_duration_ms = duration_ms
-            chat_req.status = "completed"
-            chat_req.completed_at = datetime.utcnow()
-            update_request_usage(chat_req, getattr(last_usage, "usage", last_usage) if last_usage else None, _in_r, _out_r, _au_in_r, _au_out_r)
-            db.commit()
-
-            done_chunk = {"type": "done", "request_id": request_id, "tools_called": len(executed_logs)}
-            yield f"data: {json.dumps(done_chunk)}\n\n"
+            usage_obj = getattr(last_usage, "usage", last_usage) if last_usage else None
+            finalize_request(db, chat_req, final_answer, executed_logs, start_time,
+                             usage_obj, in_r, out_r, au_in_r, au_out_r)
+            yield f"data: {json.dumps({'type': 'done', 'request_id': request_id, 'tools_called': len(executed_logs)})}\n\n"
             yield "data: [DONE]\n\n"
 
         except Exception as e:
-            duration_ms = int((time.time() - start_time) * 1000)
             chat_req.status = "error"
             chat_req.error_detail = str(e)
-            chat_req.total_duration_ms = duration_ms
+            chat_req.total_duration_ms = int((time.time() - start_time) * 1000)
+            from datetime import datetime
             chat_req.completed_at = datetime.utcnow()
             db.commit()
-            error_chunk = {"type": "error", "request_id": request_id, "detail": str(e)}
-            yield f"data: {json.dumps(error_chunk)}\n\n"
+            yield f"data: {json.dumps({'type': 'error', 'request_id': request_id, 'detail': str(e)})}\n\n"
             yield "data: [DONE]\n\n"
         finally:
             db.close()
 
-def run_send_email_tool(db, args: dict, tenant) -> dict:
-    import time
-    start_time = time.time()
-    
-    to_email = args.get("to_email")
-    subject = args.get("subject")
-    body = args.get("body")
-    
-    if not to_email or not subject or not body:
-        return {
-            "stdout": "",
-            "stderr": "Error: to_email, subject, and body are required parameters.",
-            "exit_code": 1,
-            "execution_time_ms": int((time.time() - start_time) * 1000),
-            "sandbox_type": "host"
-        }
-        
-    if not tenant:
-        return {
-            "stdout": "",
-            "stderr": "Error: No tenant context provided to execute SMTP emailing.",
-            "exit_code": 1,
-            "execution_time_ms": int((time.time() - start_time) * 1000),
-            "sandbox_type": "host"
-        }
-        
-    from models import EmailConfig
-    from encryption_utils import decrypt_key
-    import smtplib
-    from email.mime.text import MIMEText
-    from email.mime.multipart import MIMEMultipart
-    
-    config = db.query(EmailConfig).filter(EmailConfig.tenant_id == tenant.id).first()
-    if not config:
-        return {
-            "stdout": "",
-            "stderr": "Error: SMTP configuration has not been set up for this tenant. Please visit Email Configuration settings in the dashboard.",
-            "exit_code": 1,
-            "execution_time_ms": int((time.time() - start_time) * 1000),
-            "sandbox_type": "host"
-        }
-        
-    password = None
-    if config.smtp_password_encrypted:
-        try:
-            password = decrypt_key(config.smtp_password_encrypted)
-        except Exception as e:
-            return {
-                "stdout": "",
-                "stderr": f"Error decrypting SMTP password: {str(e)}",
-                "exit_code": 1,
-                "execution_time_ms": int((time.time() - start_time) * 1000),
-                "sandbox_type": "host"
-            }
-            
-    try:
-        msg = MIMEMultipart()
-        msg['From'] = config.sender_email
-        msg['To'] = to_email
-        msg['Subject'] = subject
-        is_html = any(tag in body.lower() for tag in ["<html", "<body", "<div", "<p", "<span", "<table", "<h1", "<h2", "<h3", "<ul", "<ol", "<li", "<br", "<a ", "<p>"])
-        msg.attach(MIMEText(body, "html" if is_html else "plain"))
-        
-        if config.use_ssl:
-            server = smtplib.SMTP_SSL(config.smtp_host, config.smtp_port, timeout=12)
-        else:
-            server = smtplib.SMTP(config.smtp_host, config.smtp_port, timeout=12)
-            if config.use_tls:
-                server.starttls()
-                
-        if config.smtp_username:
-            server.login(config.smtp_username, password)
-            
-        server.sendmail(config.sender_email, to_email, msg.as_string())
-        server.quit()
-        
-        return {
-            "stdout": f"Email successfully sent to {to_email} with subject: '{subject}'",
-            "stderr": "",
-            "exit_code": 0,
-            "execution_time_ms": int((time.time() - start_time) * 1000),
-            "sandbox_type": "host"
-        }
-    except Exception as e:
-        return {
-            "stdout": "",
-            "stderr": f"SMTP delivery failed: {str(e)}",
-            "exit_code": 1,
-            "execution_time_ms": int((time.time() - start_time) * 1000),
-            "sandbox_type": "host"
-        }
-
-def run_upload_to_storage_tool(db, args: dict, tenant) -> dict:
-    filename = args.get("filename")
-    if not filename:
-        return {"stdout": "", "stderr": "Error: filename is required.", "exit_code": 1, "execution_time_ms": 0, "sandbox_type": "host"}
-        
-    import os
-    import time
-    from storage import get_storage_backend, OUTPUT_DIR, UPLOAD_DIR
-    
-    start_time = time.time()
-    tenant_name = tenant.name if tenant else "default"
-    
-    local_path = None
-    for directory in (OUTPUT_DIR, UPLOAD_DIR):
-        p = os.path.join(directory, tenant_name, filename)
-        if os.path.exists(p):
-            local_path = p
-            break
-        for folder in ("", "default"):
-            p = os.path.join(directory, folder, filename) if folder else os.path.join(directory, filename)
-            if os.path.exists(p):
-                local_path = p
-                break
-        if local_path:
-            break
-            
-    if not local_path or not os.path.exists(local_path):
-        return {"stdout": "", "stderr": f"Error: File '{filename}' not found.", "exit_code": 1, "execution_time_ms": int((time.time() - start_time) * 1000), "sandbox_type": "host"}
-        
-    try:
-        backend = get_storage_backend(db)
-        with open(local_path, "rb") as f:
-            data = f.read()
-        cloud_url = backend.upload(filename, data, "application/octet-stream", tenant_name=tenant_name)
-        elapsed_ms = int((time.time() - start_time) * 1000)
-        return {
-            "stdout": f"File '{filename}' successfully uploaded to storage. URL: {cloud_url}",
-            "stderr": "",
-            "exit_code": 0,
-            "execution_time_ms": elapsed_ms,
-            "sandbox_type": "host",
-            "generated_files": [{
-                "filename": filename,
-                "original_name": filename,
-                "url": cloud_url,
-                "sandbox_path": f"sandbox/outputs/{tenant_name}/{filename}"
-            }]
-        }
-    except Exception as e:
-        return {"stdout": "", "stderr": f"Error uploading file: {str(e)}", "exit_code": 1, "execution_time_ms": int((time.time() - start_time) * 1000), "sandbox_type": "host"}
-
-def run_download_from_storage_tool(db, args: dict, tenant) -> dict:
-    filename = args.get("filename")
-    if not filename:
-        return {"stdout": "", "stderr": "Error: filename is required.", "exit_code": 1, "execution_time_ms": 0, "sandbox_type": "host"}
-        
-    import os
-    import time
-    from storage import get_storage_backend, UPLOAD_DIR
-    
-    start_time = time.time()
-    tenant_name = tenant.name if tenant else "default"
-    local_path = os.path.join(UPLOAD_DIR, tenant_name, filename)
-    
-    try:
-        backend = get_storage_backend(db)
-        if not hasattr(backend, "download"):
-            return {"stdout": "", "stderr": "Error: Active backend does not support download.", "exit_code": 1, "execution_time_ms": int((time.time() - start_time) * 1000), "sandbox_type": "host"}
-            
-        data = backend.download(filename, tenant_name=tenant_name)
-        if not data:
-            return {"stdout": "", "stderr": f"Error: File '{filename}' not found in cloud storage.", "exit_code": 1, "execution_time_ms": int((time.time() - start_time) * 1000), "sandbox_type": "host"}
-            
-        tenant_upload_dir = os.path.join(UPLOAD_DIR, tenant_name)
-        os.makedirs(tenant_upload_dir, exist_ok=True)
-        with open(local_path, "wb") as f:
-            f.write(data)
-            
-        elapsed_ms = int((time.time() - start_time) * 1000)
-        return {
-            "stdout": f"File '{filename}' successfully downloaded to local sandbox path sandbox/uploads/{tenant_name}/{filename}",
-            "stderr": "",
-            "exit_code": 0,
-            "execution_time_ms": elapsed_ms,
-            "sandbox_type": "host"
-        }
-    except Exception as e:
-        return {"stdout": "", "stderr": f"Error downloading file: {str(e)}", "exit_code": 1, "execution_time_ms": int((time.time() - start_time) * 1000), "sandbox_type": "host"}
-
-def run_download_public_file_tool(db, args: dict, tenant) -> dict:
-    url = args.get("url")
-    filename = args.get("filename")
-    if not url or not filename:
-        return {"stdout": "", "stderr": "Error: Both url and filename are required.", "exit_code": 1, "execution_time_ms": 0, "sandbox_type": "host"}
-        
-    import os
-    import time
-    import urllib.request
-    from storage import UPLOAD_DIR
-    
-    start_time = time.time()
-    tenant_name = tenant.name if tenant else "default"
-    local_path = os.path.join(UPLOAD_DIR, tenant_name, filename)
-    
-    try:
-        tenant_upload_dir = os.path.join(UPLOAD_DIR, tenant_name)
-        os.makedirs(tenant_upload_dir, exist_ok=True)
-        
-        req = urllib.request.Request(
-            url, 
-            headers={'User-Agent': 'Mozilla/5.0'}
-        )
-        with urllib.request.urlopen(req, timeout=15) as response:
-            data = response.read()
-            
-        with open(local_path, "wb") as f:
-            f.write(data)
-            
-        elapsed_ms = int((time.time() - start_time) * 1000)
-        return {
-            "stdout": f"Successfully downloaded public file to sandbox/uploads/{tenant_name}/{filename}",
-            "stderr": "",
-            "exit_code": 0,
-            "execution_time_ms": elapsed_ms,
-            "sandbox_type": "host"
-        }
-    except Exception as e:
-        return {"stdout": "", "stderr": f"Error downloading public file: {str(e)}", "exit_code": 1, "execution_time_ms": int((time.time() - start_time) * 1000), "sandbox_type": "host"}
-
-def map_local_generated_files_to_tenant(exec_res: dict, tenant_name: str = "default") -> dict:
-    generated_files = exec_res.get("generated_files", [])
-    if not generated_files:
-        return exec_res
-    import os
-    from storage import OUTPUT_DIR
-    for f in generated_files:
-        old_path = os.path.join(OUTPUT_DIR, f["filename"])
-        if os.path.exists(old_path):
-            tenant_output_dir = os.path.join(OUTPUT_DIR, tenant_name)
-            os.makedirs(tenant_output_dir, exist_ok=True)
-            new_path = os.path.join(tenant_output_dir, f["filename"])
-            os.rename(old_path, new_path)
-            f["url"] = f"/api/v1/files/download/{tenant_name}/{f['filename']}"
-            f["sandbox_path"] = f"sandbox/outputs/{tenant_name}/{f['filename']}"
-    return exec_res
-
-def run_list_sandbox_files(db, session_id: str):
-    from models import SandboxConfig
-    from encryption_utils import decrypt_key
-    from sandbox.remote_runner import remote_runner
-    import os
-    
-    config = db.query(SandboxConfig).filter(SandboxConfig.is_active == True).first()
-    if config and config.provider == "azure":
-        client_id = decrypt_key(config.azure_client_id_encrypted)
-        client_secret = decrypt_key(config.azure_client_secret_encrypted)
-        tenant_id = decrypt_key(config.azure_tenant_id_encrypted)
-        pool_endpoint = config.azure_session_pool_endpoint
-        if client_id and client_secret and tenant_id and pool_endpoint:
-            try:
-                files = remote_runner.list_files_azure(client_id, client_secret, tenant_id, pool_endpoint, session_id)
-                stdout = "Files in Azure ACA Sandbox:\n" + "\n".join([f"- {f['filename']} ({f['size']} bytes, modified {f['last_modified']})" for f in files])
-                return {"stdout": stdout, "stderr": "", "exit_code": 0, "sandbox_type": "azure_aca"}
-            except Exception as e:
-                return {"stdout": "", "stderr": f"Failed to list sandbox files: {str(e)}", "exit_code": 1, "sandbox_type": "azure_aca"}
-    
-    # Fallback/Local list
-    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    outputs_dir = os.path.join(base_dir, "sandbox", "outputs")
-    os.makedirs(outputs_dir, exist_ok=True)
-    files = os.listdir(outputs_dir)
-    stdout = "Files in local outputs folder:\n" + "\n".join([f"- {f}" for f in files])
-    return {"stdout": stdout, "stderr": "", "exit_code": 0, "sandbox_type": "process"}
-
-
-def run_download_sandbox_file(db, session_id: str, args: dict):
-    from models import SandboxConfig
-    from encryption_utils import decrypt_key
-    from sandbox.remote_runner import remote_runner
-    import os
-    import uuid
-    
-    filename = args.get("filename")
-    if not filename:
-        return {"stdout": "", "stderr": "Error: filename is required", "exit_code": 1, "sandbox_type": "process"}
-        
-    config = db.query(SandboxConfig).filter(SandboxConfig.is_active == True).first()
-    if config and config.provider == "azure":
-        client_id = decrypt_key(config.azure_client_id_encrypted)
-        client_secret = decrypt_key(config.azure_client_secret_encrypted)
-        tenant_id = decrypt_key(config.azure_tenant_id_encrypted)
-        pool_endpoint = config.azure_session_pool_endpoint
-        if client_id and client_secret and tenant_id and pool_endpoint:
-            try:
-                content = remote_runner.download_file_azure(client_id, client_secret, tenant_id, pool_endpoint, session_id, filename)
-                
-                unique_name = f"{uuid.uuid4().hex}_{filename}"
-                base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-                outputs_dir = os.path.join(base_dir, "sandbox", "outputs")
-                os.makedirs(outputs_dir, exist_ok=True)
-                
-                with open(os.path.join(outputs_dir, unique_name), "wb") as f:
-                    f.write(content)
-                    
-                download_url = f"/api/v1/files/download/{unique_name}"
-                stdout = f"Successfully downloaded file. Available locally at: {download_url}"
-                generated_files = [{
-                    "filename": unique_name,
-                    "original_name": filename,
-                    "url": download_url,
-                    "sandbox_path": f"sandbox/outputs/{unique_name}"
-                }]
-                return {"stdout": stdout, "stderr": "", "exit_code": 0, "sandbox_type": "azure_aca", "generated_files": generated_files}
-            except Exception as e:
-                return {"stdout": "", "stderr": f"Failed to download file from sandbox: {str(e)}", "exit_code": 1, "sandbox_type": "azure_aca"}
-                
-    # Local fallback
-    return {"stdout": f"File {filename} is already present locally.", "stderr": "", "exit_code": 0, "sandbox_type": "process"}
-
-
-def run_upload_sandbox_file(db, session_id: str, args: dict):
-    from models import SandboxConfig
-    from encryption_utils import decrypt_key
-    from sandbox.remote_runner import remote_runner
-    import os
-    
-    local_path = args.get("local_path")
-    if not local_path:
-        return {"stdout": "", "stderr": "Error: local_path is required", "exit_code": 1, "sandbox_type": "process"}
-        
-    if not os.path.exists(local_path):
-        return {"stdout": "", "stderr": f"Error: Local file {local_path} does not exist.", "exit_code": 1, "sandbox_type": "process"}
-        
-    filename = os.path.basename(local_path)
-    with open(local_path, "rb") as f:
-        content = f.read()
-        
-    config = db.query(SandboxConfig).filter(SandboxConfig.is_active == True).first()
-    if config and config.provider == "azure":
-        client_id = decrypt_key(config.azure_client_id_encrypted)
-        client_secret = decrypt_key(config.azure_client_secret_encrypted)
-        tenant_id = decrypt_key(config.azure_tenant_id_encrypted)
-        pool_endpoint = config.azure_session_pool_endpoint
-        if client_id and client_secret and tenant_id and pool_endpoint:
-            try:
-                remote_runner.upload_file_azure(client_id, client_secret, tenant_id, pool_endpoint, session_id, filename, content)
-                return {"stdout": f"Successfully uploaded {filename} to Azure ACA Sandbox workspace.", "stderr": "", "exit_code": 0, "sandbox_type": "azure_aca"}
-            except Exception as e:
-                return {"stdout": "", "stderr": f"Failed to upload file to sandbox: {str(e)}", "exit_code": 1, "sandbox_type": "azure_aca"}
-                
-    return {"stdout": f"Uploaded {filename} to local sandbox workspace.", "stderr": "", "exit_code": 0, "sandbox_type": "process"}
 
 skill_engine = SkillEngine()
