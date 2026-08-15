@@ -168,6 +168,10 @@ class TenantLlmCreate(BaseModel):
     model_name: str
     api_key: str
     base_url: Optional[str] = None
+    input_rate: Optional[float] = 1.0
+    output_rate: Optional[float] = 2.0
+    audio_input_rate: Optional[float] = 10.0
+    audio_output_rate: Optional[float] = 20.0
 
 class UserRegister(BaseModel):
     email: str
@@ -1835,6 +1839,10 @@ def create_tenant_llm(
         existing.provider = payload.provider
         existing.api_key_encrypted = encrypted_key
         existing.base_url = payload.base_url
+        existing.input_rate = payload.input_rate
+        existing.output_rate = payload.output_rate
+        existing.audio_input_rate = payload.audio_input_rate
+        existing.audio_output_rate = payload.audio_output_rate
         existing.is_active = True
         db.commit()
         db.refresh(existing)
@@ -1846,12 +1854,50 @@ def create_tenant_llm(
             model_name=payload.model_name,
             api_key_encrypted=encrypted_key,
             base_url=payload.base_url,
+            input_rate=payload.input_rate,
+            output_rate=payload.output_rate,
+            audio_input_rate=payload.audio_input_rate,
+            audio_output_rate=payload.audio_output_rate,
             is_active=True
         )
         db.add(new_llm)
         db.commit()
         db.refresh(new_llm)
         return {"status": "created", "id": new_llm.id}
+
+@app.put("/api/v1/tenant/llms/{llm_id}")
+def update_tenant_llm(
+    llm_id: str,
+    payload: TenantLlmCreate,
+    tenant: Tenant = Depends(get_current_tenant),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    from models import TenantLLM
+    from encryption_utils import encrypt_key
+    
+    existing = db.query(TenantLLM).filter(
+        TenantLLM.id == llm_id,
+        TenantLLM.tenant_id == tenant.id
+    ).first()
+    
+    if not existing:
+        raise HTTPException(status_code=404, detail="LLM configuration not found")
+        
+    encrypted_key = encrypt_key(payload.api_key) if payload.api_key else existing.api_key_encrypted
+    
+    existing.provider = payload.provider
+    existing.model_name = payload.model_name
+    existing.api_key_encrypted = encrypted_key
+    existing.base_url = payload.base_url
+    existing.input_rate = payload.input_rate
+    existing.output_rate = payload.output_rate
+    existing.audio_input_rate = payload.audio_input_rate
+    existing.audio_output_rate = payload.audio_output_rate
+    
+    db.commit()
+    db.refresh(existing)
+    return {"status": "updated", "id": existing.id}
 
 @app.delete("/api/v1/tenant/llms/{llm_id}")
 def delete_tenant_llm(

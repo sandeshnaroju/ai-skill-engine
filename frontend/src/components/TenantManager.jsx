@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Key, Plus, ShieldCheck, Copy, Check, Server, Terminal, Code, Trash2, Cpu, Layers, Globe, Activity, X, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Key, Plus, ShieldCheck, Copy, Check, Server, Terminal, Code, Trash2, Cpu, Layers, Globe, Activity, X, ChevronLeft, ChevronRight, Pencil } from 'lucide-react';
 
 export default function TenantManager() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -36,6 +36,12 @@ export default function TenantManager() {
   const [modelName, setModelName] = useState('');
   const [modelApiKey, setModelApiKey] = useState('');
   const [baseUrl, setBaseUrl] = useState('');
+  const [inputRate, setInputRate] = useState(1.0);
+  const [outputRate, setOutputRate] = useState(2.0);
+  const [audioInputRate, setAudioInputRate] = useState(10.0);
+  const [audioOutputRate, setAudioOutputRate] = useState(20.0);
+  const [showAdvancedRates, setShowAdvancedRates] = useState(false);
+  const [editingLlmId, setEditingLlmId] = useState(null);
   const [registryLoading, setRegistryLoading] = useState(false);
   
   // Model Configs Pagination state from URL
@@ -159,8 +165,11 @@ export default function TenantManager() {
     if (!selectedTenant) return;
     setRegistryLoading(true);
     try {
-      const res = await fetch('/api/v1/tenant/llms', {
-        method: 'POST',
+      const url = editingLlmId ? `/api/v1/tenant/llms/${editingLlmId}` : '/api/v1/tenant/llms';
+      const method = editingLlmId ? 'PUT' : 'POST';
+      
+      const res = await fetch(url, {
+        method: method,
         headers: {
           'Content-Type': 'application/json',
           'X-API-Key': selectedTenant.api_key
@@ -169,16 +178,17 @@ export default function TenantManager() {
           provider,
           model_name: modelName,
           api_key: modelApiKey,
-          base_url: baseUrl || null
+          base_url: baseUrl || null,
+          input_rate: parseFloat(inputRate),
+          output_rate: parseFloat(outputRate),
+          audio_input_rate: parseFloat(audioInputRate),
+          audio_output_rate: parseFloat(audioOutputRate)
         })
       });
       if (res.ok) {
-        setModelName('');
-        setModelApiKey('');
-        setBaseUrl('');
+        cancelEdit();
         setModelPage(1);
         fetchTenantLlms(selectedTenant);
-        // Refresh tenants to update card models count
         fetchTenants();
       } else {
         const errData = await res.json();
@@ -189,6 +199,31 @@ export default function TenantManager() {
     } finally {
       setRegistryLoading(false);
     }
+  };
+
+  const handleEditLlmClick = (l) => {
+    setEditingLlmId(l.id);
+    setProvider(l.provider || 'openai');
+    setModelName(l.model_name || '');
+    setModelApiKey(''); // Leave blank unless they want to update it
+    setBaseUrl(l.base_url || '');
+    setInputRate(l.input_rate !== undefined ? l.input_rate : 1.0);
+    setOutputRate(l.output_rate !== undefined ? l.output_rate : 2.0);
+    setAudioInputRate(l.audio_input_rate !== undefined ? l.audio_input_rate : 10.0);
+    setAudioOutputRate(l.audio_output_rate !== undefined ? l.audio_output_rate : 20.0);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const cancelEdit = () => {
+    setEditingLlmId(null);
+    setProvider('openai');
+    setModelName('');
+    setModelApiKey('');
+    setBaseUrl('');
+    setInputRate(1.0);
+    setOutputRate(2.0);
+    setAudioInputRate(10.0);
+    setAudioOutputRate(20.0);
   };
 
   const handleDeleteLlm = async (llmId) => {
@@ -373,7 +408,7 @@ export default function TenantManager() {
                   <input type="password" name="decoy_password" style={{ display: 'none' }} autoComplete="new-password" />
 
                   <h4 style={{ fontSize: '0.9rem', fontWeight: '700', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <Plus size={15} color="var(--primary-cyan)" /> Register New Model
+                    <Plus size={15} color="var(--primary-cyan)" /> {editingLlmId ? 'Edit Model Configuration' : 'Register New Model'}
                   </h4>
                   
                   <div style={{ display: 'flex', gap: '10px' }}>
@@ -418,19 +453,32 @@ export default function TenantManager() {
                     </div>
                   </div>
 
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <label style={{ fontSize: '0.74rem', color: 'var(--text-sub)', fontWeight: '600' }}>API Key</label>
-                    <input
-                      type="password"
-                      placeholder="Enter Provider API Key"
-                      value={modelApiKey}
-                      onChange={(e) => setModelApiKey(e.target.value)}
-                      style={{ padding: '8px', fontSize: '0.82rem' }}
-                      autoComplete="new-password"
-                      name="model_key_entry"
-                      required
-                    />
-                  </div>
+                  {editingLlmId ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <label style={{ fontSize: '0.74rem', color: 'var(--text-sub)', fontWeight: '600' }}>API Key</label>
+                      <input
+                        type="password"
+                        placeholder="••••••••••••••••"
+                        value="hidden_preserved"
+                        disabled
+                        style={{ padding: '8px', fontSize: '0.82rem', opacity: 0.6, cursor: 'not-allowed' }}
+                      />
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <label style={{ fontSize: '0.74rem', color: 'var(--text-sub)', fontWeight: '600' }}>API Key</label>
+                      <input
+                        type="password"
+                        placeholder="Enter Provider API Key"
+                        value={modelApiKey}
+                        onChange={(e) => setModelApiKey(e.target.value)}
+                        style={{ padding: '8px', fontSize: '0.82rem' }}
+                        autoComplete="new-password"
+                        name="model_key_entry"
+                        required
+                      />
+                    </div>
+                  )}
 
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                     <label style={{ fontSize: '0.74rem', color: 'var(--text-sub)', fontWeight: '600' }}>Base URL (Optional)</label>
@@ -443,9 +491,78 @@ export default function TenantManager() {
                     />
                   </div>
 
-                  <button type="submit" className="btn-gradient" style={{ padding: '10px', fontSize: '0.82rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', marginTop: '4px' }} disabled={registryLoading}>
-                    <Plus size={16} /> {registryLoading ? 'Registering...' : 'Register Model Config'}
-                  </button>
+                  {/* Pricing Configuration */}
+                  <div style={{ background: 'var(--bg-card)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <label style={{ fontSize: '0.8rem', color: 'var(--text-main)', fontWeight: '600' }}>Pricing Configuration (USD per 1M Tokens)</label>
+                      <button 
+                        type="button" 
+                        onClick={() => setShowAdvancedRates(!showAdvancedRates)}
+                        style={{ background: 'none', border: 'none', color: 'var(--primary-cyan)', fontSize: '0.74rem', cursor: 'pointer', fontWeight: '600' }}
+                      >
+                        {showAdvancedRates ? 'Hide Advanced' : 'Show Advanced'}
+                      </button>
+                    </div>
+                    
+                    <div style={{ display: 'flex', gap: '10px' }}>
+                      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <label style={{ fontSize: '0.7rem', color: 'var(--text-sub)' }}>Input Rate</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={inputRate}
+                          onChange={(e) => setInputRate(e.target.value)}
+                          style={{ padding: '6px', fontSize: '0.8rem' }}
+                        />
+                      </div>
+                      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <label style={{ fontSize: '0.7rem', color: 'var(--text-sub)' }}>Output Rate</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={outputRate}
+                          onChange={(e) => setOutputRate(e.target.value)}
+                          style={{ padding: '6px', fontSize: '0.8rem' }}
+                        />
+                      </div>
+                    </div>
+
+                    {showAdvancedRates && (
+                      <div style={{ display: 'flex', gap: '10px' }}>
+                        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <label style={{ fontSize: '0.7rem', color: 'var(--text-sub)' }}>Audio Input Rate</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={audioInputRate}
+                            onChange={(e) => setAudioInputRate(e.target.value)}
+                            style={{ padding: '6px', fontSize: '0.8rem' }}
+                          />
+                        </div>
+                        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <label style={{ fontSize: '0.7rem', color: 'var(--text-sub)' }}>Audio Output Rate</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={audioOutputRate}
+                            onChange={(e) => setAudioOutputRate(e.target.value)}
+                            style={{ padding: '6px', fontSize: '0.8rem' }}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '10px', marginTop: '4px' }}>
+                    <button type="submit" className="btn-gradient" style={{ flex: 1, padding: '10px', fontSize: '0.82rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }} disabled={registryLoading}>
+                      <Plus size={16} /> {registryLoading ? 'Saving...' : (editingLlmId ? 'Update Model Config' : 'Register Model Config')}
+                    </button>
+                    {editingLlmId && (
+                      <button type="button" onClick={cancelEdit} className="btn-outline" style={{ padding: '10px 16px', fontSize: '0.82rem' }}>
+                        Cancel
+                      </button>
+                    )}
+                  </div>
                 </form>
 
                 {/* Configured Models list */}
@@ -471,13 +588,24 @@ export default function TenantManager() {
                               </div>
                             </div>
 
-                            <button
-                              className="btn-outline"
-                              onClick={() => handleDeleteLlm(l.id)}
-                              style={{ padding: '4px 8px', color: 'var(--accent-rose)', borderColor: 'rgba(244, 63, 94, 0.2)' }}
-                            >
-                              <Trash2 size={13} />
-                            </button>
+                            <div style={{ display: 'flex', gap: '6px' }}>
+                              <button
+                                className="btn-outline"
+                                onClick={() => handleEditLlmClick(l)}
+                                style={{ padding: '4px 8px', color: 'var(--primary-cyan)', borderColor: 'rgba(6, 182, 212, 0.2)' }}
+                                title="Edit"
+                              >
+                                <Pencil size={13} />
+                              </button>
+                              <button
+                                className="btn-outline"
+                                onClick={() => handleDeleteLlm(l.id)}
+                                style={{ padding: '4px 8px', color: 'var(--accent-rose)', borderColor: 'rgba(244, 63, 94, 0.2)' }}
+                                title="Delete"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </div>
                           </div>
                         ))}
                       </div>
