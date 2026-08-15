@@ -8,31 +8,55 @@ from llm_client import get_llm_client, get_model_name
 from skill_registry import skill_registry
 from sandbox import sandbox_manager
 
-def update_request_usage(chat_req, prompt_text: str, response_text: str):
-    # Standard character-to-token count heuristics: ~4 characters per token
-    p_tokens = max(10, len(prompt_text or "") // 4)
-    r_tokens = max(5, len(response_text or "") // 4)
+def update_request_usage(chat_req, usage_obj, input_rate: float, output_rate: float, audio_input_rate: float, audio_output_rate: float):
+    prompt_tokens = 0
+    completion_tokens = 0
+    audio_input_tokens = 0
+    audio_output_tokens = 0
     
-    model_name = (chat_req.model_name or "").lower()
-    input_rate = 1.0   # per 1M tokens
-    output_rate = 2.0  # per 1M tokens
-    
-    if "gpt-4o-mini" in model_name:
-        input_rate = 0.15
-        output_rate = 0.60
-    elif "gpt-4o" in model_name:
-        input_rate = 2.50
-        output_rate = 10.00
-    elif "gemini-2.5" in model_name or "gemini-2.0" in model_name or "flash" in model_name:
-        input_rate = 0.075
-        output_rate = 0.30
-    elif "claude-3-5" in model_name or "sonnet" in model_name:
-        input_rate = 3.00
-        output_rate = 15.00
+    if usage_obj:
+        prompt_tokens = getattr(usage_obj, "prompt_tokens", 0) or 0
+        completion_tokens = getattr(usage_obj, "completion_tokens", 0) or 0
         
-    chat_req.prompt_tokens = p_tokens
-    chat_req.completion_tokens = r_tokens
-    chat_req.cost_usd = round((p_tokens * input_rate + r_tokens * output_rate) / 1000000.0, 6)
+        prompt_details = getattr(usage_obj, "prompt_tokens_details", None)
+        if prompt_details and hasattr(prompt_details, "audio_tokens"):
+            audio_input_tokens = getattr(prompt_details, "audio_tokens", 0) or 0
+            
+        completion_details = getattr(usage_obj, "completion_tokens_details", None)
+        if completion_details and hasattr(completion_details, "audio_tokens"):
+            audio_output_tokens = getattr(completion_details, "audio_tokens", 0) or 0
+            
+    standard_input_tokens = max(0, prompt_tokens - audio_input_tokens)
+    standard_output_tokens = max(0, completion_tokens - audio_output_tokens)
+    
+    chat_req.prompt_tokens = getattr(chat_req, "prompt_tokens", 0) + prompt_tokens
+    chat_req.completion_tokens = getattr(chat_req, "completion_tokens", 0) + completion_tokens
+    
+    cost = (
+        (standard_input_tokens * input_rate) +
+        (standard_output_tokens * output_rate) +
+        (audio_input_tokens * audio_input_rate) +
+        (audio_output_tokens * audio_output_rate)
+    ) / 1000000.0
+    
+    chat_req.cost_usd = round(getattr(chat_req, "cost_usd", 0.0) + cost, 6)
+
+def get_model_rates(db, tenant_id: str, model_name: str):
+    from models import TenantLLM
+    active_model_config = db.query(TenantLLM).filter(
+        TenantLLM.tenant_id == tenant_id,
+        TenantLLM.model_name == model_name,
+        TenantLLM.is_active == True
+    ).first()
+    
+    if active_model_config:
+        return (
+            getattr(active_model_config, "input_rate", 1.0) or 1.0,
+            getattr(active_model_config, "output_rate", 2.0) or 2.0,
+            getattr(active_model_config, "audio_input_rate", 10.0) or 10.0,
+            getattr(active_model_config, "audio_output_rate", 20.0) or 20.0
+        )
+    return (1.0, 2.0, 10.0, 20.0)
 
 PROCHAT_SYSTEM_INSTRUCTION = (
     "You are a ProChat UI generator. Your job is to return UI for the "
@@ -276,6 +300,8 @@ class SkillEngine:
             # Update resolved model name on the request log
             chat_req.model_name = model_name
             db.commit()
+
+            _in_r, _out_r, _au_in_r, _au_out_r = get_model_rates(db, tenant.id, model_name)
 
             llm = get_llm_client(db=db, tenant_id=tenant.id, model_name=model_name)
             available_tools = skill_registry.get_openai_tools(allowed_skills=allowed_skills)
@@ -528,7 +554,8 @@ class SkillEngine:
                     chat_req.total_duration_ms = duration_ms
                     chat_req.status = "completed"
                     chat_req.completed_at = datetime.utcnow()
-                    update_request_usage(chat_req, user_message, final_answer)
+                    update_request_usage(chat_req, getattr(response, "usage", None), _in_r, _out_r, _au_in_r, _au_out_r)
+                    chat_req.status = "completed"
                     db.commit()
 
                     return {
@@ -565,7 +592,8 @@ class SkillEngine:
             chat_req.total_duration_ms = duration_ms
             chat_req.status = "completed"
             chat_req.completed_at = datetime.utcnow()
-            update_request_usage(chat_req, user_message, final_res)
+            update_request_usage(chat_req, getattr(response, "usage", None), _in_r, _out_r, _au_in_r, _au_out_r)
+            chat_req.status = "completed"
             db.commit()
 
             return {
@@ -713,6 +741,8 @@ class SkillEngine:
             for turn in range(max_turns):
                 # On the very last turn, omit tools to force the LLM to write a text response
                 kwargs = {"model": model_name, "messages": messages, "stream": True}
+                if "gemini" not in model_name.lower():
+                    kwargs["stream_options"] = {"include_usage": True}
                 if available_tools and turn < max_turns - 1:
                     kwargs["tools"] = available_tools
 
@@ -757,8 +787,12 @@ class SkillEngine:
                 tool_calls_accumulator = {}
                 id_to_index = {}
                 last_idx = 0
+                last_usage = None
 
                 for chunk in response_stream:
+                    if getattr(chunk, "usage", None):
+                        last_usage = chunk.usage
+                    
                     if not chunk.choices:
                         continue
                     choice = chunk.choices[0]
@@ -1164,7 +1198,7 @@ class SkillEngine:
                     chat_req.total_duration_ms = duration_ms
                     chat_req.status = "completed"
                     chat_req.completed_at = datetime.utcnow()
-                    update_request_usage(chat_req, user_message, full_text)
+                    update_request_usage(chat_req, getattr(last_usage, "usage", last_usage) if last_usage else None, _in_r, _out_r, _au_in_r, _au_out_r)
                     db.commit()
 
                     # Emit done with request_id
@@ -1307,7 +1341,7 @@ class SkillEngine:
             chat_req.total_duration_ms = duration_ms
             chat_req.status = "completed"
             chat_req.completed_at = datetime.utcnow()
-            update_request_usage(chat_req, user_message, final_answer)
+            update_request_usage(chat_req, getattr(last_usage, "usage", last_usage) if last_usage else None, _in_r, _out_r, _au_in_r, _au_out_r)
             db.commit()
 
             done_chunk = {"type": "done", "request_id": request_id, "tools_called": len(executed_logs)}

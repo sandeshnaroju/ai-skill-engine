@@ -182,6 +182,10 @@ class TenantLLM(Base):
     model_name = Column(String, nullable=False)  # e.g. gpt-4o, gemini-2.5-flash
     api_key_encrypted = Column(Text, nullable=False)
     base_url = Column(String, nullable=True)
+    input_rate = Column(Float, default=1.0)
+    output_rate = Column(Float, default=2.0)
+    audio_input_rate = Column(Float, default=10.0)
+    audio_output_rate = Column(Float, default=20.0)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

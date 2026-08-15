@@ -154,6 +154,22 @@ def init_db():
             finally:
                 db.close()
 
+    if inspector.has_table("tenant_llms"):
+        columns = [c["name"] for c in inspector.get_columns("tenant_llms")]
+        if "input_rate" not in columns:
+            db = SessionLocal()
+            try:
+                db.execute(text("ALTER TABLE tenant_llms ADD COLUMN input_rate FLOAT DEFAULT 1.0"))
+                db.execute(text("ALTER TABLE tenant_llms ADD COLUMN output_rate FLOAT DEFAULT 2.0"))
+                db.execute(text("ALTER TABLE tenant_llms ADD COLUMN audio_input_rate FLOAT DEFAULT 10.0"))
+                db.execute(text("ALTER TABLE tenant_llms ADD COLUMN audio_output_rate FLOAT DEFAULT 20.0"))
+                db.commit()
+                print("Migration: Added rate columns to tenant_llms table")
+            except Exception as e:
+                print(f"Migration warning: Could not add rate columns to tenant_llms: {e}")
+            finally:
+                db.close()
+
     if db_creation_status["fresh_start"]:
         db_creation_status["details"] = "Creating database schemas and relational models..."
 
