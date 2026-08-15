@@ -22,7 +22,9 @@ export default function ApiTester() {
   const model = searchParams.get('model') || '';
   const appId = searchParams.get('app_id') || '';
   const prochatModel = searchParams.get('prochat_model') || '';
-  const message = searchParams.has('message') ? (searchParams.get('message') ?? '') : 'Check disk space and system uptime';
+  const [systemPrompt, setSystemPrompt] = useState('You are AI Skill Engine, an enterprise chatbot equipped with advanced tools and skills.');
+  const [messageHistory, setMessageHistory] = useState([]);
+  const [currentMessage, setCurrentMessage] = useState(searchParams.has('message') ? (searchParams.get('message') ?? '') : 'Check disk space and system uptime');
   const stream = searchParams.get('stream') !== 'false';
 
   const setModel = (val) => {
@@ -46,11 +48,6 @@ export default function ApiTester() {
     setSearchParams(nextParams);
   };
 
-  const setMessage = (val) => {
-    const nextParams = new URLSearchParams(searchParams);
-    nextParams.set('message', val);
-    setSearchParams(nextParams);
-  };
 
   const setStream = (val) => {
     const nextParams = new URLSearchParams(searchParams);
@@ -349,20 +346,27 @@ export default function ApiTester() {
       'X-Request-Source': 'api'
     };
 
-    let requestMessageContent = message;
+    const finalMessages = [];
+    if (systemPrompt.trim()) {
+      finalMessages.push({ role: 'system', content: systemPrompt.trim() });
+    }
+    finalMessages.push(...messageHistory);
+    
+    let finalCurrentMessage = currentMessage;
     if (uploadedFile) {
       if (attachMode === 'text') {
-        requestMessageContent = `[Attached File: ${uploadedFile.name} (URL: ${uploadedFile.url})]\n\n${message}`;
+        finalCurrentMessage = `[Attached File: ${uploadedFile.name} (URL: ${uploadedFile.url})]\n\n${currentMessage}`;
       } else if (attachMode === 'image') {
-        requestMessageContent = [
-          { type: 'text', text: message },
+        finalCurrentMessage = [
+          { type: 'text', text: currentMessage },
           { type: 'image_url', image_url: { url: uploadedFile.url } }
         ];
       }
     }
+    finalMessages.push({ role: 'user', content: finalCurrentMessage });
 
     const payload = {
-      messages: [{ role: 'user', content: requestMessageContent }],
+      messages: finalMessages,
       model: model.trim(),
       stream: stream
     };
@@ -403,6 +407,7 @@ export default function ApiTester() {
         const reader = res.body.getReader();
         const decoder = new TextDecoder('utf-8');
         let buffer = '';
+        let localStreamContent = '';
 
         while (true) {
           const { value, done } = await reader.read();
@@ -435,6 +440,7 @@ export default function ApiTester() {
                         setStreamTools(prev => [...prev, { type: 'result', ...delta.tool_result }]);
                       }
                       if (delta.content) {
+                        localStreamContent += delta.content;
                         setStreamContent(prev => prev + delta.content);
                       }
                       if (delta.json) {
@@ -463,6 +469,14 @@ export default function ApiTester() {
           logText(`data: ${rest.trim()}`);
         }
         logText(`Stream finished. Duration: ${Date.now() - startTime}ms`);
+        
+        setMessageHistory(prev => [
+          ...prev,
+          { role: 'user', content: currentMessage },
+          { role: 'assistant', content: localStreamContent }
+        ]);
+        setCurrentMessage('');
+
       } else {
         const data = await res.json();
         logText(`Response JSON:\n${JSON.stringify(data, null, 2)}`);
@@ -476,6 +490,13 @@ export default function ApiTester() {
           if (assistantMessage.code) {
             setProchatUiCode(assistantMessage.code);
           }
+          
+          setMessageHistory(prev => [
+            ...prev,
+            { role: 'user', content: currentMessage },
+            { role: 'assistant', content: assistantMessage.content || '' }
+          ]);
+          setCurrentMessage('');
         }
         if (data.reasoning) {
           setStreamReasoning([data.reasoning]);
@@ -494,22 +515,29 @@ export default function ApiTester() {
   };
 
   // Build current cURL command representation
-  let curlContent = message;
+  const finalMessagesForCurl = [];
+  if (systemPrompt.trim()) {
+    finalMessagesForCurl.push({ role: 'system', content: systemPrompt.trim() });
+  }
+  finalMessagesForCurl.push(...messageHistory);
+
+  let finalCurrentMessageForCurl = currentMessage;
   if (uploadedFile) {
     if (attachMode === 'text') {
-      curlContent = `[Attached File: ${uploadedFile.name} (URL: ${uploadedFile.url})]\n\n${message}`;
+      finalCurrentMessageForCurl = `[Attached File: ${uploadedFile.name} (URL: ${uploadedFile.url})]\n\n${currentMessage}`;
     } else if (attachMode === 'image') {
-      curlContent = [
-        { type: 'text', text: message },
+      finalCurrentMessageForCurl = [
+        { type: 'text', text: currentMessage },
         { type: 'image_url', image_url: { url: uploadedFile.url } }
       ];
     }
   }
+  finalMessagesForCurl.push({ role: 'user', content: finalCurrentMessageForCurl });
 
   const userDataPayloadForCurl = getUserDataPayload();
 
   const requestPayload = {
-    messages: [{ role: 'user', content: curlContent }],
+    messages: finalMessagesForCurl,
     model: model,
     stream: stream,
     ...(appId && { app_id: appId }),
@@ -545,6 +573,21 @@ export default function ApiTester() {
           <h3 style={{ fontSize: '1.02rem', fontWeight: '600', color: 'var(--text-main)' }}>
             Request Configuration
           </h3>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <label style={{ fontSize: '0.76rem', color: 'var(--text-sub)', fontWeight: '600' }}>System Prompt</label>
+            <textarea
+              rows={3}
+              value={systemPrompt}
+              onChange={(e) => setSystemPrompt(e.target.value)}
+              placeholder="System prompt..."
+              style={{
+                background: 'var(--bg-input)', border: '1px solid var(--border-subtle)',
+                borderRadius: '10px', padding: '10px', color: 'var(--text-main)',
+                resize: 'vertical', fontSize: '0.88rem'
+              }}
+            />
+          </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
             <label style={{ fontSize: '0.76rem', color: 'var(--text-sub)', fontWeight: '600' }}>Auth Tenant Key</label>
@@ -890,20 +933,16 @@ export default function ApiTester() {
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            <label style={{ fontSize: '0.76rem', color: 'var(--text-sub)', fontWeight: '600' }}>Prompt / Query</label>
+            <label style={{ fontSize: '0.76rem', color: 'var(--text-sub)', fontWeight: '600' }}>User Message</label>
             <textarea
               rows={4}
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              placeholder="Enter your testing prompt here..."
+              value={currentMessage}
+              onChange={(e) => setCurrentMessage(e.target.value)}
+              placeholder="Enter your next message here..."
               style={{
-                background: 'var(--bg-input)',
-                border: '1px solid var(--border-subtle)',
-                borderRadius: '10px',
-                padding: '10px',
-                color: 'var(--text-main)',
-                resize: 'vertical',
-                fontSize: '0.88rem'
+                background: 'var(--bg-input)', border: '1px solid var(--border-subtle)',
+                borderRadius: '10px', padding: '10px', color: 'var(--text-main)',
+                resize: 'vertical', fontSize: '0.88rem'
               }}
             />
           </div>
@@ -923,6 +962,21 @@ export default function ApiTester() {
 
           {/* Tabs header */}
           <div style={{ display: 'flex', borderBottom: '1px solid var(--border-subtle)', gap: '16px', paddingBottom: '4px' }}>
+            <button
+              onClick={() => setActiveTab('history')}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                borderBottom: activeTab === 'history' ? '2px solid var(--primary-cyan)' : '2px solid transparent',
+                color: activeTab === 'history' ? 'var(--text-main)' : 'var(--text-muted)',
+                fontWeight: '600',
+                padding: '8px 12px',
+                cursor: 'pointer',
+                fontSize: '0.9rem'
+              }}
+            >
+              Chat History
+            </button>
             <button
               onClick={() => setActiveTab('response')}
               style={{
@@ -954,6 +1008,38 @@ export default function ApiTester() {
               Request cURL / Body
             </button>
           </div>
+          {activeTab === 'history' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', flex: 1, overflowY: 'auto', maxHeight: '600px', paddingRight: '8px' }}>
+              {messageHistory.length === 0 ? (
+                <div style={{ color: 'var(--text-muted)', fontSize: '0.88rem', fontStyle: 'italic', textAlign: 'center', marginTop: '20px' }}>
+                  No chat history yet. Send a message to start building context.
+                </div>
+              ) : (
+                messageHistory.map((msg, idx) => (
+                  <div key={idx} style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: msg.role === 'user' ? 'flex-end' : 'flex-start'
+                  }}>
+                    <div style={{
+                      maxWidth: '85%',
+                      padding: '12px 16px',
+                      borderRadius: '12px',
+                      background: msg.role === 'user' ? 'rgba(139, 92, 246, 0.15)' : 'var(--bg-card)',
+                      border: msg.role === 'user' ? '1px solid rgba(139, 92, 246, 0.3)' : '1px solid var(--border-subtle)',
+                      color: 'var(--text-main)',
+                      fontSize: '0.88rem'
+                    }}>
+                      <div style={{ fontSize: '0.7rem', color: msg.role === 'user' ? 'var(--primary-violet)' : 'var(--primary-cyan)', fontWeight: '600', marginBottom: '4px', textTransform: 'uppercase' }}>
+                        {msg.role}
+                      </div>
+                      <div dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }} />
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
           {activeTab === 'response' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', flex: 1 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>

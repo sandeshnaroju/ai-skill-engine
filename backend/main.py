@@ -1003,6 +1003,8 @@ def openai_chat_completions(
         if not app_obj:
             raise HTTPException(status_code=404, detail=f"App '{req.app_id}' not found. Provide a valid app_id or omit it to use all available skills.")
 
+    client_messages = [{"role": m.role, "content": m.content} for m in req.messages]
+
     try:
         if req.stream:
             from fastapi.responses import StreamingResponse
@@ -1017,7 +1019,8 @@ def openai_chat_completions(
                     request_source=x_request_source,
                     prochat_model=req.prochat_model,
                     user_data=req.user_data,
-                    skill_names=req.skill_names
+                    skill_names=req.skill_names,
+                    client_messages=client_messages
                 ),
                 media_type="text/event-stream"
             )
@@ -1032,7 +1035,8 @@ def openai_chat_completions(
             request_source=x_request_source,
             prochat_model=req.prochat_model,
             user_data=req.user_data,
-            skill_names=req.skill_names
+            skill_names=req.skill_names,
+            client_messages=client_messages
         )
 
         return {

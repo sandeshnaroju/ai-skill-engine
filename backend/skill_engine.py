@@ -139,7 +139,8 @@ class SkillEngine:
         session_obj,
         user_message: str,
         allowed_skills,
-        user_data: dict = None
+        user_data: dict = None,
+        client_messages: list = None
     ) -> list:
         sys_content = skill_registry.get_system_instructions(allowed_skills=allowed_skills)
         if user_data:
@@ -179,7 +180,14 @@ class SkillEngine:
                         "content": content_val
                     })
         else:
-            msgs.append({"role": "user", "content": user_message})
+            if client_messages and len(client_messages) > 0:
+                for m in client_messages:
+                    if m.get("role") == "system":
+                        msgs[0]["content"] += "\n\n" + str(m.get("content", ""))
+                    else:
+                        msgs.append(m)
+            else:
+                msgs.append({"role": "user", "content": user_message})
         return msgs
 
     def process_chat(
@@ -250,14 +258,10 @@ class SkillEngine:
                     if skill_names:
                         # Intersect: only skills both in the app AND explicitly requested
                         allowed_skills = [s for s in skill_names if s in app_skills]
-                    else:
-                        allowed_skills = app_skills
-            elif skill_names:
-                # No app_id — use skill_names directly, validated against registry
-                known = set(skill_registry.skills.keys())
-                allowed_skills = [s for s in skill_names if s in known]
+            # Check which skills are permitted
+            allowed_skills = self._get_allowed_skills(tenant, app_id, skill_names)
+            messages = self._build_messages_list(db, persist, session_obj, user_message, allowed_skills, user_data, client_messages)
 
-            messages = self._build_messages_list(db, persist, session_obj, user_message, allowed_skills, user_data)
             if not model_name:
                 from models import TenantLLM
                 first_model = db.query(TenantLLM).filter(
@@ -596,7 +600,8 @@ class SkillEngine:
         request_source: str = "api",
         prochat_model: str = None,
         user_data: dict = None,
-        skill_names: list = None
+        skill_names: list = None,
+        client_messages: list = None
     ):
         start_time = time.time()
 
@@ -686,7 +691,7 @@ class SkillEngine:
             }
             yield f"data: {json.dumps(init_reasoning)}\n\n"
 
-            messages = self._build_messages_list(db, persist, session_obj, user_message, allowed_skills, user_data)
+            messages = self._build_messages_list(db, persist, session_obj, user_message, allowed_skills, user_data, client_messages)
             if not model_name:
                 from models import TenantLLM
                 first_model = db.query(TenantLLM).filter(
