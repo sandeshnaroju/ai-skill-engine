@@ -278,6 +278,88 @@ def init_db():
     db_creation_status["details"] = "Database is ready!"
     db_creation_status["ready"] = True
 
+    # Re-encrypt any secrets still stored with the old XOR scheme
+    _migrate_encryption()
+
+
+def _migrate_encryption():
+    """
+    One-time migration: re-encrypt all secrets stored with the legacy XOR
+    scheme to Fernet (AES-128-CBC + HMAC-SHA256).
+
+    Detection: Fernet tokens always start with 'gAAAAA'. Any stored blob
+    that does NOT start with that prefix is assumed to be a legacy XOR blob
+    and is attempted to be decrypted using:
+      1. The hardcoded legacy fallback key (for deployments that never set ENCRYPTION_SECRET_KEY)
+      2. The current ENCRYPTION_SECRET_KEY (for deployments that had a custom key)
+    If a plaintext is recovered it is immediately re-encrypted with Fernet and saved.
+    If neither key works, the blob is left as-is and a warning is logged.
+    """
+    import os
+    from encryption_utils import _legacy_xor_decrypt, _LEGACY_FALLBACK_KEY, encrypt_key, _FERNET_PREFIX
+
+    # Only run if ENCRYPTION_SECRET_KEY is configured
+    if not os.getenv("ENCRYPTION_SECRET_KEY", "").strip():
+        print("WARNING: ENCRYPTION_SECRET_KEY is not set. Skipping encryption migration.")
+        return
+
+    current_raw_key = os.getenv("ENCRYPTION_SECRET_KEY", "").strip().encode("utf-8")
+
+    # Registry: (ModelClass, [column_attr_names])
+    from models import TenantLLM, EmailConfig, StorageConfig, SandboxConfig
+    migration_map = [
+        (TenantLLM,      ["api_key_encrypted"]),
+        (EmailConfig,    ["smtp_password_encrypted"]),
+        (StorageConfig,  ["access_key_encrypted", "secret_key_encrypted",
+                          "account_name_encrypted", "account_key_encrypted"]),
+        (SandboxConfig,  ["e2b_api_key_encrypted", "azure_client_id_encrypted",
+                          "azure_client_secret_encrypted", "azure_tenant_id_encrypted",
+                          "fly_api_token_encrypted", "aws_access_key_encrypted",
+                          "aws_secret_key_encrypted"]),
+    ]
+
+    db = SessionLocal()
+    migrated_total = 0
+    try:
+        for Model, columns in migration_map:
+            try:
+                rows = db.query(Model).all()
+                for row in rows:
+                    changed = False
+                    for col in columns:
+                        blob = getattr(row, col, None)
+                        if not blob:
+                            continue
+                        # Already a Fernet token — skip
+                        if blob.encode().startswith(_FERNET_PREFIX):
+                            continue
+
+                        # Try legacy fallback key first, then current key
+                        plaintext = _legacy_xor_decrypt(blob, _LEGACY_FALLBACK_KEY)
+                        if not plaintext and current_raw_key:
+                            plaintext = _legacy_xor_decrypt(blob, current_raw_key)
+
+                        if plaintext:
+                            setattr(row, col, encrypt_key(plaintext))
+                            changed = True
+                            migrated_total += 1
+                        else:
+                            print(f"WARNING: Could not decrypt {Model.__tablename__}.{col} (row id={getattr(row, 'id', '?')}). Left unchanged.")
+                    if changed:
+                        db.add(row)
+                db.commit()
+            except Exception as e:
+                print(f"WARNING: Encryption migration failed for {Model.__tablename__}: {e}")
+                db.rollback()
+    finally:
+        db.close()
+
+    if migrated_total:
+        print(f"Encryption migration: re-encrypted {migrated_total} secret(s) from XOR → Fernet.")
+    else:
+        print("Encryption migration: all secrets already use Fernet. Nothing to migrate.")
+
+
 def get_db():
     db = SessionLocal()
     try:

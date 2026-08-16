@@ -6,6 +6,35 @@ from fastapi.responses import FileResponse
 
 from database import init_db
 
+# ── Startup guard: encryption key must be present and valid ──────────────────
+# Without this key all stored LLM API keys, storage credentials, and SMTP
+# passwords are unreadable. Fail loudly here rather than silently returning
+# empty strings at runtime and producing confusing auth/tool errors.
+def _validate_encryption_key():
+    import os
+    raw = os.getenv("ENCRYPTION_SECRET_KEY", "").strip()
+    if not raw:
+        raise RuntimeError(
+            "\n\n❌  ENCRYPTION_SECRET_KEY is not set.\n"
+            "    All stored credentials are encrypted with this key and cannot be read without it.\n"
+            "    Generate a key with:\n"
+            "        python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\"\n"
+            "    Then pass it via:\n"
+            "        docker run -e ENCRYPTION_SECRET_KEY='<your-key>' ...\n"
+            "    or add it to your .env file.\n"
+        )
+    try:
+        from cryptography.fernet import Fernet
+        Fernet(raw.encode())
+    except Exception as e:
+        raise RuntimeError(
+            f"\n\n❌  ENCRYPTION_SECRET_KEY is set but is not a valid Fernet key: {e}\n"
+            "    Generate a fresh key with:\n"
+            "        python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\"\n"
+        )
+
+_validate_encryption_key()
+
 # Initialize/Verify database tables on startup
 init_db()
 
