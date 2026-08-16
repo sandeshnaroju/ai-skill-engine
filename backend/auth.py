@@ -33,6 +33,7 @@ def get_current_user(
 
 def get_current_tenant(
     authorization: Optional[str] = Header(None),
+    x_tenant_id: Optional[str] = Header(None),
     session_token: Optional[str] = Cookie(None),
     db: Session = Depends(get_db)
 ) -> Tenant:
@@ -51,6 +52,12 @@ def get_current_tenant(
     if session_token:
         user = db.query(User).filter(User.session_token == session_token).first()
         if user:
+            if x_tenant_id:
+                # Find matching user tenant
+                tenant = db.query(Tenant).filter(Tenant.id == x_tenant_id, Tenant.user_id == user.id, Tenant.is_active == True).first()
+                if tenant:
+                    return tenant
+            
             # Retrieve the user's tenant (or create a default one if none exists)
             tenant = db.query(Tenant).filter(Tenant.user_id == user.id, Tenant.is_active == True).first()
             if not tenant:

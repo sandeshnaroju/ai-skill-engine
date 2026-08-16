@@ -28,13 +28,13 @@ class SimpleMcpServerObj:
             setattr(self, k, v)
 
 
-def prefetch_mcp_servers(tool_calls, db: Session) -> dict:
+def prefetch_mcp_servers(tool_calls, db: Session, tenant_id: str = None) -> dict:
     """Pre-resolve MCP server DB rows for all tool calls that need them."""
     mcp_servers = {}
     for tc in tool_calls:
         # Support both dict (streaming) and object (non-streaming) tool call shapes
         fn_name = tc["function"]["name"] if isinstance(tc, dict) else tc.function.name
-        _, tool_def = skill_registry.find_tool(fn_name)
+        _, tool_def = skill_registry.find_tool(fn_name, tenant_id=tenant_id)
         if tool_def and tool_def.get("type") == "mcp_server":
             srv_id = tool_def.get("mcp_server_id")
             if srv_id and srv_id not in mcp_servers:
@@ -114,15 +114,15 @@ def execute_tool(fn_name: str, args: dict, tool_def: dict, user_data: dict,
         elif fn_name == "http_fetcher__download_public_file":
             exec_res = run_download_public_file_tool(db, exec_args, tenant)
         elif fn_name == "sandbox_file_manager__list_sandbox_files":
-            exec_res = run_list_sandbox_files(db, session_id)
+            exec_res = run_list_sandbox_files(db, session_id, tenant_id=tenant.id)
         elif fn_name == "sandbox_file_manager__download_sandbox_file":
-            exec_res = run_download_sandbox_file(db, session_id, exec_args)
+            exec_res = run_download_sandbox_file(db, session_id, exec_args, tenant_id=tenant.id)
         elif fn_name == "sandbox_file_manager__upload_sandbox_file":
-            exec_res = run_upload_sandbox_file(db, session_id, exec_args)
+            exec_res = run_upload_sandbox_file(db, session_id, exec_args, tenant_id=tenant.id)
         elif fn_name == "email__send_email":
             exec_res = run_send_email_tool(db, exec_args, tenant)
         else:
-            exec_res = sandbox_manager.execute(command=exec_command, code=code, session_id=session_id)
+            exec_res = sandbox_manager.execute(command=exec_command, code=code, session_id=session_id, tenant_id=tenant.id)
             exec_res = map_local_generated_files_to_tenant(exec_res, tenant_name=tenant_name)
 
     tool_result = exec_res.get("stdout") or exec_res.get("stderr") or "Execution completed cleanly with no output."

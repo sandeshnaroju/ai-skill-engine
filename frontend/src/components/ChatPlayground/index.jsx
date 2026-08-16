@@ -97,7 +97,11 @@ export default function ChatPlayground() {
 
   const fetchTemplates = async () => {
     try {
-      const res = await fetch('/api/v1/user_data_templates?page_size=100&page=1');
+      const headers = {};
+      if (selectedTenantId) {
+        headers['X-Tenant-ID'] = selectedTenantId;
+      }
+      const res = await fetch('/api/v1/user_data_templates?page_size=100&page=1', { headers });
       const data = await res.json();
       const items = Array.isArray(data.items) ? data.items : (Array.isArray(data) ? data : []);
       setTemplates(items);
@@ -108,7 +112,7 @@ export default function ChatPlayground() {
 
   useEffect(() => {
     fetchTemplates();
-  }, []);
+  }, [selectedTenantId]);
 
   const applyTemplate = (tpl) => {
     if (!tpl) return;
@@ -136,7 +140,11 @@ export default function ChatPlayground() {
     }
     // If not found in the initial list, re-fetch all templates
     try {
-      const res = await fetch('/api/v1/user_data_templates?search=&page=1&page_size=100');
+      const headers = {};
+      if (selectedTenantId) {
+        headers['X-Tenant-ID'] = selectedTenantId;
+      }
+      const res = await fetch('/api/v1/user_data_templates?search=&page=1&page_size=100', { headers });
       const data = await res.json();
       const items = Array.isArray(data.items) ? data.items : (Array.isArray(data) ? data : []);
       setTemplates(items);
@@ -420,17 +428,34 @@ export default function ChatPlayground() {
     }
   }, [activeSessionId, apiKey]);
 
-  const loadMetaData = async () => {
+  const loadApps = async () => {
     try {
-      const [appsRes, tenantsRes] = await Promise.all([
-        fetch('/api/v1/apps'),
-        fetch('/api/v1/tenants'),
-      ]);
+      const headers = {};
+      if (selectedTenantId) {
+        headers['X-Tenant-ID'] = selectedTenantId;
+      }
+      const appsRes = await fetch('/api/v1/apps?page_size=100', { headers });
       const appsData = await appsRes.json();
-      const tenantsData = await tenantsRes.json();
-
       const appsList = appsData?.items || appsData || [];
       setApps(appsList);
+
+      // Auto-select first app if none is set or if previous app doesn't exist in the list
+      if (appsList.length > 0) {
+        if (!selectedAppId || !appsList.find(a => a.id === selectedAppId)) {
+          setSelectedAppId(appsList[0].id);
+        }
+      } else {
+        setSelectedAppId('');
+      }
+    } catch (e) {
+      console.error('Failed to load apps:', e);
+    }
+  };
+
+  const loadMetaData = async () => {
+    try {
+      const tenantsRes = await fetch('/api/v1/tenants');
+      const tenantsData = await tenantsRes.json();
       setTenants(tenantsData || []);
 
       // Auto-select first tenant if none selected
@@ -444,15 +469,9 @@ export default function ChatPlayground() {
       const keyToUse = activeT ? activeT.api_key : '';
       fetchSessionsList(keyToUse);
 
-      // Always fetch tenant models on load (enables model dropdown auto-population)
-      if (keyToUse) {
-        fetchTenantModels(keyToUse);
-      }
-
-      // Auto-select first app if none is in URL
-      if (appsList.length > 0 && !selectedAppId) {
-        setSelectedAppId(appsList[0].id);
-      }
+      // Always fetch tenant models and apps on load scoped to tenant
+      fetchTenantModels();
+      loadApps();
     } catch (e) {
       console.error('Failed to load playground metadata:', e);
     }
@@ -462,12 +481,22 @@ export default function ChatPlayground() {
     loadMetaData();
   }, []);
 
-  const fetchTenantModels = async (key) => {
-    if (!key) return;
+  useEffect(() => {
+    setSelectedAppId('');
+    setSelectedSkillNames([]);
+    if (selectedTenantId) {
+      loadApps();
+      fetchTenantModels();
+    }
+  }, [selectedTenantId]);
+
+  const fetchTenantModels = async () => {
     try {
-      const res = await fetch('/api/v1/tenant/llms', {
-        headers: { 'X-API-Key': key }
-      });
+      const headers = {};
+      if (selectedTenantId) {
+        headers['X-Tenant-ID'] = selectedTenantId;
+      }
+      const res = await fetch('/api/v1/tenant/llms', { headers });
       if (res.ok) {
         const data = await res.json();
         setTenantModels(data || []);
@@ -488,12 +517,6 @@ export default function ChatPlayground() {
       console.error('Failed to fetch playground models:', e);
     }
   };
-
-  useEffect(() => {
-    if (apiKey) {
-      fetchTenantModels(apiKey);
-    }
-  }, [apiKey]);
 
   useEffect(() => {
     if (apiKey) {
@@ -1062,9 +1085,12 @@ export default function ChatPlayground() {
                   value={selectedModel}
                   onChange={(val) => setSelectedModel(val)}
                   fetchOptions={async (searchTerm) => {
-                    if (!apiKey) return [];
                     const url = `/api/v1/tenant/llms?search=${encodeURIComponent(searchTerm || '')}&page_size=10&page=1`;
-                    const res = await fetch(url, { headers: { 'X-API-Key': apiKey } });
+                    const headers = {};
+                    if (selectedTenantId) {
+                      headers['X-Tenant-ID'] = selectedTenantId;
+                    }
+                    const res = await fetch(url, { headers });
                     const data = await res.json();
                     return (data.items || [])
                       .filter(m => m.provider !== 'prochat' && !m.model_name.toLowerCase().includes('genui'))
@@ -1074,7 +1100,7 @@ export default function ChatPlayground() {
                       }));
                   }}
                   placeholder={tenantModels.length === 0 ? "No models" : "Select Model"}
-                  disabled={!apiKey}
+                  disabled={!selectedTenantId}
                 />
               </div>
 
@@ -1089,7 +1115,11 @@ export default function ChatPlayground() {
                   initialLabel={apps.find(a => a.id === selectedAppId)?.name ? `📦 ${apps.find(a => a.id === selectedAppId).name}` : ''}
                   fetchOptions={async (searchTerm) => {
                     const url = `/api/v1/apps?search=${encodeURIComponent(searchTerm || '')}&page_size=10&page=1`;
-                    const res = await fetch(url);
+                    const headers = {};
+                    if (selectedTenantId) {
+                      headers['X-Tenant-ID'] = selectedTenantId;
+                    }
+                    const res = await fetch(url, { headers });
                     const data = await res.json();
                     setApps(prev => {
                       const newApps = [...prev];
@@ -1098,15 +1128,12 @@ export default function ChatPlayground() {
                       });
                       return newApps;
                     });
-                    return [
-                      { value: "", label: "🌐 Global (All Skills)" },
-                      ...(data.items || []).map(a => ({
-                        value: a.id,
-                        label: `📦 ${a.name} (${a.skills_count} skills)`
-                      }))
-                    ];
+                    return (data.items || []).map(a => ({
+                      value: a.id,
+                      label: `📦 ${a.name} (${a.skills_count} skills)`
+                    }));
                   }}
-                  placeholder="🌐 Global (All Skills)"
+                  placeholder="Select Application..."
                 />
               </div>
 
@@ -1196,7 +1223,11 @@ export default function ChatPlayground() {
                   value=''
                   onChange={(val) => { if (val && !selectedSkillNames.includes(val)) setSelectedSkillNames(prev => [...prev, val]); }}
                   fetchOptions={async (searchTerm) => {
-                    const res = await fetch(`/api/v1/skills?search=${encodeURIComponent(searchTerm || '')}&page_size=30&page=1`);
+                    const headers = {};
+                    if (selectedTenantId) {
+                      headers['X-Tenant-ID'] = selectedTenantId;
+                    }
+                    const res = await fetch(`/api/v1/skills?search=${encodeURIComponent(searchTerm || '')}&page_size=30&page=1`, { headers });
                     const data = await res.json();
                     const items = Array.isArray(data.items) ? data.items : (Array.isArray(data) ? data : []);
                     return items.filter(s => !selectedSkillNames.includes(s.name)).map(s => ({ value: s.name, label: `🧩 ${s.name}` }));
@@ -1224,7 +1255,11 @@ export default function ChatPlayground() {
                       initialLabel={selectedTemplateId ? `📋 ${templates.find(t => t.id === selectedTemplateId)?.name || 'Loading Profile...'}` : ''}
                       fetchOptions={async (searchTerm) => {
                         const url = `/api/v1/user_data_templates?search=${encodeURIComponent(searchTerm || '')}&page_size=20&page=1`;
-                        const res = await fetch(url);
+                        const headers = {};
+                        if (selectedTenantId) {
+                          headers['X-Tenant-ID'] = selectedTenantId;
+                        }
+                        const res = await fetch(url, { headers });
                         const data = await res.json();
                         setTemplates(prev => {
                           const newTs = [...prev];

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Cpu, RefreshCw, Layers, Search, Code, Plus, Edit, Trash2, X, Check, Save, FileText, Database, HardDrive, Box, Filter, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Cpu, RefreshCw, Layers, Search, Code, Plus, Edit, Trash2, X, Check, Save, FileText, Database, HardDrive, Box, Filter, ChevronLeft, ChevronRight, Key } from 'lucide-react';
 import AsyncSearchableDropdown from '../AsyncSearchableDropdown';
 
 import SkillEditorModal from './SkillEditorModal';
@@ -13,6 +13,8 @@ export default function SkillCatalog() {
   const [apps, setApps] = useState([]);
   const [selectedAppId, setSelectedAppId] = useState('');
   const [loading, setLoading] = useState(false);
+  const [tenants, setTenants] = useState([]);
+  const [selectedTenantId, setSelectedTenantId] = useState('');
 
   // Syncing with URL parameters
   const page = parseInt(searchParams.get('page') || '1', 10);
@@ -90,8 +92,12 @@ Provide instructions for the LLM on how to resolve queries using this skill.
         page: page.toString(),
         page_size: pageSize.toString()
       });
+      const headers = {};
+      if (selectedTenantId) {
+        headers['X-Tenant-ID'] = selectedTenantId;
+      }
       const [skillsRes] = await Promise.all([
-        fetch(`/api/v1/skills?${queryParams.toString()}`)
+        fetch(`/api/v1/skills?${queryParams.toString()}`, { headers })
       ]);
       const skillsData = await skillsRes.json();
 
@@ -114,13 +120,39 @@ Provide instructions for the LLM on how to resolve queries using this skill.
     }
   };
 
+  const fetchTenants = async () => {
+    try {
+      const res = await fetch('/api/v1/tenants');
+      if (res.ok) {
+        const data = await res.json();
+        setTenants(data || []);
+        if (data && data.length > 0 && !selectedTenantId) {
+          setSelectedTenantId(data[0].id);
+        }
+      }
+    } catch (e) {
+      console.error('Failed to fetch tenants', e);
+    }
+  };
+
   useEffect(() => {
     fetchSkillsAndApps();
-  }, [page, pageSize]);
+  }, [page, pageSize, selectedTenantId]);
+
+  useEffect(() => {
+    setSelectedAppId('');
+  }, [selectedTenantId]);
+
+  useEffect(() => {
+    fetchTenants();
+  }, []);
 
   const handleOpenCreateModal = () => {
     setSkillNameInput('');
     setSkillContentInput(defaultSkillTemplate);
+    if (tenants && tenants.length > 0) {
+      setSelectedTenantId(tenants[0].id);
+    }
     setIsEditing(false);
     setShowModal(true);
   };
@@ -238,7 +270,11 @@ Provide instructions for the LLM on how to resolve queries using this skill.
     setShowModal(true);
 
     try {
-      const res = await fetch(`/api/v1/skills/${encodeURIComponent(skill.name)}`);
+      const headers = {};
+      if (selectedTenantId) {
+        headers['X-Tenant-ID'] = selectedTenantId;
+      }
+      const res = await fetch(`/api/v1/skills/${encodeURIComponent(skill.name)}`, { headers });
       if (res.ok) {
         const data = await res.json();
         setSkillContentInput(data.content || '');
@@ -258,12 +294,17 @@ Provide instructions for the LLM on how to resolve queries using this skill.
     }
     setSaving(true);
     try {
+      const headers = { 'Content-Type': 'application/json' };
+      if (selectedTenantId) {
+        headers['X-Tenant-ID'] = selectedTenantId;
+      }
       const res = await fetch('/api/v1/skills', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           skill_name: skillNameInput,
           content: skillContentInput,
+          tenant_id: selectedTenantId,
         }),
       });
       if (res.ok) {
@@ -284,7 +325,11 @@ Provide instructions for the LLM on how to resolve queries using this skill.
   const handleDeleteSkill = async (name) => {
     if (!window.confirm(`Are you sure you want to delete custom skill "${name}"? This deletes the database record.`)) return;
     try {
-      const res = await fetch(`/api/v1/skills/${name}`, { method: 'DELETE' });
+      const headers = {};
+      if (selectedTenantId) {
+        headers['X-Tenant-ID'] = selectedTenantId;
+      }
+      const res = await fetch(`/api/v1/skills/${name}`, { method: 'DELETE', headers });
       if (res.ok) {
         fetchSkillsAndApps();
       }
@@ -326,6 +371,36 @@ Provide instructions for the LLM on how to resolve queries using this skill.
         </div>
 
         <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+          {/* Tenant Selector Dropdown */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Key size={15} color="var(--text-muted)" />
+            <div style={{ width: '210px' }}>
+              <AsyncSearchableDropdown
+                value={selectedTenantId}
+                onChange={(val) => setSelectedTenantId(val)}
+                fetchOptions={async (searchTerm) => {
+                  const url = `/api/v1/tenants?search=${encodeURIComponent(searchTerm || '')}&page_size=10&page=1`;
+                  const res = await fetch(url);
+                  const data = await res.json();
+                  const list = data.items || data || [];
+                  setTenants(prev => {
+                    const newTenants = [...prev];
+                    list.forEach(t => {
+                      if (!newTenants.find(existing => existing.id === t.id)) newTenants.push(t);
+                    });
+                    return newTenants;
+                  });
+                  return list.map(t => ({
+                    value: t.id,
+                    label: `🔑 ${t.name}`
+                  }));
+                }}
+                initialLabel={tenants.find(t => t.id === selectedTenantId)?.name ? `🔑 ${tenants.find(t => t.id === selectedTenantId).name}` : ''}
+                placeholder="Select Tenant Workspace"
+              />
+            </div>
+          </div>
+
           {/* App Filter Dropdown */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <Filter size={15} color="var(--text-muted)" />
@@ -335,7 +410,11 @@ Provide instructions for the LLM on how to resolve queries using this skill.
                 onChange={(val) => setSelectedAppId(val)}
                 fetchOptions={async (searchTerm) => {
                   const url = `/api/v1/apps?search=${encodeURIComponent(searchTerm || '')}&page_size=10&page=1`;
-                  const res = await fetch(url);
+                  const headers = {};
+                  if (selectedTenantId) {
+                    headers['X-Tenant-ID'] = selectedTenantId;
+                  }
+                  const res = await fetch(url, { headers });
                   const data = await res.json();
                   setApps(prev => {
                     const newApps = [...prev];
@@ -440,6 +519,9 @@ Provide instructions for the LLM on how to resolve queries using this skill.
         setSkillContentInput={setSkillContentInput}
         handleSaveSkill={handleSaveSkill}
         saving={saving}
+        tenants={tenants}
+        selectedTenantId={selectedTenantId}
+        setSelectedTenantId={setSelectedTenantId}
       />
 
       {/* Generator Wizard Modal */}

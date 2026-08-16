@@ -13,7 +13,6 @@ Usage:
 """
 
 import os
-import io
 import uuid
 import logging
 from abc import ABC, abstractmethod
@@ -291,7 +290,7 @@ class AzureStorage(StorageBackend):
 # Factory — reads active config from DB
 # ─────────────────────────────────────────────
 
-def get_storage_backend(db=None) -> StorageBackend:
+def get_storage_backend(db=None, tenant_id=None) -> StorageBackend:
     """
     Return the active StorageBackend based on the persisted StorageConfig.
     Falls back to LocalStorage if no config or provider == 'local'.
@@ -302,8 +301,16 @@ def get_storage_backend(db=None) -> StorageBackend:
     try:
         from models import StorageConfig
         from encryption_utils import decrypt_key as decrypt_value
+        from sqlalchemy import or_
 
-        config = db.query(StorageConfig).filter(StorageConfig.is_active == True).first()
+        if tenant_id:
+            config = db.query(StorageConfig).filter(
+                StorageConfig.is_active == True,
+                or_(StorageConfig.tenant_id == tenant_id, StorageConfig.tenant_id == None)
+            ).first()
+        else:
+            config = db.query(StorageConfig).filter(StorageConfig.is_active == True, StorageConfig.tenant_id == None).first()
+
         if not config or config.provider == "local":
             return LocalStorage()
 

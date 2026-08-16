@@ -1,5 +1,6 @@
 import React from 'react';
 import { X } from 'lucide-react';
+import AsyncSearchableDropdown from '../AsyncSearchableDropdown';
 
 export default function SkillEditorModal({
   showModal,
@@ -12,7 +13,10 @@ export default function SkillEditorModal({
   skillContentInput,
   setSkillContentInput,
   handleSaveSkill,
-  saving
+  saving,
+  tenants = [],
+  selectedTenantId = '',
+  setSelectedTenantId = () => {}
 }) {
   if (!showModal) return null;
 
@@ -48,6 +52,31 @@ export default function SkillEditorModal({
               </span>
             )}
           </div>
+
+          {!isEditing && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <label style={{ fontSize: '0.78rem', color: 'var(--text-sub)', fontWeight: '600' }}>Workspace / Tenant</label>
+              <AsyncSearchableDropdown
+                value={selectedTenantId}
+                onChange={(val) => setSelectedTenantId(val)}
+                fetchOptions={async (query) => {
+                  try {
+                    const res = await fetch(`/api/v1/tenants?search=${encodeURIComponent(query)}&page_size=20`);
+                    if (res.ok) {
+                      const data = await res.json();
+                      const items = data.items || data || [];
+                      return items.map(t => ({ value: t.id, label: t.name }));
+                    }
+                  } catch (e) {
+                    console.error('Error fetching tenant options:', e);
+                  }
+                  return [];
+                }}
+                placeholder="Search and select tenant..."
+                initialLabel={tenants.find(t => t.id === selectedTenantId)?.name || ''}
+              />
+            </div>
+          )}
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
             <label style={{ fontSize: '0.78rem', color: 'var(--text-sub)', fontWeight: '600' }}>Skill Content (YAML Frontmatter + Markdown instructions)</label>

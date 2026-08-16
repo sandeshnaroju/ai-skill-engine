@@ -15,7 +15,6 @@ def get_logs_filters(
     search_tenant: Optional[str] = None,
     search_model: Optional[str] = None
 ):
-    from models import Tenant
     t_query = db.query(Tenant.name).join(ExecutionLog).distinct()
     if search_tenant:
         t_query = t_query.filter(Tenant.name.ilike(f"%{search_tenant}%"))
@@ -77,7 +76,3 @@ def get_logs(
             "created_at": log.created_at.isoformat() if log.created_at else None
         }
     return get_paginated_response(query, page, page_size, serialize)
-
-# --- MCP External Server Management Endpoints ---
-
-

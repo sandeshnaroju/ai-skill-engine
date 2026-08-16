@@ -5,18 +5,66 @@ import subprocess
 import urllib.request
 from typing import Dict, Any, List
 
+
+def _build_stdio_input(method: str, params: dict, req_id: int = 2) -> str:
+    """
+    Build the full MCP stdio message sequence:
+      1. initialize (id=1)
+      2. initialized notification (no id - one-way)
+      3. actual request (id=req_id)
+    Returns newline-delimited JSON string.
+    """
+    init_request = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {
+            "protocolVersion": "2024-11-05",
+            "capabilities": {},
+            "clientInfo": {"name": "ai-skill-engine", "version": "1.0"}
+        }
+    }
+    initialized_notif = {
+        "jsonrpc": "2.0",
+        "method": "notifications/initialized",
+        "params": {}
+    }
+    actual_request = {
+        "jsonrpc": "2.0",
+        "id": req_id,
+        "method": method,
+        "params": params
+    }
+    return (
+        json.dumps(init_request) + "\n" +
+        json.dumps(initialized_notif) + "\n" +
+        json.dumps(actual_request) + "\n"
+    )
+
+
+def _parse_stdio_responses(stdout_data: str, target_id: int) -> dict:
+    """
+    Parse newline-delimited JSON-RPC responses and return the one with the target id.
+    """
+    for line in stdout_data.strip().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            obj = json.loads(line)
+            if obj.get("id") == target_id:
+                return obj
+        except Exception:
+            continue
+    return {}
+
+
 class McpManager:
     def list_tools(self, server_obj) -> List[Dict[str, Any]]:
         """
-        Sends tools/list JSON-RPC 2.0 request to an external MCP server.
+        Sends tools/list JSON-RPC 2.0 request to an external MCP server,
+        with proper initialize handshake for stdio transport.
         """
-        req_payload = {
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "tools/list",
-            "params": {}
-        }
-
         transport = (server_obj.transport or "stdio").lower()
 
         if transport == "stdio":
@@ -44,24 +92,29 @@ class McpManager:
                     env=env_vars
                 )
 
-                input_data = json.dumps(req_payload) + "\n"
-                stdout_data, stderr_data = proc.communicate(input=input_data, timeout=15)
+                input_data = _build_stdio_input("tools/list", {}, req_id=2)
+                stdout_data, stderr_data = proc.communicate(input=input_data, timeout=30)
 
-                try:
-                    resp = json.loads(stdout_data.strip())
-                    if "result" in resp and "tools" in resp["result"]:
-                        return resp["result"]["tools"]
-                except Exception:
-                    pass
+                resp = _parse_stdio_responses(stdout_data, target_id=2)
+                if "result" in resp and "tools" in resp["result"]:
+                    return resp["result"]["tools"]
+
+                print(f"[MCP list_tools] No tools in response for {server_obj.name}. stderr: {stderr_data[:300]}")
             except Exception as e:
                 print(f"Failed to list tools from MCP server {server_obj.name}: {e}")
-                return []
+            return []
 
         elif transport in ["sse", "http"]:
             url = server_obj.url
             if not url:
                 return []
 
+            req_payload = {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/list",
+                "params": {}
+            }
             try:
                 data = json.dumps(req_payload).encode("utf-8")
                 req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
@@ -71,25 +124,16 @@ class McpManager:
                         return resp["result"]["tools"]
             except Exception as e:
                 print(f"Failed to list tools from HTTP MCP server {server_obj.name}: {e}")
-                return []
+            return []
 
         return []
 
     def call_tool(self, server_obj, tool_name: str, arguments: Dict[str, Any], timeout: int = 30) -> Dict[str, Any]:
         """
-        Sends tools/call JSON-RPC 2.0 request to an external MCP server.
+        Sends tools/call JSON-RPC 2.0 request to an external MCP server,
+        with proper initialize handshake for stdio transport.
         """
         start_time = time.time()
-        req_payload = {
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "tools/call",
-            "params": {
-                "name": tool_name,
-                "arguments": arguments
-            }
-        }
-
         transport = (server_obj.transport or "stdio").lower()
 
         if transport == "stdio":
@@ -114,39 +158,43 @@ class McpManager:
                     env=env_vars
                 )
 
-                input_data = json.dumps(req_payload) + "\n"
+                input_data = _build_stdio_input(
+                    "tools/call",
+                    {"name": tool_name, "arguments": arguments},
+                    req_id=2
+                )
                 stdout_data, stderr_data = proc.communicate(input=input_data, timeout=timeout)
                 exec_duration = int((time.time() - start_time) * 1000)
 
-                try:
-                    resp = json.loads(stdout_data.strip())
-                    if "result" in resp:
-                        content_items = resp["result"].get("content", [])
-                        output_text = "\n".join([item.get("text", "") for item in content_items if item.get("type") == "text"])
-                        if not output_text:
-                            output_text = json.dumps(resp["result"])
-                        return {
-                            "stdout": output_text,
-                            "stderr": stderr_data,
-                            "exit_code": 0,
-                            "execution_time_ms": exec_duration,
-                            "sandbox_type": f"mcp_server_{server_obj.name}"
-                        }
-                    elif "error" in resp:
-                        return {
-                            "stdout": "",
-                            "stderr": f"MCP Error: {resp['error'].get('message')}",
-                            "exit_code": 1,
-                            "execution_time_ms": exec_duration,
-                            "sandbox_type": f"mcp_server_{server_obj.name}"
-                        }
-                except Exception:
-                    pass
+                resp = _parse_stdio_responses(stdout_data, target_id=2)
+                if "result" in resp:
+                    content_items = resp["result"].get("content", [])
+                    output_text = "\n".join([
+                        item.get("text", "") for item in content_items if item.get("type") == "text"
+                    ])
+                    if not output_text:
+                        output_text = json.dumps(resp["result"])
+                    return {
+                        "stdout": output_text,
+                        "stderr": stderr_data,
+                        "exit_code": 0,
+                        "execution_time_ms": exec_duration,
+                        "sandbox_type": f"mcp_server_{server_obj.name}"
+                    }
+                elif "error" in resp:
+                    return {
+                        "stdout": "",
+                        "stderr": f"MCP Error: {resp['error'].get('message')}",
+                        "exit_code": 1,
+                        "execution_time_ms": exec_duration,
+                        "sandbox_type": f"mcp_server_{server_obj.name}"
+                    }
 
+                # Fallback: return raw stdout
                 return {
                     "stdout": stdout_data,
                     "stderr": stderr_data,
-                    "exit_code": proc.returncode,
+                    "exit_code": proc.returncode or 0,
                     "execution_time_ms": exec_duration,
                     "sandbox_type": f"mcp_server_{server_obj.name}"
                 }
@@ -162,6 +210,12 @@ class McpManager:
 
         elif transport in ["sse", "http"]:
             url = server_obj.url
+            req_payload = {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {"name": tool_name, "arguments": arguments}
+            }
             try:
                 data = json.dumps(req_payload).encode("utf-8")
                 req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
@@ -170,7 +224,9 @@ class McpManager:
                     exec_duration = int((time.time() - start_time) * 1000)
                     if "result" in resp:
                         content_items = resp["result"].get("content", [])
-                        output_text = "\n".join([item.get("text", "") for item in content_items if item.get("type") == "text"])
+                        output_text = "\n".join([
+                            item.get("text", "") for item in content_items if item.get("type") == "text"
+                        ])
                         if not output_text:
                             output_text = json.dumps(resp["result"])
                         return {

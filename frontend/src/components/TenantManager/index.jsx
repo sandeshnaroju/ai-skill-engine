@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Key, Plus, Trash2, Cpu, Check, Copy, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import TenantModal from './TenantModal';
+import DeleteTenantModal from './DeleteTenantModal';
 
 export default function TenantManager() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -11,6 +12,7 @@ export default function TenantManager() {
   const [copiedKey, setCopiedKey] = useState(null);
   const [selectedTenant, setSelectedTenant] = useState(null);
   const [showManageModal, setShowManageModal] = useState(false);
+  const [tenantToDelete, setTenantToDelete] = useState(null);
 
   const page = parseInt(searchParams.get('page') || '1', 10);
   const pageSize = parseInt(searchParams.get('page_size') || '6', 10);
@@ -202,7 +204,7 @@ export default function TenantManager() {
                       </button>
                       <button
                         className="btn-outline"
-                        onClick={() => handleDeleteTenant(t.id, t.name)}
+                        onClick={() => setTenantToDelete(t)}
                         style={{ padding: '4px 8px', fontSize: '0.74rem', color: 'var(--accent-rose)', borderColor: 'rgba(244, 63, 94, 0.2)' }}
                       >
                         <Trash2 size={13} />
@@ -256,6 +258,14 @@ export default function TenantManager() {
           setModelPage={setModelPage}
           fetchTenantLlms={fetchTenantLlms}
           fetchTenants={fetchTenants}
+        />
+      )}
+
+      {tenantToDelete && (
+        <DeleteTenantModal
+          tenant={tenantToDelete}
+          onClose={() => setTenantToDelete(null)}
+          onDeleteSuccess={fetchTenants}
         />
       )}
     </div>

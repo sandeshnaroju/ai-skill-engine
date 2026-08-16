@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Layers, Plus, Trash2, Edit, Save, X, RefreshCw, ChevronLeft, ChevronRight, HelpCircle } from 'lucide-react';
+import { Layers, Plus, Trash2, Edit, Save, X, RefreshCw, ChevronLeft, ChevronRight, HelpCircle, Key } from 'lucide-react';
+import AsyncSearchableDropdown from './AsyncSearchableDropdown';
 
 export default function UserDataTemplates() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -33,6 +34,8 @@ export default function UserDataTemplates() {
   const [description, setDescription] = useState('');
   const [pairs, setPairs] = useState([{ key: '', value: '' }]);
   const [saving, setSaving] = useState(false);
+  const [tenants, setTenants] = useState([]);
+  const [selectedTenantId, setSelectedTenantId] = useState('');
   const [inputMode, setInputMode] = useState('pairs'); // 'pairs' or 'json'
   const [jsonText, setJsonText] = useState('{\n  "api_key": "example_secret_key"\n}');
 
@@ -43,7 +46,11 @@ export default function UserDataTemplates() {
         page: page.toString(),
         page_size: pageSize.toString()
       });
-      const res = await fetch(`/api/v1/user_data_templates?${queryParams.toString()}`);
+      const headers = {};
+      if (selectedTenantId) {
+        headers['X-Tenant-ID'] = selectedTenantId;
+      }
+      const res = await fetch(`/api/v1/user_data_templates?${queryParams.toString()}`, { headers });
       const data = await res.json();
 
       if (data && data.items !== undefined) {
@@ -62,9 +69,28 @@ export default function UserDataTemplates() {
     }
   };
 
+  const fetchTenants = async () => {
+    try {
+      const res = await fetch('/api/v1/tenants');
+      if (res.ok) {
+        const data = await res.json();
+        setTenants(data || []);
+        if (data && data.length > 0 && !selectedTenantId) {
+          setSelectedTenantId(data[0].id);
+        }
+      }
+    } catch (e) {
+      console.error('Failed to fetch tenants', e);
+    }
+  };
+
   useEffect(() => {
     fetchTemplates();
-  }, [page, pageSize]);
+  }, [page, pageSize, selectedTenantId]);
+
+  useEffect(() => {
+    fetchTenants();
+  }, []);
 
   const handleAddPair = () => {
     setPairs([...pairs, { key: '', value: '' }]);
@@ -164,13 +190,18 @@ export default function UserDataTemplates() {
 
     setSaving(true);
     try {
+      const headers = { 'Content-Type': 'application/json' };
+      if (selectedTenantId) {
+        headers['X-Tenant-ID'] = selectedTenantId;
+      }
       const res = await fetch('/api/v1/user_data_templates', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           name: name.trim(),
           description: description.trim() || null,
           data: dataDict,
+          tenant_id: selectedTenantId,
         }),
       });
 
@@ -191,7 +222,11 @@ export default function UserDataTemplates() {
   const handleDelete = async (id, tplName) => {
     if (!window.confirm(`Are you sure you want to delete User Data template "${tplName}"?`)) return;
     try {
-      const res = await fetch(`/api/v1/user_data_templates/${id}`, { method: 'DELETE' });
+      const headers = {};
+      if (selectedTenantId) {
+        headers['X-Tenant-ID'] = selectedTenantId;
+      }
+      const res = await fetch(`/api/v1/user_data_templates/${id}`, { method: 'DELETE', headers });
       if (res.ok) {
         fetchTemplates();
       }
@@ -205,13 +240,36 @@ export default function UserDataTemplates() {
       {/* Left Column: Configured templates */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
         <div className="glass-box" style={{ padding: '24px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px', flexWrap: 'wrap', gap: '10px' }}>
             <h3 style={{ fontSize: '1.1rem', fontWeight: '700', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Layers size={20} color="var(--primary-cyan)" /> User Data Profiles ({totalItems})
             </h3>
-            <button className="btn-outline" onClick={fetchTemplates} disabled={loading} style={{ padding: '6px 12px' }}>
-              <RefreshCw size={14} className={loading ? 'spin' : ''} /> Reload
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div style={{ width: '200px' }}>
+                <AsyncSearchableDropdown
+                  value={selectedTenantId}
+                  onChange={(val) => setSelectedTenantId(val)}
+                  fetchOptions={async (query) => {
+                    try {
+                      const res = await fetch(`/api/v1/tenants?search=${encodeURIComponent(query)}&page_size=20`);
+                      if (res.ok) {
+                        const data = await res.json();
+                        const items = data.items || data || [];
+                        return items.map(t => ({ value: t.id, label: t.name }));
+                      }
+                    } catch (e) {
+                      console.error('Error fetching tenant options:', e);
+                    }
+                    return [];
+                  }}
+                  placeholder="Filter by tenant..."
+                  initialLabel={tenants.find(t => t.id === selectedTenantId)?.name || ''}
+                />
+              </div>
+              <button className="btn-outline" onClick={fetchTemplates} disabled={loading} style={{ padding: '6px 12px' }}>
+                <RefreshCw size={14} className={loading ? 'spin' : ''} /> Reload
+              </button>
+            </div>
           </div>
 
           {templates.length === 0 ? (
@@ -224,7 +282,12 @@ export default function UserDataTemplates() {
                 <div key={t.id} style={{ padding: '16px', background: 'var(--bg-card)', border: '1px solid var(--border-subtle)', borderRadius: '12px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div>
-                      <strong style={{ fontSize: '0.95rem', color: 'var(--text-main)' }}>{t.name}</strong>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                        <strong style={{ fontSize: '0.95rem', color: 'var(--text-main)' }}>{t.name}</strong>
+                        <span className="badge-tag tag-shell" style={{ fontSize: '0.72rem', opacity: 0.85 }}>
+                          Workspace: {t.tenant_name || 'Global'}
+                        </span>
+                      </div>
                       {t.description && (
                         <p style={{ margin: '2px 0 0 0', fontSize: '0.78rem', color: 'var(--text-muted)' }}>{t.description}</p>
                       )}
@@ -299,6 +362,31 @@ export default function UserDataTemplates() {
               style={{ width: '100%' }}
             />
           </div>
+
+          {!editingId && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <label style={{ fontSize: '0.82rem', fontWeight: '600', color: 'var(--text-sub)' }}>Workspace / Tenant</label>
+              <AsyncSearchableDropdown
+                value={selectedTenantId}
+                onChange={(val) => setSelectedTenantId(val)}
+                fetchOptions={async (query) => {
+                  try {
+                    const res = await fetch(`/api/v1/tenants?search=${encodeURIComponent(query)}&page_size=20`);
+                    if (res.ok) {
+                      const data = await res.json();
+                      const items = data.items || data || [];
+                      return items.map(t => ({ value: t.id, label: t.name }));
+                    }
+                  } catch (e) {
+                    console.error('Error fetching tenant options:', e);
+                  }
+                  return [];
+                }}
+                placeholder="Search and select tenant..."
+                initialLabel={tenants.find(t => t.id === selectedTenantId)?.name || ''}
+              />
+            </div>
+          )}
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
             <label style={{ fontSize: '0.82rem', fontWeight: '600', color: 'var(--text-sub)' }}>Description (Optional)</label>

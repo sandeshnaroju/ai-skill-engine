@@ -98,7 +98,8 @@ def resolve_allowed_skills(db: DbSession, tenant, app_id: str = None, skill_name
         return []
 
     if skill_names:
-        known = set(skill_registry.skills.keys())
+        tenant_id = tenant.id if tenant else None
+        known = set(skill_registry.get_skills_dict(tenant_id=tenant_id).keys())
         return [s for s in skill_names if s in known]
 
     return None

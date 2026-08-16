@@ -3,8 +3,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from database import get_db
-from models import User
-from auth import get_current_user
+from models import User, Tenant
+from auth import get_current_user, get_current_tenant
 from schemas import StorageConfigPayload, SandboxConfigPayload, EmailConfigSave, EmailConfigTest
 
 router = APIRouter()
@@ -22,14 +22,28 @@ def get_db_status():
 
 @router.get("/storage/config")
 def get_storage_config(
+    tenant_id: Optional[str] = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_tenant: Tenant = Depends(get_current_tenant)
 ):
     """Return current storage config with credentials masked."""
     from models import StorageConfig
-    config = db.query(StorageConfig).filter(StorageConfig.is_active == True).first()
+    target_tenant_id = current_tenant.id
+    if tenant_id:
+        tenant_check = db.query(Tenant).filter(Tenant.id == tenant_id, Tenant.user_id == current_tenant.user_id).first()
+        if tenant_check:
+            target_tenant_id = tenant_check.id
+
+    config = db.query(StorageConfig).filter(
+        StorageConfig.is_active == True,
+        StorageConfig.tenant_id == target_tenant_id
+    ).first()
+    from models import Tenant as DBTenant
+    t_obj = db.query(DBTenant).filter(DBTenant.id == target_tenant_id).first()
+    t_name = t_obj.name if t_obj else "Global"
+
     if not config:
-        return {"provider": "local"}
+        return {"provider": "local", "tenant_name": t_name}
     return {
         "provider": config.provider,
         "bucket_name": config.bucket_name,
@@ -42,6 +56,7 @@ def get_storage_config(
         "account_key": "••••••••" if config.account_key_encrypted else None,
         "use_presigned_urls": config.use_presigned_urls,
         "presigned_url_expires_seconds": config.presigned_url_expires_seconds,
+        "tenant_name": t_name,
     }
 
 
@@ -49,15 +64,24 @@ def get_storage_config(
 def update_storage_config(
     payload: StorageConfigPayload,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_tenant: Tenant = Depends(get_current_tenant)
 ):
     """Save or update the global storage configuration."""
     from models import StorageConfig
     from encryption_utils import encrypt_key
 
-    config = db.query(StorageConfig).filter(StorageConfig.is_active == True).first()
+    target_tenant_id = current_tenant.id
+    if payload.tenant_id:
+        tenant_check = db.query(Tenant).filter(Tenant.id == payload.tenant_id, Tenant.user_id == current_tenant.user_id).first()
+        if tenant_check:
+            target_tenant_id = tenant_check.id
+
+    config = db.query(StorageConfig).filter(
+        StorageConfig.is_active == True,
+        StorageConfig.tenant_id == target_tenant_id
+    ).first()
     if not config:
-        config = StorageConfig(is_active=True)
+        config = StorageConfig(is_active=True, tenant_id=target_tenant_id)
         db.add(config)
 
     config.provider = payload.provider
@@ -88,21 +112,30 @@ def update_storage_config(
 
 
 @router.post("/storage/test")
-def test_storage_config(
+def test_storage_connection(
     payload: Optional[StorageConfigPayload] = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_tenant: Tenant = Depends(get_current_tenant)
 ):
     """Test connectivity for the currently saved storage config, or a transient config payload."""
     from storage import S3Storage, AzureStorage, get_storage_backend
     from models import StorageConfig
     from encryption_utils import decrypt_key as decrypt_value
 
+    target_tenant_id = current_tenant.id
+    if payload and payload.tenant_id:
+        tenant_check = db.query(Tenant).filter(Tenant.id == payload.tenant_id, Tenant.user_id == current_tenant.user_id).first()
+        if tenant_check:
+            target_tenant_id = tenant_check.id
+
     if payload is not None:
         if payload.provider == "local":
             return {"success": True, "message": "Local storage is always available — no connection required."}
 
-        config = db.query(StorageConfig).filter(StorageConfig.is_active == True).first()
+        config = db.query(StorageConfig).filter(
+            StorageConfig.is_active == True,
+            StorageConfig.tenant_id == target_tenant_id
+        ).first()
         MASK = "••••••••"
 
         if payload.provider == "s3":
@@ -158,7 +191,7 @@ def test_storage_config(
                 return {"success": False, "message": str(e)}
 
     try:
-        backend = get_storage_backend(db)
+        backend = get_storage_backend(db, tenant_id=target_tenant_id)
         if isinstance(backend, (S3Storage, AzureStorage)):
             return backend.test_connection()
     except Exception as e:
@@ -173,14 +206,28 @@ def test_storage_config(
 
 @router.get("/sandbox/config")
 def get_sandbox_config(
+    tenant_id: Optional[str] = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_tenant: Tenant = Depends(get_current_tenant)
 ):
     """Return the global sandbox config with masked secrets."""
     from models import SandboxConfig
-    config = db.query(SandboxConfig).filter(SandboxConfig.is_active == True).first()
+    target_tenant_id = current_tenant.id
+    if tenant_id:
+        tenant_check = db.query(Tenant).filter(Tenant.id == tenant_id, Tenant.user_id == current_tenant.user_id).first()
+        if tenant_check:
+            target_tenant_id = tenant_check.id
+
+    config = db.query(SandboxConfig).filter(
+        SandboxConfig.is_active == True,
+        SandboxConfig.tenant_id == target_tenant_id
+    ).first()
+    from models import Tenant as DBTenant
+    t_obj = db.query(DBTenant).filter(DBTenant.id == target_tenant_id).first()
+    t_name = t_obj.name if t_obj else "Global"
+
     if not config:
-        return {"provider": "none"}
+        return {"provider": "none", "tenant_name": t_name}
     return {
         "provider": config.provider,
         "e2b_api_key": "••••••••" if config.e2b_api_key_encrypted else None,
@@ -194,6 +241,7 @@ def get_sandbox_config(
         "aws_secret_key": "••••••••" if config.aws_secret_key_encrypted else None,
         "aws_region": config.aws_region,
         "aws_function_name": config.aws_function_name,
+        "tenant_name": t_name,
     }
 
 
@@ -201,15 +249,24 @@ def get_sandbox_config(
 def update_sandbox_config(
     payload: SandboxConfigPayload,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_tenant: Tenant = Depends(get_current_tenant)
 ):
     """Save or update the global sandbox configuration."""
     from models import SandboxConfig
     from encryption_utils import encrypt_key
 
-    config = db.query(SandboxConfig).filter(SandboxConfig.is_active == True).first()
+    target_tenant_id = current_tenant.id
+    if payload.tenant_id:
+        tenant_check = db.query(Tenant).filter(Tenant.id == payload.tenant_id, Tenant.user_id == current_tenant.user_id).first()
+        if tenant_check:
+            target_tenant_id = tenant_check.id
+
+    config = db.query(SandboxConfig).filter(
+        SandboxConfig.is_active == True,
+        SandboxConfig.tenant_id == target_tenant_id
+    ).first()
     if not config:
-        config = SandboxConfig(is_active=True)
+        config = SandboxConfig(is_active=True, tenant_id=target_tenant_id)
         db.add(config)
 
     config.provider = payload.provider
