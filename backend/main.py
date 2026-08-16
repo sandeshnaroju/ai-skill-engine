@@ -6,31 +6,30 @@ from fastapi.responses import FileResponse
 
 from database import init_db
 
-# ── Startup guard: encryption key must be present and valid ──────────────────
-# Without this key all stored LLM API keys, storage credentials, and SMTP
-# passwords are unreadable. Fail loudly here rather than silently returning
-# empty strings at runtime and producing confusing auth/tool errors.
+# ── Startup guard: encryption key check ──────────────────────────────────────
+# Store key validation result as module-level state so the health endpoint
+# can surface it to the UI without crashing the server.
+_ENCRYPTION_ERROR: str | None = None
+
 def _validate_encryption_key():
+    global _ENCRYPTION_ERROR
     import os
     raw = os.getenv("ENCRYPTION_SECRET_KEY", "").strip()
     if not raw:
-        raise RuntimeError(
-            "\n\n❌  ENCRYPTION_SECRET_KEY is not set.\n"
-            "    All stored credentials are encrypted with this key and cannot be read without it.\n"
-            "    Generate a key with:\n"
-            "        python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\"\n"
-            "    Then pass it via:\n"
-            "        docker run -e ENCRYPTION_SECRET_KEY='<your-key>' ...\n"
-            "    or add it to your .env file.\n"
+        _ENCRYPTION_ERROR = (
+            "ENCRYPTION_SECRET_KEY is not set. "
+            "All stored credentials are encrypted and cannot be read. "
+            "Generate a key with: python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\" "
+            "and add it to your .env or docker run -e ENCRYPTION_SECRET_KEY=<key>."
         )
+        return
     try:
         from cryptography.fernet import Fernet
         Fernet(raw.encode())
     except Exception as e:
-        raise RuntimeError(
-            f"\n\n❌  ENCRYPTION_SECRET_KEY is set but is not a valid Fernet key: {e}\n"
-            "    Generate a fresh key with:\n"
-            "        python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\"\n"
+        _ENCRYPTION_ERROR = (
+            f"ENCRYPTION_SECRET_KEY is set but is not a valid Fernet key: {e}. "
+            "Generate a fresh key with: python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\""
         )
 
 _validate_encryption_key()

@@ -115,6 +115,7 @@ export default function App() {
   const [theme, setTheme] = useState(() => localStorage.getItem('app_theme') || 'dark');
   const [stats, setStats] = useState({ skillsCount: 4, tenantsCount: 1, logsCount: 0 });
   const [dbStatus, setDbStatus] = useState({ ready: false, details: 'Connecting to database...', progress: 0, fresh_start: false });
+  const [encryptionError, setEncryptionError] = useState(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(() => {
     if (typeof window !== 'undefined' && window.innerWidth < 768) {
       return false;
@@ -166,6 +167,24 @@ export default function App() {
     checkDbStatus();
     intervalId = setInterval(checkDbStatus, 600);
     return () => clearInterval(intervalId);
+  }, []);
+
+  // Check encryption key health on mount
+  useEffect(() => {
+    const checkHealth = async () => {
+      try {
+        const res = await fetch('/api/v1/health');
+        if (res.ok) {
+          const data = await res.json();
+          if (!data.encryption_ok) {
+            setEncryptionError(data.encryption_error || 'ENCRYPTION_SECRET_KEY is missing or invalid.');
+          }
+        }
+      } catch (e) {
+        // Server unreachable — DB loading screen will handle
+      }
+    };
+    checkHealth();
   }, []);
 
   useEffect(() => {
@@ -232,6 +251,115 @@ export default function App() {
   const activeNavItem = activeTab === 'profile'
     ? { id: 'profile', label: 'User Profile', icon: UserIcon }
     : (navItems.find((n) => n.id === activeTab) || navItems[0]);
+
+  // Render encryption key error screen — blocks all usage
+  if (encryptionError) {
+    return (
+      <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: '100vw',
+        height: '100vh',
+        background: '#0a0f1d',
+        color: '#f8fafc',
+        fontFamily: 'Inter, system-ui, sans-serif',
+        padding: '24px',
+        boxSizing: 'border-box'
+      }}>
+        <div style={{
+          maxWidth: '520px',
+          width: '100%',
+          textAlign: 'center',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: '24px'
+        }}>
+          {/* Icon */}
+          <div style={{
+            background: 'linear-gradient(135deg, #7f1d1d, #dc2626)',
+            padding: '18px',
+            borderRadius: '16px',
+            boxShadow: '0 0 40px rgba(220, 38, 38, 0.35)',
+          }}>
+            <ShieldCheck size={36} color="#fff" />
+          </div>
+
+          <div>
+            <h2 style={{ fontSize: '1.4rem', fontWeight: '800', marginBottom: '8px', letterSpacing: '-0.025em', color: '#fca5a5' }}>
+              Encryption Key Not Configured
+            </h2>
+            <p style={{ fontSize: '0.875rem', color: '#94a3b8', lineHeight: '1.6' }}>
+              The server cannot read stored credentials (LLM API keys, storage secrets, SMTP passwords).
+              All operations that depend on encrypted data will fail until this is resolved.
+            </p>
+          </div>
+
+          {/* Error message box */}
+          <div style={{
+            width: '100%',
+            background: 'rgba(220, 38, 38, 0.08)',
+            border: '1px solid rgba(220, 38, 38, 0.3)',
+            borderRadius: '10px',
+            padding: '14px 16px',
+            fontSize: '0.8rem',
+            color: '#fca5a5',
+            textAlign: 'left',
+            lineHeight: '1.6',
+            wordBreak: 'break-word',
+          }}>
+            {encryptionError}
+          </div>
+
+          {/* Steps */}
+          <div style={{
+            width: '100%',
+            background: 'rgba(255, 255, 255, 0.02)',
+            border: '1px solid rgba(255, 255, 255, 0.06)',
+            borderRadius: '12px',
+            padding: '18px',
+            textAlign: 'left',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '14px',
+          }}>
+            <p style={{ margin: 0, fontSize: '0.8rem', fontWeight: '700', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em' }}>How to fix</p>
+            {[
+              { step: '1', text: 'Generate a key:', code: 'python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"' },
+              { step: '2', text: 'Add it to your .env file:', code: 'ENCRYPTION_SECRET_KEY=<paste-key-here>' },
+              { step: '3', text: 'Restart the container:', code: './run_docker.sh' },
+            ].map(({ step, text, code }) => (
+              <div key={step} style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                <div style={{
+                  minWidth: '24px', height: '24px',
+                  background: 'linear-gradient(135deg, #8b5cf6, #06b6d4)',
+                  borderRadius: '50%',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: '0.7rem', fontWeight: '800', color: '#fff',
+                  flexShrink: 0,
+                }}>{step}</div>
+                <div>
+                  <p style={{ margin: 0, fontSize: '0.82rem', color: '#cbd5e1', marginBottom: '4px' }}>{text}</p>
+                  <code style={{
+                    display: 'block',
+                    background: 'rgba(0,0,0,0.4)',
+                    border: '1px solid rgba(255,255,255,0.07)',
+                    borderRadius: '6px',
+                    padding: '6px 10px',
+                    fontSize: '0.75rem',
+                    color: '#7dd3fc',
+                    wordBreak: 'break-all',
+                  }}>{code}</code>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // Render database creation loader screen if DB is not ready
   if (!dbStatus.ready) {
