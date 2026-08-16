@@ -4,8 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from database import get_db
-from models import User
-from auth import get_current_user
+from models import Tenant
+from auth import get_current_tenant
 from schemas import UserDataTemplateCreate
 from utils import get_paginated_response
 
@@ -15,13 +15,16 @@ router = APIRouter()
 @router.get("")
 def list_user_data_templates(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
     page: Optional[int] = None,
     page_size: int = 10,
     search: Optional[str] = None
 ):
     from models import UserDataTemplate
-    query = db.query(UserDataTemplate)
+    from sqlalchemy.orm import joinedload
+    query = db.query(UserDataTemplate).options(joinedload(UserDataTemplate.tenant)).filter(
+        (UserDataTemplate.tenant_id == current_tenant.id) | (UserDataTemplate.tenant_id == None)
+    )
     if search:
         query = query.filter(
             UserDataTemplate.name.ilike(f"%{search}%") | UserDataTemplate.description.ilike(f"%{search}%")
@@ -38,6 +41,8 @@ def list_user_data_templates(
             "name": t.name,
             "description": t.description,
             "data": parsed_data,
+            "tenant_id": t.tenant_id,
+            "tenant_name": t.tenant.name if t.tenant else "Global",
             "created_at": t.created_at.isoformat() if t.created_at else None,
             "updated_at": t.updated_at.isoformat() if t.updated_at else None
         }
@@ -48,7 +53,7 @@ def list_user_data_templates(
 def create_or_update_user_data_template(
     payload: UserDataTemplateCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_tenant: Tenant = Depends(get_current_tenant)
 ):
     from models import UserDataTemplate
     clean_name = payload.name.strip()
@@ -57,7 +62,17 @@ def create_or_update_user_data_template(
 
     data_str = json.dumps(payload.data)
 
-    existing = db.query(UserDataTemplate).filter(UserDataTemplate.name == clean_name).first()
+    target_tenant_id = current_tenant.id
+    if payload.tenant_id:
+        from models import Tenant as DBTenant
+        tenant_check = db.query(DBTenant).filter(DBTenant.id == payload.tenant_id, DBTenant.user_id == current_tenant.user_id).first()
+        if tenant_check:
+            target_tenant_id = tenant_check.id
+
+    existing = db.query(UserDataTemplate).filter(
+        UserDataTemplate.name == clean_name,
+        UserDataTemplate.tenant_id == target_tenant_id
+    ).first()
     if existing:
         existing.description = payload.description
         existing.data = data_str
@@ -65,6 +80,7 @@ def create_or_update_user_data_template(
     else:
         tpl = UserDataTemplate(
             name=clean_name,
+            tenant_id=target_tenant_id,
             description=payload.description,
             data=data_str
         )
@@ -83,10 +99,13 @@ def create_or_update_user_data_template(
 def delete_user_data_template(
     template_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_tenant: Tenant = Depends(get_current_tenant)
 ):
     from models import UserDataTemplate
-    tpl = db.query(UserDataTemplate).filter(UserDataTemplate.id == template_id).first()
+    tpl = db.query(UserDataTemplate).filter(
+        UserDataTemplate.id == template_id,
+        UserDataTemplate.tenant_id == current_tenant.id
+    ).first()
     if not tpl:
         raise HTTPException(status_code=404, detail="Template not found")
     db.delete(tpl)

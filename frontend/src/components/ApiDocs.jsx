@@ -25,7 +25,9 @@ export default function ApiDocs() {
     ],
     "model": "gemini-2.5-flash",
     "stream": true,
-    "session_id": "chatbot_user_session_101"
+    "session_id": "chatbot_user_session_101",
+    "app_id": "customer_support_prod",
+    "skill_names": ["weather_fetcher", "math_solver"]
   }'`,
         python: `from openai import OpenAI
 
@@ -38,7 +40,12 @@ client = OpenAI(
 response_stream = client.chat.completions.create(
     model="gemini-2.5-flash",
     messages=[{"role": "user", "content": "Calculate compound interest for 20k @ 12% for 20 yrs"}],
-    stream=True
+    stream=True,
+    extra_body={
+        "session_id": "chatbot_user_session_101",
+        "app_id": "customer_support_prod",
+        "skill_names": ["weather_fetcher", "math_solver"]
+    }
 )
 
 for chunk in response_stream:
@@ -91,7 +98,9 @@ for chunk in response_stream:
   body: JSON.stringify({
     messages: [{ role: "user", content: "Calculate compound interest for 20k @ 12% for 20 yrs" }],
     stream: true,
-    session_id: "user_session_202"
+    session_id: "user_session_202",
+    app_id: "customer_support_prod",
+    skill_names: ["weather_fetcher", "math_solver"]
   })
 });
 
@@ -170,7 +179,9 @@ while (true) {
       {"role": "user", "content": "Check server disk space"}
     ],
     "stream": false,
-    "session_id": "chatbot_user_session_303"
+    "session_id": "user_session_404",
+    "app_id": "customer_support_prod",
+    "skill_names": ["weather_fetcher", "math_solver"]
   }'`,
         python: `import requests
 
@@ -182,7 +193,9 @@ headers = {
 payload = {
     "messages": [{"role": "user", "content": "Check server disk space"}],
     "stream": False,
-    "session_id": "user_session_404"
+    "session_id": "user_session_404",
+    "app_id": "customer_support_prod",
+    "skill_names": ["weather_fetcher", "math_solver"]
 }
 
 response = requests.post(url, headers=headers, json=payload).json()
@@ -197,7 +210,9 @@ print("Executed Tools:", response["executed_tools"])`,
   body: JSON.stringify({
     messages: [{ role: "user", content: "Check server disk space" }],
     stream: false,
-    session_id: "user_session_505"
+    session_id: "user_session_505",
+    app_id: "customer_support_prod",
+    skill_names: ["weather_fetcher", "math_solver"]
   })
 });
 

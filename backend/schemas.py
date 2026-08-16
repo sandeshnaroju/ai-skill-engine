@@ -28,6 +28,7 @@ class TenantCreate(BaseModel):
 class SkillSaveRequest(BaseModel):
     skill_name: str
     content: str
+    tenant_id: Optional[str] = None
 
 class ApiCallDetail(BaseModel):
     method: str
@@ -46,10 +47,12 @@ class SkillGenerateRequest(BaseModel):
     behavior: Optional[str] = ""
 
 class AppCreate(BaseModel):
+    id: Optional[str] = None
     name: str
     description: Optional[str] = ""
     icon: Optional[str] = "box"
     skill_names: List[str] = []
+    tenant_id: Optional[str] = None
 
 class TenantLlmCreate(BaseModel):
     provider: str
@@ -99,6 +102,7 @@ class StorageConfigPayload(BaseModel):
     account_key: Optional[str] = None     # plain-text; will be encrypted before save
     use_presigned_urls: Optional[bool] = True
     presigned_url_expires_seconds: Optional[int] = 3600
+    tenant_id: Optional[str] = None
 
 class SandboxConfigPayload(BaseModel):
     provider: str  # none | azure | fly | e2b | lambda
@@ -113,6 +117,7 @@ class SandboxConfigPayload(BaseModel):
     aws_secret_key: Optional[str] = None
     aws_region: Optional[str] = None
     aws_function_name: Optional[str] = None
+    tenant_id: Optional[str] = None
 
 
 class EmailConfigSave(BaseModel):
@@ -135,10 +140,12 @@ class McpServerCreate(BaseModel):
     command: Optional[str] = None
     url: Optional[str] = None
     env: Optional[str] = None
+    tenant_id: Optional[str] = None
 
 class UserDataTemplateCreate(BaseModel):
     name: str
     description: Optional[str] = None
     data: dict
+    tenant_id: Optional[str] = None
 
 

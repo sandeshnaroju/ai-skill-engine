@@ -6,8 +6,8 @@ import secrets
 import uuid as _uuid
 
 from database import get_db
-from models import User
-from auth import get_current_user
+from models import Tenant
+from auth import get_current_tenant
 
 router = APIRouter()
 
@@ -18,15 +18,12 @@ OUTPUT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..",
 @router.post("/upload")
 def upload_file(
     file: UploadFile = File(...),
-    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
     db: Session = Depends(get_db)
 ):
     from storage import get_storage_backend
-    from models import Tenant
 
-    # Resolve active tenant slug
-    tenant = db.query(Tenant).filter(Tenant.user_id == current_user.id, Tenant.is_active == True).first()
-    tenant_name = tenant.name if tenant else "default"
+    tenant_name = current_tenant.name if current_tenant else "default"
 
     # Sanitize filename
     safe_filename = "".join(c for c in file.filename if c.isalnum() or c in (".", "_", "-")).strip()
@@ -37,7 +34,7 @@ def upload_file(
     data = file.file.read()
 
     try:
-        backend = get_storage_backend(db)
+        backend = get_storage_backend(db, tenant_id=current_tenant.id)
         # Only write local cache file if using LocalStorage
         if backend.__class__.__name__ == "LocalStorage":
             tenant_upload_dir = os.path.join(UPLOAD_DIR, tenant_name)

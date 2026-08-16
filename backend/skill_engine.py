@@ -37,9 +37,9 @@ def _chunk(session_id: str, model_name: str, **delta_fields) -> str:
     return f"data: {json.dumps({'id': f'chatcmpl-{session_id}', 'object': 'chat.completion.chunk', 'created': 1700000000, 'model': model_name, 'choices': [{'index': 0, 'delta': delta_fields, 'finish_reason': None}]})}\n\n"
 
 
-def _build_messages(db, persist, session_obj, user_message, allowed_skills, user_data, client_messages):
+def _build_messages(db, persist, session_obj, user_message, allowed_skills, user_data, client_messages, tenant_id=None):
     """Build the messages list for the LLM call."""
-    sys_content = skill_registry.get_system_instructions(allowed_skills=allowed_skills)
+    sys_content = skill_registry.get_system_instructions(allowed_skills=allowed_skills, tenant_id=tenant_id)
     if user_data:
         sys_content = resolve_user_data_placeholders(sys_content, user_data)
     msgs = [{"role": "system", "content": sys_content}]
@@ -167,14 +167,14 @@ class SkillEngine:
                 save_message(db, session_obj, "user", content=user_message_db)
 
             allowed_skills = resolve_allowed_skills(db, tenant, app_id, skill_names)
-            messages = _build_messages(db, persist, session_obj, user_message, allowed_skills, user_data, client_messages)
+            messages = _build_messages(db, persist, session_obj, user_message, allowed_skills, user_data, client_messages, tenant_id=tenant.id)
             model_name = _resolve_model(db, tenant, model_name)
             chat_req.model_name = model_name
             db.commit()
 
             in_r, out_r, au_in_r, au_out_r = get_model_rates(db, tenant.id, model_name)
             llm = get_llm_client(db=db, tenant_id=tenant.id, model_name=model_name)
-            available_tools = skill_registry.get_openai_tools(allowed_skills=allowed_skills)
+            available_tools = skill_registry.get_openai_tools(allowed_skills=allowed_skills, tenant_id=tenant.id)
             executed_logs = []
 
             for turn in range(max_turns):
@@ -191,7 +191,7 @@ class SkillEngine:
                         db.query(ChatMessage).filter(ChatMessage.session_id == session_obj.id).delete()
                         db.commit()
                         save_message(db, session_obj, "user", content=user_message)
-                    sys_content = skill_registry.get_system_instructions()
+                    sys_content = skill_registry.get_system_instructions(tenant_id=tenant.id)
                     if user_data:
                         sys_content = resolve_user_data_placeholders(sys_content, user_data)
                     messages = [{"role": "system", "content": sys_content}, {"role": "user", "content": user_message}]
@@ -216,7 +216,7 @@ class SkillEngine:
                         save_message(db, session_obj, "assistant", content=response_msg.content, tool_calls=tool_calls_dict)
                     messages.append({"role": "assistant", "content": response_msg.content if response_msg.content else None, "tool_calls": tool_calls_dict})
 
-                    mcp_servers = prefetch_mcp_servers(tool_calls_dict, db)
+                    mcp_servers = prefetch_mcp_servers(tool_calls_dict, db, tenant_id=tenant.id)
 
                     def run_one(tc):
                         fn = tc["function"]["name"]
@@ -224,7 +224,7 @@ class SkillEngine:
                             args = json.loads(tc["function"]["arguments"])
                         except Exception:
                             args = {}
-                        skill_name, tool_def = skill_registry.find_tool(fn)
+                        skill_name, tool_def = skill_registry.find_tool(fn, tenant_id=tenant.id)
                         command, exec_res, tool_result = execute_tool(fn, args, tool_def, user_data, tenant, session_id, db, mcp_servers)
                         return fn, args, tc["id"], skill_name, command, exec_res, tool_result
 
@@ -322,14 +322,14 @@ class SkillEngine:
 
             yield _chunk(session_id, model_name, reasoning="Analyzing query & active skills...")
 
-            messages = _build_messages(db, persist, session_obj, user_message, allowed_skills, user_data, client_messages)
+            messages = _build_messages(db, persist, session_obj, user_message, allowed_skills, user_data, client_messages, tenant_id=tenant.id)
             model_name = _resolve_model(db, tenant, model_name)
             chat_req.model_name = model_name
             db.commit()
 
             in_r, out_r, au_in_r, au_out_r = get_model_rates(db, tenant.id, model_name)
             llm = get_llm_client(db=db, tenant_id=tenant.id, model_name=model_name)
-            available_tools = skill_registry.get_openai_tools(allowed_skills=allowed_skills)
+            available_tools = skill_registry.get_openai_tools(allowed_skills=allowed_skills, tenant_id=tenant.id)
 
             for turn in range(max_turns):
                 kwargs = {"model": model_name, "messages": messages, "stream": True}
@@ -349,7 +349,7 @@ class SkillEngine:
                         db.query(ChatMessage).filter(ChatMessage.session_id == session_obj.id).delete()
                         db.commit()
                         save_message(db, session_obj, "user", content=user_message)
-                    sys_content = skill_registry.get_system_instructions()
+                    sys_content = skill_registry.get_system_instructions(tenant_id=tenant.id)
                     if user_data:
                         sys_content = resolve_user_data_placeholders(sys_content, user_data)
                     messages = [{"role": "system", "content": sys_content}, {"role": "user", "content": user_message}]
@@ -409,7 +409,7 @@ class SkillEngine:
                         save_message(db, session_obj, "assistant", content=full_text or None, tool_calls=tool_calls_list)
                     messages.append({"role": "assistant", "content": full_text or None, "tool_calls": tool_calls_list})
 
-                    mcp_servers = prefetch_mcp_servers(tool_calls_list, db)
+                    mcp_servers = prefetch_mcp_servers(tool_calls_list, db, tenant_id=tenant.id)
 
                     # Emit tool-start events
                     for tc in tool_calls_list:
@@ -418,7 +418,7 @@ class SkillEngine:
                             args = json.loads(tc["function"]["arguments"])
                         except Exception:
                             args = {}
-                        skill_name, _ = skill_registry.find_tool(fn_name)
+                        skill_name, _ = skill_registry.find_tool(fn_name, tenant_id=tenant.id)
                         yield _chunk(session_id, model_name,
                                      reasoning=f"Invoking tool {fn_name} (Skill: {skill_name})...",
                                      tool_call={"name": fn_name, "arguments": args})
@@ -430,7 +430,7 @@ class SkillEngine:
                             args = json.loads(tc["function"]["arguments"])
                         except Exception:
                             args = {}
-                        skill_name, tool_def = skill_registry.find_tool(fn)
+                        skill_name, tool_def = skill_registry.find_tool(fn, tenant_id=tenant.id)
                         command, exec_res, tool_result = execute_tool(fn, args, tool_def, user_data, tenant, session_id, db, mcp_servers)
                         return tc, skill_name, fn, args, command, exec_res, tool_result
 

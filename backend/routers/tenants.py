@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from typing import Optional
 from sqlalchemy.orm import Session
 from database import get_db
-from schemas import *
+from schemas import TenantCreate, TenantLlmCreate
 from models import Tenant, User
 from auth import get_current_user, get_current_tenant, generate_api_key
 from utils import get_paginated_response
@@ -74,6 +74,7 @@ def create_tenant(
 @router.delete("s/{tenant_id}")
 def delete_tenant(
     tenant_id: str,
+    confirm_name: str,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -83,6 +84,15 @@ def delete_tenant(
     tenant = query.first()
     if not tenant:
         raise HTTPException(status_code=404, detail="Tenant not found")
+
+    # Prevent deleting user's primary/default workspace
+    user_tenants = db.query(Tenant).filter(Tenant.user_id == tenant.user_id).order_by(Tenant.created_at.asc()).all()
+    if user_tenants and user_tenants[0].id == tenant.id:
+        raise HTTPException(status_code=400, detail="Cannot delete your primary default workspace.")
+
+    if confirm_name.strip() != tenant.name.strip():
+        raise HTTPException(status_code=400, detail=f"Confirmation name '{confirm_name}' does not match tenant name '{tenant.name}'.")
+
     db.delete(tenant)
     db.commit()
     return {"status": "deleted", "tenant_id": tenant_id}

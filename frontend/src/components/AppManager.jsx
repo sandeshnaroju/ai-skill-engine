@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Box, Plus, RefreshCw, Trash2, Check, Layers, Cpu, ShieldCheck, Zap, X, Edit, FolderPlus, ChevronLeft, ChevronRight, Copy } from 'lucide-react';
+import AsyncSearchableDropdown from './AsyncSearchableDropdown';
 
 export default function AppManager() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -32,10 +33,13 @@ export default function AppManager() {
   // Modal State
   const [showModal, setShowModal] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
+  const [editingAppId, setEditingAppId] = useState(null);
   const [appName, setAppName] = useState('');
   const [appDescription, setAppDescription] = useState('');
   const [selectedSkills, setSelectedSkills] = useState([]);
   const [saving, setSaving] = useState(false);
+  const [tenants, setTenants] = useState([]);
+  const [selectedTenantId, setSelectedTenantId] = useState('');
 
   const fetchApps = async () => {
     setLoading(true);
@@ -44,13 +48,13 @@ export default function AppManager() {
         page: page.toString(),
         page_size: pageSize.toString()
       });
-      const [appsRes, skillsRes] = await Promise.all([
-        fetch(`/api/v1/apps?${queryParams.toString()}`),
-        fetch('/api/v1/skills'),
-      ]);
+      const headers = {};
+      if (selectedTenantId) {
+        headers['X-Tenant-ID'] = selectedTenantId;
+      }
+      const appsRes = await fetch(`/api/v1/apps?${queryParams.toString()}`, { headers });
       const appsData = await appsRes.json();
-      const skillsData = await skillsRes.json();
-      
+
       if (appsData && appsData.items !== undefined) {
         setApps(appsData.items || []);
         setTotalPages(appsData.pages || 1);
@@ -58,25 +62,66 @@ export default function AppManager() {
       } else {
         setApps(appsData || []);
         setTotalPages(1);
-        setTotalItems(appsData ? appsData.length : 0);
+        setTotalItems((appsData || []).length);
       }
-
-      setSkills(skillsData.skills || []);
     } catch (e) {
-      console.error('Failed to fetch apps data:', e);
+      console.error('Failed to fetch apps', e);
     } finally {
       setLoading(false);
     }
   };
 
+  const fetchSkills = async (tenantId) => {
+    try {
+      const headers = {};
+      if (tenantId) {
+        headers['X-Tenant-ID'] = tenantId;
+      }
+      const res = await fetch('/api/v1/skills?page_size=100', { headers });
+      const data = await res.json();
+      setSkills(data.skills || data.items || []);
+    } catch (e) {
+      console.error('Failed to fetch skills:', e);
+    }
+  };
+
+  const fetchTenants = async () => {
+    try {
+      const res = await fetch('/api/v1/tenants');
+      if (res.ok) {
+        const data = await res.json();
+        setTenants(data || []);
+        if (data && data.length > 0 && !selectedTenantId) {
+          setSelectedTenantId(data[0].id);
+        }
+      }
+    } catch (e) {
+      console.error('Failed to fetch tenants', e);
+    }
+  };
+
   useEffect(() => {
     fetchApps();
-  }, [page, pageSize]);
+  }, [page, pageSize, selectedTenantId]);
+
+  useEffect(() => {
+    fetchTenants();
+  }, []);
+
+  useEffect(() => {
+    if (selectedTenantId) {
+      fetchSkills(selectedTenantId);
+    }
+  }, [selectedTenantId]);
 
   const handleOpenCreateModal = () => {
     setAppName('');
     setAppDescription('');
     setSelectedSkills([]);
+    setEditingAppId(null);
+    if (tenants && tenants.length > 0) {
+      setSelectedTenantId(tenants[0].id);
+    }
     setIsEditing(false);
     setShowModal(true);
   };
@@ -85,6 +130,7 @@ export default function AppManager() {
     setAppName(app.name);
     setAppDescription(app.description || '');
     setSelectedSkills(app.skill_names || []);
+    setEditingAppId(app.id);
     setIsEditing(true);
     setShowModal(true);
   };
@@ -105,10 +151,12 @@ export default function AppManager() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          id: isEditing ? editingAppId : undefined,
           name: appName,
           description: appDescription,
           skill_names: selectedSkills,
-          icon: 'box'
+          icon: 'box',
+          tenant_id: selectedTenantId,
         }),
       });
 
@@ -209,6 +257,9 @@ export default function AppManager() {
 
                 <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span className="badge-tag tag-shell" style={{ fontSize: '0.72rem', opacity: 0.85 }}>
+                      Workspace: {app.tenant_name || 'Global'}
+                    </span>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                       <code style={{ fontSize: '0.76rem', color: 'var(--text-sub)', background: 'rgba(0,0,0,0.2)', padding: '2px 6px', borderRadius: '4px', border: '1px solid var(--border-subtle)' }}>
                         {app.id}
@@ -300,6 +351,31 @@ export default function AppManager() {
                   required
                 />
               </div>
+
+              {!isEditing && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <label style={{ fontSize: '0.8rem', color: 'var(--text-sub)', fontWeight: '600' }}>Workspace / Tenant</label>
+                  <AsyncSearchableDropdown
+                    value={selectedTenantId}
+                    onChange={(val) => { setSelectedTenantId(val); setSelectedSkills([]); fetchSkills(val); }}
+                    fetchOptions={async (query) => {
+                      try {
+                        const res = await fetch(`/api/v1/tenants?search=${encodeURIComponent(query)}&page_size=20`);
+                        if (res.ok) {
+                          const data = await res.json();
+                          const items = data.items || data || [];
+                          return items.map(t => ({ value: t.id, label: t.name }));
+                        }
+                      } catch (e) {
+                        console.error('Error fetching tenant options:', e);
+                      }
+                      return [];
+                    }}
+                    placeholder="Search and select tenant..."
+                    initialLabel={tenants.find(t => t.id === selectedTenantId)?.name || ''}
+                  />
+                </div>
+              )}
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 <label style={{ fontSize: '0.8rem', color: 'var(--text-sub)', fontWeight: '600' }}>Description</label>

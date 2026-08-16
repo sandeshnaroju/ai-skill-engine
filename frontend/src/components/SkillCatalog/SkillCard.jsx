@@ -7,9 +7,14 @@ export default function SkillCard({ skill, handleOpenEditModal, handleDeleteSkil
       <div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <div style={{ fontWeight: '700', fontSize: '1rem', color: 'var(--text-main)', wordBreak: 'break-all' }}>{skill.name}</div>
-          <span className={`badge-tag tag-${skill.source}`}>
-            {skill.source === 'file' ? <HardDrive size={11} /> : <Database size={11} />} {skill.source}
-          </span>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
+            <span className={`badge-tag tag-${skill.source}`}>
+              {skill.source === 'file' ? <HardDrive size={11} /> : <Database size={11} />} {skill.source}
+            </span>
+            <span className="badge-tag tag-shell" style={{ fontSize: '0.72rem', opacity: 0.85 }}>
+              Workspace: {skill.tenant_name || 'Global'}
+            </span>
+          </div>
         </div>
 
         <p style={{ color: 'var(--text-sub)', fontSize: '0.86rem', marginTop: '6px', lineHeight: '1.4' }}>

@@ -75,17 +75,21 @@ def init_db():
 
     if inspector.has_table("mcp_servers"):
         columns = [c["name"] for c in inspector.get_columns("mcp_servers")]
-        if "is_active" not in columns:
-            db_creation_status["details"] = "Migrating mcp_servers table..."
-            db = SessionLocal()
-            try:
+        db = SessionLocal()
+        try:
+            if "is_active" not in columns:
+                db_creation_status["details"] = "Migrating mcp_servers table..."
                 db.execute(text("ALTER TABLE mcp_servers ADD COLUMN is_active BOOLEAN DEFAULT 1"))
-                db.commit()
                 print("Migration: Added 'is_active' column to mcp_servers table")
-            except Exception as e:
-                print(f"Migration warning: Could not add 'is_active' to mcp_servers: {e}")
-            finally:
-                db.close()
+            if "cached_tools" not in columns:
+                db_creation_status["details"] = "Migrating mcp_servers cached_tools..."
+                db.execute(text("ALTER TABLE mcp_servers ADD COLUMN cached_tools TEXT"))
+                print("Migration: Added 'cached_tools' column to mcp_servers table")
+            db.commit()
+        except Exception as e:
+            print(f"Migration warning: Could not update mcp_servers table: {e}")
+        finally:
+            db.close()
 
     db_creation_status["progress"] = 40
 
@@ -170,6 +174,21 @@ def init_db():
             finally:
                 db.close()
 
+    # Alter missing tenant_id columns in existing tables
+    for table_name in ["custom_skills", "mcp_servers", "apps", "user_data_templates", "storage_config", "sandbox_config"]:
+        if inspector.has_table(table_name):
+            columns = [c["name"] for c in inspector.get_columns(table_name)]
+            if "tenant_id" not in columns:
+                db = SessionLocal()
+                try:
+                    db.execute(text(f"ALTER TABLE {table_name} ADD COLUMN tenant_id TEXT"))
+                    db.commit()
+                    print(f"Migration: Added 'tenant_id' column to {table_name} table")
+                except Exception as e:
+                    print(f"Migration warning: Could not add 'tenant_id' to {table_name}: {e}")
+                finally:
+                    db.close()
+
     if db_creation_status["fresh_start"]:
         db_creation_status["details"] = "Creating database schemas and relational models..."
 
@@ -177,17 +196,6 @@ def init_db():
     # (runs on existing DBs too — safe because it checks first)
     if inspector.has_table("storage_config"):
         db = SessionLocal()
-        try:
-            from models import StorageConfig
-            existing = db.query(StorageConfig).first()
-            if not existing:
-                db.add(StorageConfig(provider="local", is_active=True))
-                db.commit()
-                print("Migration: Seeded default local StorageConfig entry")
-        except Exception as e:
-            print(f"Migration warning: Could not seed StorageConfig: {e}")
-        finally:
-            db.close()
 
     # Create all tables
     Base.metadata.create_all(bind=engine)
@@ -222,16 +230,47 @@ def init_db():
     finally:
         db.close()
 
-    # Seed default local StorageConfig if none exists (handles fresh installs after create_all)
+    # Seed default local StorageConfig if none exists (handles fresh installs after create_all) and perform migrations
     db = SessionLocal()
     try:
-        from models import StorageConfig
+        from models import StorageConfig, SandboxConfig, User, Tenant, CustomSkill, McpServer, AppModel, UserDataTemplate
         if not db.query(StorageConfig).first():
             db.add(StorageConfig(provider="local", is_active=True))
             db.commit()
             print("Seeded default local StorageConfig entry")
+
+        # Migrate existing users data to first tenant under tenant structure
+        first_user = db.query(User).order_by(User.created_at.asc()).first()
+        if first_user:
+            tenant = db.query(Tenant).filter(Tenant.user_id == first_user.id).first()
+            if not tenant:
+                from auth import generate_api_key
+                tenant = Tenant(
+                    name="default_workspace",
+                    api_key=generate_api_key("sk_usr_"),
+                    is_active=True,
+                    user_id=first_user.id
+                )
+                db.add(tenant)
+                db.commit()
+                db.refresh(tenant)
+
+            # Assign tenant_id to CustomSkills
+            db.query(CustomSkill).filter(CustomSkill.tenant_id == None).update({CustomSkill.tenant_id: tenant.id})
+            # Assign tenant_id to McpServers
+            db.query(McpServer).filter(McpServer.tenant_id == None).update({McpServer.tenant_id: tenant.id})
+            # Assign tenant_id to AppModels (except default system app)
+            db.query(AppModel).filter(AppModel.tenant_id == None, AppModel.name != "System & Developer Suite").update({AppModel.tenant_id: tenant.id})
+            # Assign tenant_id to UserDataTemplates
+            db.query(UserDataTemplate).filter(UserDataTemplate.tenant_id == None).update({UserDataTemplate.tenant_id: tenant.id})
+            # Assign tenant_id to StorageConfigs
+            db.query(StorageConfig).filter(StorageConfig.tenant_id == None).update({StorageConfig.tenant_id: tenant.id})
+            # Assign tenant_id to SandboxConfigs
+            db.query(SandboxConfig).filter(SandboxConfig.tenant_id == None).update({SandboxConfig.tenant_id: tenant.id})
+            db.commit()
+            print(f"Migration: Assigned orphaned models to tenant: {tenant.name}")
     except Exception as e:
-        print(f"Error seeding StorageConfig: {e}")
+        print(f"Error seeding StorageConfig / migrating data: {e}")
     finally:
         db.close()
 

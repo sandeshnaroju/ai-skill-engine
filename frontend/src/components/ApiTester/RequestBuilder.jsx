@@ -136,15 +136,12 @@ export default function RequestBuilder({
                   });
                   return newApps;
                 });
-                return [
-                  { value: "", label: "No App Filter (All Skills)" },
-                  ...(data.items || []).map(a => ({
-                    value: a.id,
-                    label: a.name
-                  }))
-                ];
+                return (data.items || []).map(a => ({
+                  value: a.id,
+                  label: a.name
+                }));
               }}
-              placeholder="No App Filter (All Skills)"
+              placeholder="Select Application..."
             />
           </div>
         </div>

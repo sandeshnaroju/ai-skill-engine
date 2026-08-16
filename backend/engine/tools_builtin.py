@@ -121,7 +121,7 @@ def run_upload_to_storage_tool(db, args: dict, tenant) -> dict:
         return {"stdout": "", "stderr": f"Error: File '{filename}' not found.", "exit_code": 1, "execution_time_ms": int((time.time() - start_time) * 1000), "sandbox_type": "host"}
         
     try:
-        backend = get_storage_backend(db)
+        backend = get_storage_backend(db, tenant_id=tenant.id if tenant else None)
         with open(local_path, "rb") as f:
             data = f.read()
         cloud_url = backend.upload(filename, data, "application/octet-stream", tenant_name=tenant_name)
@@ -156,7 +156,7 @@ def run_download_from_storage_tool(db, args: dict, tenant) -> dict:
     local_path = os.path.join(UPLOAD_DIR, tenant_name, filename)
     
     try:
-        backend = get_storage_backend(db)
+        backend = get_storage_backend(db, tenant_id=tenant.id if tenant else None)
         if not hasattr(backend, "download"):
             return {"stdout": "", "stderr": "Error: Active backend does not support download.", "exit_code": 1, "execution_time_ms": int((time.time() - start_time) * 1000), "sandbox_type": "host"}
             
@@ -237,21 +237,29 @@ def map_local_generated_files_to_tenant(exec_res: dict, tenant_name: str = "defa
             f["sandbox_path"] = f"sandbox/outputs/{tenant_name}/{f['filename']}"
     return exec_res
 
-def run_list_sandbox_files(db, session_id: str):
+def run_list_sandbox_files(db, session_id: str, tenant_id: str = None):
     from models import SandboxConfig
     from encryption_utils import decrypt_key
     from sandbox.remote_runner import remote_runner
+    from sqlalchemy import or_
     import os
     
-    config = db.query(SandboxConfig).filter(SandboxConfig.is_active == True).first()
+    if tenant_id:
+        config = db.query(SandboxConfig).filter(
+            SandboxConfig.is_active == True,
+            or_(SandboxConfig.tenant_id == tenant_id, SandboxConfig.tenant_id == None)
+        ).first()
+    else:
+        config = db.query(SandboxConfig).filter(SandboxConfig.is_active == True, SandboxConfig.tenant_id == None).first()
+
     if config and config.provider == "azure":
         client_id = decrypt_key(config.azure_client_id_encrypted)
         client_secret = decrypt_key(config.azure_client_secret_encrypted)
-        tenant_id = decrypt_key(config.azure_tenant_id_encrypted)
+        t_id = decrypt_key(config.azure_tenant_id_encrypted)
         pool_endpoint = config.azure_session_pool_endpoint
-        if client_id and client_secret and tenant_id and pool_endpoint:
+        if client_id and client_secret and t_id and pool_endpoint:
             try:
-                files = remote_runner.list_files_azure(client_id, client_secret, tenant_id, pool_endpoint, session_id)
+                files = remote_runner.list_files_azure(client_id, client_secret, t_id, pool_endpoint, session_id)
                 stdout = "Files in Azure ACA Sandbox:\n" + "\n".join([f"- {f['filename']} ({f['size']} bytes, modified {f['last_modified']})" for f in files])
                 return {"stdout": stdout, "stderr": "", "exit_code": 0, "sandbox_type": "azure_aca"}
             except Exception as e:
@@ -266,10 +274,11 @@ def run_list_sandbox_files(db, session_id: str):
     return {"stdout": stdout, "stderr": "", "exit_code": 0, "sandbox_type": "process"}
 
 
-def run_download_sandbox_file(db, session_id: str, args: dict):
+def run_download_sandbox_file(db, session_id: str, args: dict, tenant_id: str = None):
     from models import SandboxConfig
     from encryption_utils import decrypt_key
     from sandbox.remote_runner import remote_runner
+    from sqlalchemy import or_
     import os
     import uuid
     
@@ -277,15 +286,22 @@ def run_download_sandbox_file(db, session_id: str, args: dict):
     if not filename:
         return {"stdout": "", "stderr": "Error: filename is required", "exit_code": 1, "sandbox_type": "process"}
         
-    config = db.query(SandboxConfig).filter(SandboxConfig.is_active == True).first()
+    if tenant_id:
+        config = db.query(SandboxConfig).filter(
+            SandboxConfig.is_active == True,
+            or_(SandboxConfig.tenant_id == tenant_id, SandboxConfig.tenant_id == None)
+        ).first()
+    else:
+        config = db.query(SandboxConfig).filter(SandboxConfig.is_active == True, SandboxConfig.tenant_id == None).first()
+
     if config and config.provider == "azure":
         client_id = decrypt_key(config.azure_client_id_encrypted)
         client_secret = decrypt_key(config.azure_client_secret_encrypted)
-        tenant_id = decrypt_key(config.azure_tenant_id_encrypted)
+        t_id = decrypt_key(config.azure_tenant_id_encrypted)
         pool_endpoint = config.azure_session_pool_endpoint
-        if client_id and client_secret and tenant_id and pool_endpoint:
+        if client_id and client_secret and t_id and pool_endpoint:
             try:
-                content = remote_runner.download_file_azure(client_id, client_secret, tenant_id, pool_endpoint, session_id, filename)
+                content = remote_runner.download_file_azure(client_id, client_secret, t_id, pool_endpoint, session_id, filename)
                 from storage import OUTPUT_DIR
                 unique_name = f"{uuid.uuid4().hex}_{filename}"
                 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -309,10 +325,11 @@ def run_download_sandbox_file(db, session_id: str, args: dict):
     return {"stdout": f"File {filename} is already present locally.", "stderr": "", "exit_code": 0, "sandbox_type": "process"}
 
 
-def run_upload_sandbox_file(db, session_id: str, args: dict):
+def run_upload_sandbox_file(db, session_id: str, args: dict, tenant_id: str = None):
     from models import SandboxConfig
     from encryption_utils import decrypt_key
     from sandbox.remote_runner import remote_runner
+    from sqlalchemy import or_
     import os
     
     local_path = args.get("local_path")
@@ -326,15 +343,22 @@ def run_upload_sandbox_file(db, session_id: str, args: dict):
     with open(local_path, "rb") as f:
         content = f.read()
         
-    config = db.query(SandboxConfig).filter(SandboxConfig.is_active == True).first()
+    if tenant_id:
+        config = db.query(SandboxConfig).filter(
+            SandboxConfig.is_active == True,
+            or_(SandboxConfig.tenant_id == tenant_id, SandboxConfig.tenant_id == None)
+        ).first()
+    else:
+        config = db.query(SandboxConfig).filter(SandboxConfig.is_active == True, SandboxConfig.tenant_id == None).first()
+
     if config and config.provider == "azure":
         client_id = decrypt_key(config.azure_client_id_encrypted)
         client_secret = decrypt_key(config.azure_client_secret_encrypted)
-        tenant_id = decrypt_key(config.azure_tenant_id_encrypted)
+        t_id = decrypt_key(config.azure_tenant_id_encrypted)
         pool_endpoint = config.azure_session_pool_endpoint
-        if client_id and client_secret and tenant_id and pool_endpoint:
+        if client_id and client_secret and t_id and pool_endpoint:
             try:
-                remote_runner.upload_file_azure(client_id, client_secret, tenant_id, pool_endpoint, session_id, filename, content)
+                remote_runner.upload_file_azure(client_id, client_secret, t_id, pool_endpoint, session_id, filename, content)
                 return {"stdout": f"Successfully uploaded {filename} to Azure ACA Sandbox workspace.", "stderr": "", "exit_code": 0, "sandbox_type": "azure_aca"}
             except Exception as e:
                 return {"stdout": "", "stderr": f"Failed to upload file to sandbox: {str(e)}", "exit_code": 1, "sandbox_type": "azure_aca"}
