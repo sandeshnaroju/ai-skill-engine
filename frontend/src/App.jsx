@@ -114,7 +114,7 @@ export default function App() {
   const activeTab = location.pathname.replace(/^\//, '').trim() || 'playground';
   const [theme, setTheme] = useState(() => localStorage.getItem('app_theme') || 'dark');
   const [stats, setStats] = useState({ skillsCount: 4, tenantsCount: 1, logsCount: 0 });
-  const [dbStatus, setDbStatus] = useState({ ready: false, details: 'Connecting to database...', progress: 0, fresh_start: false });
+  const [dbStatus, setDbStatus] = useState({ ready: false, details: 'Connecting to database...', progress: 0, fresh_start: false, error: null });
   const [isSidebarOpen, setIsSidebarOpen] = useState(() => {
     if (typeof window !== 'undefined' && window.innerWidth < 768) {
       return false;
@@ -233,8 +233,10 @@ export default function App() {
     ? { id: 'profile', label: 'User Profile', icon: UserIcon }
     : (navItems.find((n) => n.id === activeTab) || navItems[0]);
 
-  // Render database creation loader screen if DB is not ready
+
+  // Render database creation loader screen if DB is not ready (includes encryption key error state)
   if (!dbStatus.ready) {
+    const hasError = !!dbStatus.error;
     return (
       <div style={{
         display: 'flex',
@@ -250,7 +252,7 @@ export default function App() {
         boxSizing: 'border-box'
       }}>
         <div style={{
-          maxWidth: '440px',
+          maxWidth: hasError ? '520px' : '440px',
           width: '100%',
           textAlign: 'center',
           display: 'flex',
@@ -258,71 +260,153 @@ export default function App() {
           alignItems: 'center',
           gap: '24px'
         }}>
-          {/* Animated Spinner with Glow */}
-          <div style={{ position: 'relative', width: '80px', height: '80px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <div className="spin" style={{
-              width: '64px',
-              height: '64px',
-              border: '4px solid rgba(6, 182, 212, 0.1)',
-              borderTop: '4px solid var(--primary-cyan, #06b6d4)',
-              borderRadius: '50%',
-            }} />
+          {/* Icon: error shield or animated spinner */}
+          {hasError ? (
             <div style={{
-              position: 'absolute',
-              background: 'linear-gradient(135deg, var(--primary-violet, #8b5cf6), var(--primary-emerald, #10b981))',
-              padding: '10px',
-              borderRadius: '12px',
-              boxShadow: '0 0 20px rgba(6, 182, 212, 0.4)'
+              background: 'linear-gradient(135deg, #7f1d1d, #dc2626)',
+              padding: '18px',
+              borderRadius: '16px',
+              boxShadow: '0 0 40px rgba(220, 38, 38, 0.35)',
             }}>
-              <Zap size={24} color="#ffffff" />
+              <ShieldCheck size={36} color="#fff" />
             </div>
-          </div>
+          ) : (
+            <div style={{ position: 'relative', width: '80px', height: '80px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <div className="spin" style={{
+                width: '64px',
+                height: '64px',
+                border: '4px solid rgba(6, 182, 212, 0.1)',
+                borderTop: '4px solid var(--primary-cyan, #06b6d4)',
+                borderRadius: '50%',
+              }} />
+              <div style={{
+                position: 'absolute',
+                background: 'linear-gradient(135deg, var(--primary-violet, #8b5cf6), var(--primary-emerald, #10b981))',
+                padding: '10px',
+                borderRadius: '12px',
+                boxShadow: '0 0 20px rgba(6, 182, 212, 0.4)'
+              }}>
+                <Zap size={24} color="#ffffff" />
+              </div>
+            </div>
+          )}
 
+          {/* Title + subtitle */}
           <div>
-            <h2 style={{ fontSize: '1.25rem', fontWeight: '800', marginBottom: '8px', letterSpacing: '-0.025em' }}>
-              {dbStatus.fresh_start ? 'Setting up Enterprise Server' : 'Connecting to Database'}
+            <h2 style={{ fontSize: '1.25rem', fontWeight: '800', marginBottom: '8px', letterSpacing: '-0.025em', color: hasError ? '#fca5a5' : '#f8fafc' }}>
+              {hasError ? 'Encryption Key Not Configured' : (dbStatus.fresh_start ? 'Setting up Enterprise Server' : 'Connecting to Database')}
             </h2>
             <p style={{ fontSize: '0.88rem', color: '#94a3b8', lineHeight: '1.5' }}>
-              Please wait while we initialize the persistent database tables and seed resources.
+              {hasError
+                ? 'The server cannot read stored credentials (LLM API keys, storage secrets, SMTP passwords). Initialization was stopped.'
+                : 'Please wait while we initialize the persistent database tables and seed resources.'}
             </p>
           </div>
 
-          {/* Progress bar container */}
-          <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', fontWeight: '600', color: '#64748b' }}>
-              <span>Database Initialization</span>
-              <span style={{ color: 'var(--primary-cyan, #06b6d4)' }}>{dbStatus.progress}%</span>
-            </div>
-            <div style={{ width: '100%', height: '6px', background: '#1e293b', borderRadius: '999px', overflow: 'hidden' }}>
+          {hasError ? (
+            <>
+              {/* Error detail box */}
               <div style={{
-                width: `${dbStatus.progress}%`,
-                height: '100%',
-                background: 'linear-gradient(90deg, #8b5cf6, #06b6d4)',
-                borderRadius: '999px',
-                transition: 'width 0.3s ease-out'
-              }} />
-            </div>
-          </div>
+                width: '100%',
+                background: 'rgba(220, 38, 38, 0.08)',
+                border: '1px solid rgba(220, 38, 38, 0.3)',
+                borderRadius: '10px',
+                padding: '14px 16px',
+                fontSize: '0.8rem',
+                color: '#fca5a5',
+                textAlign: 'left',
+                lineHeight: '1.6',
+                wordBreak: 'break-word',
+                whiteSpace: 'pre-wrap',
+              }}>
+                {dbStatus.error}
+              </div>
 
-          {/* Detailed step description */}
-          <div style={{
-            background: 'rgba(255, 255, 255, 0.02)',
-            border: '1px solid rgba(255, 255, 255, 0.05)',
-            borderRadius: '10px',
-            padding: '12px 16px',
-            fontSize: '0.8rem',
-            color: '#cbd5e1',
-            width: '100%',
-            fontFamily: 'var(--font-mono, monospace)',
-            textAlign: 'left',
-            boxSizing: 'border-box'
-          }}>
-            <span style={{ color: '#06b6d4' }}>&gt; </span>{dbStatus.details}
-          </div>
+              {/* Fix steps */}
+              <div style={{
+                width: '100%',
+                background: 'rgba(255, 255, 255, 0.02)',
+                border: '1px solid rgba(255, 255, 255, 0.06)',
+                borderRadius: '12px',
+                padding: '18px',
+                textAlign: 'left',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '14px',
+              }}>
+                <p style={{ margin: 0, fontSize: '0.8rem', fontWeight: '700', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em' }}>How to fix</p>
+                {[
+                  { step: '1', text: 'Generate a key:', code: 'python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"' },
+                  { step: '2', text: 'Add it to your .env file:', code: 'ENCRYPTION_SECRET_KEY=<paste-key-here>' },
+                  { step: '3', text: 'Restart the container:', code: './run_docker.sh' },
+                ].map(({ step, text, code }) => (
+                  <div key={step} style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                    <div style={{
+                      minWidth: '24px', height: '24px',
+                      background: 'linear-gradient(135deg, #8b5cf6, #06b6d4)',
+                      borderRadius: '50%',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: '0.7rem', fontWeight: '800', color: '#fff',
+                      flexShrink: 0,
+                    }}>{step}</div>
+                    <div>
+                      <p style={{ margin: 0, fontSize: '0.82rem', color: '#cbd5e1', marginBottom: '4px' }}>{text}</p>
+                      <code style={{
+                        display: 'block',
+                        background: 'rgba(0,0,0,0.4)',
+                        border: '1px solid rgba(255,255,255,0.07)',
+                        borderRadius: '6px',
+                        padding: '6px 10px',
+                        fontSize: '0.75rem',
+                        color: '#7dd3fc',
+                        wordBreak: 'break-all',
+                      }}>{code}</code>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : (
+            <>
+              {/* Progress bar */}
+              <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', fontWeight: '600', color: '#64748b' }}>
+                  <span>Database Initialization</span>
+                  <span style={{ color: 'var(--primary-cyan, #06b6d4)' }}>{dbStatus.progress}%</span>
+                </div>
+                <div style={{ width: '100%', height: '6px', background: '#1e293b', borderRadius: '999px', overflow: 'hidden' }}>
+                  <div style={{
+                    width: `${dbStatus.progress}%`,
+                    height: '100%',
+                    background: 'linear-gradient(90deg, #8b5cf6, #06b6d4)',
+                    borderRadius: '999px',
+                    transition: 'width 0.3s ease-out'
+                  }} />
+                </div>
+              </div>
+
+              {/* Status detail */}
+              <div style={{
+                background: 'rgba(255, 255, 255, 0.02)',
+                border: '1px solid rgba(255, 255, 255, 0.05)',
+                borderRadius: '10px',
+                padding: '12px 16px',
+                fontSize: '0.8rem',
+                color: '#cbd5e1',
+                width: '100%',
+                fontFamily: 'var(--font-mono, monospace)',
+                textAlign: 'left',
+                boxSizing: 'border-box'
+              }}>
+                <span style={{ color: '#06b6d4' }}>&gt; </span>{dbStatus.details}
+              </div>
+            </>
+          )}
         </div>
       </div>
     );
   }
+
 
   if (isAuthenticated === null) {
     return (

@@ -7,6 +7,8 @@ from fastapi.responses import FileResponse
 from database import init_db
 
 # Initialize/Verify database tables on startup
+# init_db() checks ENCRYPTION_SECRET_KEY first and sets db_creation_status["error"]
+# if it is missing or invalid, so the UI can surface the problem.
 init_db()
 
 from routers.auth import router as auth_router

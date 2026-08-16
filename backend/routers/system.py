@@ -16,6 +16,22 @@ def get_db_status():
     return db_creation_status
 
 
+@router.get("/health")
+def get_health():
+    """
+    Public health check endpoint — no auth required.
+    Returns DB readiness and encryption key status so the frontend
+    can display configuration errors before the user interacts.
+    """
+    from database import db_creation_status
+    error = db_creation_status.get("error")
+    return {
+        "db_ready": db_creation_status.get("ready", False),
+        "encryption_ok": error is None,
+        "encryption_error": error,
+    }
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Storage Configuration API
 # ─────────────────────────────────────────────────────────────────────────────
