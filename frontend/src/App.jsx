@@ -80,7 +80,7 @@ export default function App() {
     let intervalId;
     const checkDbStatus = async () => {
       try {
-        const res = await fetch('/api/v1/system/db-status');
+        const res = await fetch('/api/v1/db-status');
         const data = await res.json();
         setDbStatus(data);
         if (data.ready) {
