@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Cpu, Plus, RefreshCw, Trash2, Check, Terminal, Globe, Layers, ShieldCheck, Zap, ChevronLeft, ChevronRight } from 'lucide-react';
+import AsyncSearchableDropdown from './AsyncSearchableDropdown';
 
 export default function McpServerManager() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -33,6 +34,8 @@ export default function McpServerManager() {
   const [url, setUrl] = useState('');
   const [env, setEnv] = useState('');
   const [adding, setAdding] = useState(false);
+  const [tenants, setTenants] = useState([]);
+  const [selectedTenantId, setSelectedTenantId] = useState('');
 
   const fetchServers = async () => {
     setLoading(true);
@@ -41,7 +44,11 @@ export default function McpServerManager() {
         page: page.toString(),
         page_size: pageSize.toString()
       });
-      const res = await fetch(`/api/v1/mcp_servers?${queryParams.toString()}`);
+      const headers = {};
+      if (selectedTenantId) {
+        headers['X-Tenant-ID'] = selectedTenantId;
+      }
+      const res = await fetch(`/api/v1/mcp_servers?${queryParams.toString()}`, { headers });
       const data = await res.json();
       
       if (data && data.items !== undefined) {
@@ -60,24 +67,48 @@ export default function McpServerManager() {
     }
   };
 
+  const fetchTenants = async () => {
+    try {
+      const res = await fetch('/api/v1/tenants');
+      if (res.ok) {
+        const data = await res.json();
+        setTenants(data || []);
+        if (data && data.length > 0 && !selectedTenantId) {
+          setSelectedTenantId(data[0].id);
+        }
+      }
+    } catch (e) {
+      console.error('Failed to fetch tenants', e);
+    }
+  };
+
   useEffect(() => {
     fetchServers();
-  }, [page, pageSize]);
+  }, [page, pageSize, selectedTenantId]);
+
+  useEffect(() => {
+    fetchTenants();
+  }, []);
 
   const handleAddServer = async (e) => {
     e.preventDefault();
     if (!name.trim()) return;
     setAdding(true);
     try {
+      const headers = { 'Content-Type': 'application/json' };
+      if (selectedTenantId) {
+        headers['X-Tenant-ID'] = selectedTenantId;
+      }
       const res = await fetch('/api/v1/mcp_servers', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           name: name.trim(),
           transport,
           command: command.trim() || null,
           url: url.trim() || null,
           env: env.trim() || null,
+          tenant_id: selectedTenantId,
         }),
       });
 
@@ -102,7 +133,11 @@ export default function McpServerManager() {
   const handleDeleteServer = async (id, srvName) => {
     if (!window.confirm(`Are you sure you want to delete MCP server "${srvName}"?`)) return;
     try {
-      const res = await fetch(`/api/v1/mcp_servers/${id}`, { method: 'DELETE' });
+      const headers = {};
+      if (selectedTenantId) {
+        headers['X-Tenant-ID'] = selectedTenantId;
+      }
+      const res = await fetch(`/api/v1/mcp_servers/${id}`, { method: 'DELETE', headers });
       if (res.ok) {
         fetchServers();
       }
@@ -116,13 +151,36 @@ export default function McpServerManager() {
       {/* Left Column: Configured Servers list */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
         <div className="glass-box" style={{ padding: '24px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px', flexWrap: 'wrap', gap: '10px' }}>
             <h3 style={{ fontSize: '1.1rem', fontWeight: '700', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Cpu size={20} color="var(--primary-cyan)" /> Configured MCP Servers ({totalItems})
             </h3>
-            <button className="btn-outline" onClick={fetchServers} disabled={loading} style={{ padding: '6px 12px' }}>
-              <RefreshCw size={14} className={loading ? 'spin' : ''} /> Reload
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div style={{ width: '200px' }}>
+                <AsyncSearchableDropdown
+                  value={selectedTenantId}
+                  onChange={(val) => setSelectedTenantId(val)}
+                  fetchOptions={async (query) => {
+                    try {
+                      const res = await fetch(`/api/v1/tenants?search=${encodeURIComponent(query)}&page_size=20`);
+                      if (res.ok) {
+                        const data = await res.json();
+                        const items = data.items || data || [];
+                        return items.map(t => ({ value: t.id, label: t.name }));
+                      }
+                    } catch (e) {
+                      console.error('Error fetching tenant options:', e);
+                    }
+                    return [];
+                  }}
+                  placeholder="Filter by tenant..."
+                  initialLabel={tenants.find(t => t.id === selectedTenantId)?.name || ''}
+                />
+              </div>
+              <button className="btn-outline" onClick={fetchServers} disabled={loading} style={{ padding: '6px 12px' }}>
+                <RefreshCw size={14} className={loading ? 'spin' : ''} /> Reload
+              </button>
+            </div>
           </div>
 
           {servers.length === 0 ? (
@@ -134,10 +192,13 @@ export default function McpServerManager() {
               {servers.map((s) => (
                 <div key={s.id} style={{ padding: '16px', background: 'var(--bg-card)', border: '1px solid var(--border-subtle)', borderRadius: '12px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                       <strong style={{ fontSize: '0.95rem', color: 'var(--text-main)' }}>{s.name}</strong>
                       <span className={`badge-tag tag-${s.transport === 'stdio' ? 'docker' : 'shell'}`} style={{ fontSize: '0.72rem' }}>
                         {s.transport}
+                      </span>
+                      <span className="badge-tag tag-shell" style={{ fontSize: '0.72rem', opacity: 0.85 }}>
+                        Workspace: {s.tenant_name || 'Global'}
                       </span>
                     </div>
 
@@ -162,9 +223,23 @@ export default function McpServerManager() {
                   </div>
 
                   <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '10px', marginTop: '2px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: '0.76rem', color: 'var(--accent-emerald)', display: 'inline-flex', alignItems: 'center', gap: '4px', fontWeight: '500' }}>
-                      <Check size={14} /> Discovered: {s.discovered_tools_count || 0} tool(s)
-                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ fontSize: '0.76rem', color: 'var(--accent-emerald)', display: 'inline-flex', alignItems: 'center', gap: '4px', fontWeight: '500' }}>
+                        <Check size={14} /> Discovered: {s.discovered_tools_count || 0} tool(s)
+                      </span>
+                      <button
+                        className="btn-outline"
+                        style={{ padding: '2px 8px', fontSize: '0.7rem' }}
+                        onClick={async () => {
+                          const headers = {};
+                          if (selectedTenantId) headers['X-Tenant-ID'] = selectedTenantId;
+                          await fetch(`/api/v1/mcp_servers/${s.id}/sync`, { method: 'POST', headers });
+                          fetchServers();
+                        }}
+                      >
+                        <RefreshCw size={10} /> Sync Tools
+                      </button>
+                    </div>
 
                     {s.tools && s.tools.length > 0 && (
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', justifyContent: 'flex-end', maxWidth: '240px' }}>
@@ -219,6 +294,29 @@ export default function McpServerManager() {
               value={name}
               onChange={(e) => setName(e.target.value)}
               required
+            />
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <label style={{ fontSize: '0.78rem', color: 'var(--text-sub)', fontWeight: '600' }}>Workspace / Tenant</label>
+            <AsyncSearchableDropdown
+              value={selectedTenantId}
+              onChange={(val) => setSelectedTenantId(val)}
+              fetchOptions={async (query) => {
+                try {
+                  const res = await fetch(`/api/v1/tenants?search=${encodeURIComponent(query)}&page_size=20`);
+                  if (res.ok) {
+                    const data = await res.json();
+                    const items = data.items || data || [];
+                    return items.map(t => ({ value: t.id, label: t.name }));
+                  }
+                } catch (e) {
+                  console.error('Error fetching tenant options:', e);
+                }
+                return [];
+              }}
+              placeholder="Search and select tenant..."
+              initialLabel={tenants.find(t => t.id === selectedTenantId)?.name || ''}
             />
           </div>
 

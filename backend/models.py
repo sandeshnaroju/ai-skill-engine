@@ -36,6 +36,12 @@ class Tenant(Base):
     llms = relationship("TenantLLM", back_populates="tenant", cascade="all, delete-orphan")
     chat_requests = relationship("ChatRequest", back_populates="tenant", cascade="all, delete-orphan")
     email_config = relationship("EmailConfig", back_populates="tenant", uselist=False, cascade="all, delete-orphan")
+    custom_skills = relationship("CustomSkill", back_populates="tenant", cascade="all, delete-orphan")
+    mcp_servers = relationship("McpServer", back_populates="tenant", cascade="all, delete-orphan")
+    apps = relationship("AppModel", back_populates="tenant", cascade="all, delete-orphan")
+    user_data_templates = relationship("UserDataTemplate", back_populates="tenant", cascade="all, delete-orphan")
+    storage_configs = relationship("StorageConfig", back_populates="tenant", cascade="all, delete-orphan")
+    sandbox_configs = relationship("SandboxConfig", back_populates="tenant", cascade="all, delete-orphan")
 
 class EmailConfig(Base):
     __tablename__ = "email_configs"
@@ -131,6 +137,7 @@ class CustomSkill(Base):
     __tablename__ = "custom_skills"
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    tenant_id = Column(String, ForeignKey("tenants.id"), nullable=True)
     name = Column(String, unique=True, nullable=False, index=True)
     description = Column(Text, nullable=True)
     content = Column(Text, nullable=False)  # SKILL.md content
@@ -138,23 +145,30 @@ class CustomSkill(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+    tenant = relationship("Tenant", back_populates="custom_skills")
+
 class McpServer(Base):
     __tablename__ = "mcp_servers"
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    tenant_id = Column(String, ForeignKey("tenants.id"), nullable=True)
     name = Column(String, unique=True, nullable=False, index=True)
     transport = Column(String, default="stdio")  # stdio or sse/http
     command = Column(Text, nullable=True)        # e.g. npx -y @modelcontextprotocol/server-filesystem /tmp
     url = Column(String, nullable=True)          # e.g. http://localhost:8001/sse
     env = Column(Text, nullable=True)            # JSON string for environment variables / API tokens
+    cached_tools = Column(Text, nullable=True)   # JSON string for discovered tools
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    tenant = relationship("Tenant", back_populates="mcp_servers")
 
 class AppModel(Base):
     __tablename__ = "apps"
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    tenant_id = Column(String, ForeignKey("tenants.id"), nullable=True)
     name = Column(String, unique=True, nullable=False, index=True)
     description = Column(Text, nullable=True)
     icon = Column(String, default="box")
@@ -162,6 +176,7 @@ class AppModel(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+    tenant = relationship("Tenant", back_populates="apps")
     skills = relationship("AppSkillMapping", back_populates="app", cascade="all, delete-orphan")
 
 class AppSkillMapping(Base):
@@ -182,6 +197,10 @@ class TenantLLM(Base):
     model_name = Column(String, nullable=False)  # e.g. gpt-4o, gemini-2.5-flash
     api_key_encrypted = Column(Text, nullable=False)
     base_url = Column(String, nullable=True)
+    input_rate = Column(Float, default=1.0)
+    output_rate = Column(Float, default=2.0)
+    audio_input_rate = Column(Float, default=10.0)
+    audio_output_rate = Column(Float, default=20.0)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -189,10 +208,11 @@ class TenantLLM(Base):
     tenant = relationship("Tenant", back_populates="llms")
 
 class StorageConfig(Base):
-    """Persists the active file storage backend configuration (global, single-row)."""
+    """Persists the active file storage backend configuration."""
     __tablename__ = "storage_config"
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    tenant_id = Column(String, ForeignKey("tenants.id"), nullable=True)
     provider = Column(String, nullable=False, default="local")  # local | s3 | azure
 
     # AWS S3 fields
@@ -215,12 +235,15 @@ class StorageConfig(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+    tenant = relationship("Tenant", back_populates="storage_configs")
+
 
 class SandboxConfig(Base):
-    """Persists the active remote sandbox execution configuration (global, single-row)."""
+    """Persists the active remote sandbox execution configuration."""
     __tablename__ = "sandbox_config"
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    tenant_id = Column(String, ForeignKey("tenants.id"), nullable=True)
     provider = Column(String, nullable=False, default="none")  # none | azure | fly | e2b | lambda
 
     # E2B fields
@@ -246,13 +269,18 @@ class SandboxConfig(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+    tenant = relationship("Tenant", back_populates="sandbox_configs")
+
 
 class UserDataTemplate(Base):
     __tablename__ = "user_data_templates"
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    tenant_id = Column(String, ForeignKey("tenants.id"), nullable=True)
     name = Column(String, unique=True, nullable=False, index=True)
     description = Column(Text, nullable=True)
     data = Column(Text, nullable=False)  # JSON-encoded dictionary of key-value pairs
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    tenant = relationship("Tenant", back_populates="user_data_templates")

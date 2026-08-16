@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate, Routes, Route, Navigate } from 'react-router-dom';
-import { Key, Layers, MessageSquare, Database, ShieldCheck, Cpu, BookOpen, Sun, Moon, Activity, Box, PanelLeftClose, PanelLeftOpen, Zap, Terminal, FileText, DollarSign, LogOut, User as UserIcon, HardDrive, Mail } from 'lucide-react';
+import { Key, Layers, MessageSquare, Database, ShieldCheck, Cpu, BookOpen, Sun, Moon, Activity, Box, PanelLeftClose, PanelLeftOpen, Zap, Terminal, FileText, DollarSign, LogOut, User as UserIcon, HardDrive, Mail, ChevronDown, ChevronUp } from 'lucide-react';
 import TenantManager from './components/TenantManager';
 import SkillCatalog from './components/SkillCatalog';
 import ChatPlayground from './components/ChatPlayground';
@@ -20,29 +20,101 @@ import EmailSettings from './components/EmailSettings';
 
 export default function App() {
   const navItems = [
-    { id: 'playground', label: 'Chat Playground', icon: MessageSquare },
-    { id: 'apps', label: 'Apps & Groups', icon: Box },
-    { id: 'skills', label: 'Skills Catalog', icon: Layers },
-    { id: 'mcp', label: 'MCP Servers', icon: Cpu },
-    { id: 'tenants', label: 'Tenants & Keys', icon: Key },
-    { id: 'user-data', label: 'User Data Profiles', icon: Layers },
-    { id: 'email-config', label: 'Email Configuration', icon: Mail },
-    { id: 'storage', label: 'Storage', icon: HardDrive },
-    { id: 'sandbox', label: 'Sandbox Config', icon: ShieldCheck },
-    { id: 'usage', label: 'LLM Cost & Usage', icon: DollarSign },
-    { id: 'logs', label: 'Sandbox Audit Logs', icon: Database },
-    { id: 'apilogs', label: 'API Execution Logs', icon: Activity },
-    { id: 'requestlogs', label: 'Request Logs', icon: FileText },
-    { id: 'tester', label: 'API Tester', icon: Terminal },
-    { id: 'docs', label: 'API Documentation', icon: BookOpen },
+    { id: 'playground', label: 'Chat Playground', icon: MessageSquare, order: 10 },
+    { id: 'tester', label: 'API Tester', icon: Terminal, order: 20 },
+    { id: 'apps', label: 'Apps & Groups', icon: Box, order: 30 },
+    { id: 'skills', label: 'Skills Catalog', icon: Layers, order: 40 },
+    { id: 'mcp', label: 'MCP Servers', icon: Cpu, order: 50 },
+    { id: 'user-data', label: 'User Data Profiles', icon: Layers, order: 60 },
+    { id: 'tenants', label: 'Tenants & Keys', icon: Key, order: 70 },
+    { id: 'email-config', label: 'Email Configuration', icon: Mail, order: 80 },
+    { id: 'storage', label: 'Storage', icon: HardDrive, order: 90 },
+    { id: 'sandbox', label: 'Sandbox Config', icon: ShieldCheck, order: 100 },
+    { id: 'usage', label: 'LLM Cost & Usage', icon: DollarSign, order: 110 },
+    { id: 'logs', label: 'Sandbox Audit Logs', icon: Database, order: 120 },
+    { id: 'apilogs', label: 'API Execution Logs', icon: Activity, order: 130 },
+    { id: 'requestlogs', label: 'Request Logs', icon: FileText, order: 140 },
+    { id: 'docs', label: 'API Documentation', icon: BookOpen, order: 150 },
   ];
+
+  const topNavItems = [
+    { id: 'playground', label: 'Chat Playground', icon: MessageSquare, order: 10 },
+  ];
+
+  const bottomNavItems = [
+    { id: 'tester', label: 'API Tester', icon: Terminal, order: 10 },
+    { id: 'docs', label: 'API Documentation', icon: BookOpen, order: 20 },
+  ];
+
+  const navGroups = [
+    {
+      id: 'registry_grp',
+      label: 'Registry & Assets',
+      order: 10,
+      items: [
+        { id: 'apps', label: 'Apps & Groups', icon: Box, order: 10 },
+        { id: 'skills', label: 'Skills Catalog', icon: Layers, order: 20 },
+        { id: 'mcp', label: 'MCP Servers', icon: Cpu, order: 30 },
+        { id: 'user-data', label: 'User Data Profiles', icon: Layers, order: 40 },
+      ]
+    },
+    {
+      id: 'settings_grp',
+      label: 'Settings & Gateway',
+      order: 20,
+      items: [
+        { id: 'tenants', label: 'Tenants & Keys', icon: Key, order: 10 },
+        { id: 'email-config', label: 'Email Configuration', icon: Mail, order: 20 },
+        { id: 'storage', label: 'Storage Settings', icon: HardDrive, order: 30 },
+        { id: 'sandbox', label: 'Sandbox Config', icon: ShieldCheck, order: 40 },
+      ]
+    },
+    {
+      id: 'analytics_grp',
+      label: 'Audit & Analytics',
+      order: 30,
+      items: [
+        { id: 'usage', label: 'LLM Cost & Usage', icon: DollarSign, order: 10 },
+        { id: 'logs', label: 'Sandbox Audit Logs', icon: Database, order: 20 },
+        { id: 'apilogs', label: 'API Execution Logs', icon: Activity, order: 30 },
+        { id: 'requestlogs', label: 'Request Logs', icon: FileText, order: 40 },
+      ]
+    }
+  ];
+
+  const [expandedGroups, setExpandedGroups] = useState(() => {
+    try {
+      const saved = localStorage.getItem('sidebar_expanded_groups');
+      return saved ? JSON.parse(saved) : {
+        playground_grp: true,
+        registry_grp: true,
+        settings_grp: true,
+        analytics_grp: true,
+      };
+    } catch {
+      return {
+        playground_grp: true,
+        registry_grp: true,
+        settings_grp: true,
+        analytics_grp: true,
+      };
+    }
+  });
+
+  const toggleGroup = (groupId) => {
+    setExpandedGroups(prev => {
+      const next = { ...prev, [groupId]: !prev[groupId] };
+      localStorage.setItem('sidebar_expanded_groups', JSON.stringify(next));
+      return next;
+    });
+  };
 
   const location = useLocation();
   const navigate = useNavigate();
   const activeTab = location.pathname.replace(/^\//, '').trim() || 'playground';
   const [theme, setTheme] = useState(() => localStorage.getItem('app_theme') || 'dark');
   const [stats, setStats] = useState({ skillsCount: 4, tenantsCount: 1, logsCount: 0 });
-  const [dbStatus, setDbStatus] = useState({ ready: false, details: 'Connecting to database...', progress: 0, fresh_start: false });
+  const [dbStatus, setDbStatus] = useState({ ready: false, details: 'Connecting to database...', progress: 0, fresh_start: false, error: null });
   const [isSidebarOpen, setIsSidebarOpen] = useState(() => {
     if (typeof window !== 'undefined' && window.innerWidth < 768) {
       return false;
@@ -80,7 +152,7 @@ export default function App() {
     let intervalId;
     const checkDbStatus = async () => {
       try {
-        const res = await fetch('/api/v1/system/db-status');
+        const res = await fetch('/api/v1/db-status');
         const data = await res.json();
         setDbStatus(data);
         if (data.ready) {
@@ -161,8 +233,10 @@ export default function App() {
     ? { id: 'profile', label: 'User Profile', icon: UserIcon }
     : (navItems.find((n) => n.id === activeTab) || navItems[0]);
 
-  // Render database creation loader screen if DB is not ready
+
+  // Render database creation loader screen if DB is not ready (includes encryption key error state)
   if (!dbStatus.ready) {
+    const hasError = !!dbStatus.error;
     return (
       <div style={{
         display: 'flex',
@@ -178,7 +252,7 @@ export default function App() {
         boxSizing: 'border-box'
       }}>
         <div style={{
-          maxWidth: '440px',
+          maxWidth: hasError ? '520px' : '440px',
           width: '100%',
           textAlign: 'center',
           display: 'flex',
@@ -186,71 +260,153 @@ export default function App() {
           alignItems: 'center',
           gap: '24px'
         }}>
-          {/* Animated Spinner with Glow */}
-          <div style={{ position: 'relative', width: '80px', height: '80px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <div className="spin" style={{
-              width: '64px',
-              height: '64px',
-              border: '4px solid rgba(6, 182, 212, 0.1)',
-              borderTop: '4px solid var(--primary-cyan, #06b6d4)',
-              borderRadius: '50%',
-            }} />
+          {/* Icon: error shield or animated spinner */}
+          {hasError ? (
             <div style={{
-              position: 'absolute',
-              background: 'linear-gradient(135deg, var(--primary-violet, #8b5cf6), var(--primary-emerald, #10b981))',
-              padding: '10px',
-              borderRadius: '12px',
-              boxShadow: '0 0 20px rgba(6, 182, 212, 0.4)'
+              background: 'linear-gradient(135deg, #7f1d1d, #dc2626)',
+              padding: '18px',
+              borderRadius: '16px',
+              boxShadow: '0 0 40px rgba(220, 38, 38, 0.35)',
             }}>
-              <Zap size={24} color="#ffffff" />
+              <ShieldCheck size={36} color="#fff" />
             </div>
-          </div>
+          ) : (
+            <div style={{ position: 'relative', width: '80px', height: '80px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <div className="spin" style={{
+                width: '64px',
+                height: '64px',
+                border: '4px solid rgba(6, 182, 212, 0.1)',
+                borderTop: '4px solid var(--primary-cyan, #06b6d4)',
+                borderRadius: '50%',
+              }} />
+              <div style={{
+                position: 'absolute',
+                background: 'linear-gradient(135deg, var(--primary-violet, #8b5cf6), var(--primary-emerald, #10b981))',
+                padding: '10px',
+                borderRadius: '12px',
+                boxShadow: '0 0 20px rgba(6, 182, 212, 0.4)'
+              }}>
+                <Zap size={24} color="#ffffff" />
+              </div>
+            </div>
+          )}
 
+          {/* Title + subtitle */}
           <div>
-            <h2 style={{ fontSize: '1.25rem', fontWeight: '800', marginBottom: '8px', letterSpacing: '-0.025em' }}>
-              {dbStatus.fresh_start ? 'Setting up Enterprise Server' : 'Connecting to Database'}
+            <h2 style={{ fontSize: '1.25rem', fontWeight: '800', marginBottom: '8px', letterSpacing: '-0.025em', color: hasError ? '#fca5a5' : '#f8fafc' }}>
+              {hasError ? 'Encryption Key Not Configured' : (dbStatus.fresh_start ? 'Setting up Enterprise Server' : 'Connecting to Database')}
             </h2>
             <p style={{ fontSize: '0.88rem', color: '#94a3b8', lineHeight: '1.5' }}>
-              Please wait while we initialize the persistent database tables and seed resources.
+              {hasError
+                ? 'The server cannot read stored credentials (LLM API keys, storage secrets, SMTP passwords). Initialization was stopped.'
+                : 'Please wait while we initialize the persistent database tables and seed resources.'}
             </p>
           </div>
 
-          {/* Progress bar container */}
-          <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', fontWeight: '600', color: '#64748b' }}>
-              <span>Database Initialization</span>
-              <span style={{ color: 'var(--primary-cyan, #06b6d4)' }}>{dbStatus.progress}%</span>
-            </div>
-            <div style={{ width: '100%', height: '6px', background: '#1e293b', borderRadius: '999px', overflow: 'hidden' }}>
+          {hasError ? (
+            <>
+              {/* Error detail box */}
               <div style={{
-                width: `${dbStatus.progress}%`,
-                height: '100%',
-                background: 'linear-gradient(90deg, #8b5cf6, #06b6d4)',
-                borderRadius: '999px',
-                transition: 'width 0.3s ease-out'
-              }} />
-            </div>
-          </div>
+                width: '100%',
+                background: 'rgba(220, 38, 38, 0.08)',
+                border: '1px solid rgba(220, 38, 38, 0.3)',
+                borderRadius: '10px',
+                padding: '14px 16px',
+                fontSize: '0.8rem',
+                color: '#fca5a5',
+                textAlign: 'left',
+                lineHeight: '1.6',
+                wordBreak: 'break-word',
+                whiteSpace: 'pre-wrap',
+              }}>
+                {dbStatus.error}
+              </div>
 
-          {/* Detailed step description */}
-          <div style={{
-            background: 'rgba(255, 255, 255, 0.02)',
-            border: '1px solid rgba(255, 255, 255, 0.05)',
-            borderRadius: '10px',
-            padding: '12px 16px',
-            fontSize: '0.8rem',
-            color: '#cbd5e1',
-            width: '100%',
-            fontFamily: 'var(--font-mono, monospace)',
-            textAlign: 'left',
-            boxSizing: 'border-box'
-          }}>
-            <span style={{ color: '#06b6d4' }}>&gt; </span>{dbStatus.details}
-          </div>
+              {/* Fix steps */}
+              <div style={{
+                width: '100%',
+                background: 'rgba(255, 255, 255, 0.02)',
+                border: '1px solid rgba(255, 255, 255, 0.06)',
+                borderRadius: '12px',
+                padding: '18px',
+                textAlign: 'left',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '14px',
+              }}>
+                <p style={{ margin: 0, fontSize: '0.8rem', fontWeight: '700', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em' }}>How to fix</p>
+                {[
+                  { step: '1', text: 'Generate a key:', code: 'python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"' },
+                  { step: '2', text: 'Add it to your .env file:', code: 'ENCRYPTION_SECRET_KEY=<paste-key-here>' },
+                  { step: '3', text: 'Restart the container:', code: './run_docker.sh' },
+                ].map(({ step, text, code }) => (
+                  <div key={step} style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                    <div style={{
+                      minWidth: '24px', height: '24px',
+                      background: 'linear-gradient(135deg, #8b5cf6, #06b6d4)',
+                      borderRadius: '50%',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: '0.7rem', fontWeight: '800', color: '#fff',
+                      flexShrink: 0,
+                    }}>{step}</div>
+                    <div>
+                      <p style={{ margin: 0, fontSize: '0.82rem', color: '#cbd5e1', marginBottom: '4px' }}>{text}</p>
+                      <code style={{
+                        display: 'block',
+                        background: 'rgba(0,0,0,0.4)',
+                        border: '1px solid rgba(255,255,255,0.07)',
+                        borderRadius: '6px',
+                        padding: '6px 10px',
+                        fontSize: '0.75rem',
+                        color: '#7dd3fc',
+                        wordBreak: 'break-all',
+                      }}>{code}</code>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : (
+            <>
+              {/* Progress bar */}
+              <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', fontWeight: '600', color: '#64748b' }}>
+                  <span>Database Initialization</span>
+                  <span style={{ color: 'var(--primary-cyan, #06b6d4)' }}>{dbStatus.progress}%</span>
+                </div>
+                <div style={{ width: '100%', height: '6px', background: '#1e293b', borderRadius: '999px', overflow: 'hidden' }}>
+                  <div style={{
+                    width: `${dbStatus.progress}%`,
+                    height: '100%',
+                    background: 'linear-gradient(90deg, #8b5cf6, #06b6d4)',
+                    borderRadius: '999px',
+                    transition: 'width 0.3s ease-out'
+                  }} />
+                </div>
+              </div>
+
+              {/* Status detail */}
+              <div style={{
+                background: 'rgba(255, 255, 255, 0.02)',
+                border: '1px solid rgba(255, 255, 255, 0.05)',
+                borderRadius: '10px',
+                padding: '12px 16px',
+                fontSize: '0.8rem',
+                color: '#cbd5e1',
+                width: '100%',
+                fontFamily: 'var(--font-mono, monospace)',
+                textAlign: 'left',
+                boxSizing: 'border-box'
+              }}>
+                <span style={{ color: '#06b6d4' }}>&gt; </span>{dbStatus.details}
+              </div>
+            </>
+          )}
         </div>
       </div>
     );
   }
+
 
   if (isAuthenticated === null) {
     return (
@@ -335,16 +491,10 @@ export default function App() {
             </button>
           </div>
 
-          {/* Navigation Section Title */}
-          {isSidebarOpen && (
-            <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '10px', paddingLeft: '8px', flexShrink: 0 }}>
-              Navigation Menu
-            </div>
-          )}
-
           {/* Navigation Items Menu */}
-          <nav style={{ display: 'flex', flexDirection: 'column', gap: '6px', overflowY: 'auto', flex: 1, paddingRight: '4px', marginBottom: '12px' }}>
-            {navItems.map((item) => {
+          <nav style={{ display: 'flex', flexDirection: 'column', gap: '14px', overflowY: 'auto', flex: 1, paddingRight: '4px', marginBottom: '12px' }}>
+            {/* Top-level playground items outside groups */}
+            {[...topNavItems].sort((a, b) => a.order - b.order).map((item) => {
               const Icon = item.icon;
               const isActive = activeTab === item.id;
               return (
@@ -377,6 +527,176 @@ export default function App() {
                 </button>
               );
             })}
+
+            {/* Collapsible groups */}
+            {isSidebarOpen ? (
+              <>
+                {[...navGroups].sort((a, b) => a.order - b.order).map((group) => {
+                  const isExpanded = !!expandedGroups[group.id];
+                  return (
+                    <div key={group.id} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <button
+                        onClick={() => toggleGroup(group.id)}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          width: '100%',
+                          padding: '6px 8px',
+                          background: 'transparent',
+                          border: 'none',
+                          color: 'var(--text-muted)',
+                          fontSize: '0.74rem',
+                          fontWeight: '700',
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.6px',
+                          cursor: 'pointer',
+                          textAlign: 'left',
+                          outline: 'none'
+                        }}
+                      >
+                        <span>{group.label}</span>
+                        {isExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                      </button>
+                      {isExpanded && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', paddingLeft: '4px' }}>
+                          {[...group.items].sort((a, b) => a.order - b.order).map((item) => {
+                            const Icon = item.icon;
+                            const isActive = activeTab === item.id;
+                            return (
+                              <button
+                                key={item.id}
+                                onClick={() => handleTabChange(item.id)}
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'flex-start',
+                                  gap: '12px',
+                                  padding: '10px 14px',
+                                  borderRadius: '11px',
+                                  border: 'none',
+                                  background: isActive ? 'linear-gradient(135deg, var(--primary-violet), var(--primary-indigo))' : 'transparent',
+                                  color: isActive ? '#ffffff' : 'var(--text-sub)',
+                                  fontWeight: isActive ? '700' : '500',
+                                  fontSize: '0.88rem',
+                                  cursor: 'pointer',
+                                  transition: 'all 0.2s ease',
+                                  textAlign: 'left',
+                                  boxShadow: isActive ? '0 4px 14px rgba(139, 92, 246, 0.3)' : 'none',
+                                  width: '100%',
+                                  flexShrink: 0
+                                }}
+                              >
+                                <Icon size={18} color={isActive ? '#ffffff' : 'var(--text-sub)'} />
+                                <span>{item.label}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+
+                {/* Bottom items rendered at bottom inside opened sidebar */}
+                {[...bottomNavItems].sort((a, b) => a.order - b.order).map((item) => {
+                  const Icon = item.icon;
+                  const isActive = activeTab === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => handleTabChange(item.id)}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'flex-start',
+                        gap: '12px',
+                        padding: '10px 14px',
+                        borderRadius: '11px',
+                        border: 'none',
+                        background: isActive ? 'linear-gradient(135deg, var(--primary-violet), var(--primary-indigo))' : 'transparent',
+                        color: isActive ? '#ffffff' : 'var(--text-sub)',
+                        fontWeight: isActive ? '700' : '500',
+                        fontSize: '0.88rem',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s ease',
+                        textAlign: 'left',
+                        boxShadow: isActive ? '0 4px 14px rgba(139, 92, 246, 0.3)' : 'none',
+                        width: '100%',
+                        flexShrink: 0,
+                        marginTop: item.id === 'tester' ? '12px' : '0' // divider margin
+                      }}
+                    >
+                      <Icon size={18} color={isActive ? '#ffffff' : 'var(--text-sub)'} />
+                      <span>{item.label}</span>
+                    </button>
+                  );
+                })}
+              </>
+            ) : (
+              // Flat icons list when sidebar is closed
+              <>
+                {[...navGroups].sort((a, b) => a.order - b.order).flatMap(g => [...g.items].sort((a, b) => a.order - b.order)).map((item) => {
+                  const Icon = item.icon;
+                  const isActive = activeTab === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => handleTabChange(item.id)}
+                      title={item.label}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        padding: '10px 0',
+                        borderRadius: '11px',
+                        border: 'none',
+                        background: isActive ? 'linear-gradient(135deg, var(--primary-violet), var(--primary-indigo))' : 'transparent',
+                        color: isActive ? '#ffffff' : 'var(--text-sub)',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s ease',
+                        boxShadow: isActive ? '0 4px 14px rgba(139, 92, 246, 0.3)' : 'none',
+                        width: '100%',
+                        flexShrink: 0
+                      }}
+                    >
+                      <Icon size={18} color={isActive ? '#ffffff' : 'var(--text-sub)'} />
+                    </button>
+                  );
+                })}
+
+                {/* Bottom items closed view */}
+                {[...bottomNavItems].sort((a, b) => a.order - b.order).map((item) => {
+                  const Icon = item.icon;
+                  const isActive = activeTab === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => handleTabChange(item.id)}
+                      title={item.label}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        padding: '10px 0',
+                        borderRadius: '11px',
+                        border: 'none',
+                        background: isActive ? 'linear-gradient(135deg, var(--primary-violet), var(--primary-indigo))' : 'transparent',
+                        color: isActive ? '#ffffff' : 'var(--text-sub)',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s ease',
+                        boxShadow: isActive ? '0 4px 14px rgba(139, 92, 246, 0.3)' : 'none',
+                        width: '100%',
+                        flexShrink: 0,
+                        marginTop: item.id === 'tester' ? '12px' : '0'
+                      }}
+                    >
+                      <Icon size={18} color={isActive ? '#ffffff' : 'var(--text-sub)'} />
+                    </button>
+                  );
+                })}
+              </>
+            )}
           </nav>
         </div>
 

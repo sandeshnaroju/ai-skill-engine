@@ -14,6 +14,10 @@ if [ ! -f .env ]; then
     echo "# To use PostgreSQL instead of local SQLite, uncomment and configure:" >> .env
     echo "# DATABASE_URL=postgresql://user:password@localhost:5432/dbname" >> .env
     echo "" >> .env
+    echo "# Encryption key for securing stored API keys and secrets (REQUIRED)." >> .env
+    echo "# Generate one with: python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\"" >> .env
+    echo "# ENCRYPTION_SECRET_KEY=" >> .env
+    echo "" >> .env
     echo "# SMTP Configuration (Optional - used for OTP email verification):" >> .env
     echo "# SMTP_HOST=" >> .env
     echo "# SMTP_PORT=587" >> .env
@@ -55,6 +59,7 @@ docker run -d \
   -e SMTP_USERNAME="$SMTP_USERNAME" \
   -e SMTP_PASSWORD="$SMTP_PASSWORD" \
   -e SMTP_SENDER="$SMTP_SENDER" \
+  -e ENCRYPTION_SECRET_KEY="$ENCRYPTION_SECRET_KEY" \
   --restart unless-stopped \
   ai-skill-engine-app
 

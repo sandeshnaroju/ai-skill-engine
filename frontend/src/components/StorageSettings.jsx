@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { HardDrive, UploadCloud, Server, Check, X, Loader, Save, Zap, Eye, EyeOff } from 'lucide-react';
+import AsyncSearchableDropdown from './AsyncSearchableDropdown';
 
 const PROVIDERS = [
   {
@@ -96,6 +97,7 @@ function Field({ id, label, value, onChange, placeholder, type = 'text' }) {
 export default function StorageSettings() {
   const [searchParams, setSearchParams] = useSearchParams();
   const provider = searchParams.get('provider') || 'local';
+  const [tenantName, setTenantName] = useState('Global');
 
   const setProvider = (val) => {
     const nextParams = new URLSearchParams(searchParams);
@@ -124,14 +126,38 @@ export default function StorageSettings() {
 
   const setField = (key, val) => setForm(prev => ({ ...prev, [key]: val }));
 
+  const [tenants, setTenants] = useState([]);
+  const [selectedTenantId, setSelectedTenantId] = useState('');
+
+  const fetchTenants = async () => {
+    try {
+      const res = await fetch('/api/v1/tenants');
+      if (res.ok) {
+        const data = await res.json();
+        setTenants(data || []);
+        if (data && data.length > 0) {
+          setSelectedTenantId(data[0].id);
+        }
+      }
+    } catch (e) {
+      console.error('Failed to fetch tenants', e);
+    }
+  };
+
   useEffect(() => {
+    fetchTenants();
+  }, []);
+
+  useEffect(() => {
+    if (!selectedTenantId) return;
     (async () => {
       setLoading(true);
       try {
-        const res = await fetch('/api/v1/storage/config');
+        const res = await fetch(`/api/v1/storage/config?tenant_id=${selectedTenantId}`);
         if (res.ok) {
           const data = await res.json();
           setProvider(data.provider || 'local');
+          setTenantName(data.tenant_name || 'Global');
           setForm(prev => ({
             ...prev,
             bucket_name: data.bucket_name || '',
@@ -152,7 +178,7 @@ export default function StorageSettings() {
         setLoading(false);
       }
     })();
-  }, []);
+  }, [selectedTenantId]);
 
   const [saveMessage, setSaveMessage] = useState('');
 
@@ -165,7 +191,7 @@ export default function StorageSettings() {
       const res = await fetch('/api/v1/storage/config', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ provider, ...form }),
+        body: JSON.stringify({ provider, ...form, tenant_id: selectedTenantId }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
@@ -192,7 +218,7 @@ export default function StorageSettings() {
       const res = await fetch('/api/v1/storage/test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ provider, ...form }),
+        body: JSON.stringify({ provider, ...form, tenant_id: selectedTenantId }),
       });
       const data = await res.json();
       setTestResult(data);
@@ -208,17 +234,48 @@ export default function StorageSettings() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
 
+      {/* Tenant Selector Dropdown */}
+      {tenants && tenants.length > 0 && (
+        <div className="glass-box" style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <div style={{ fontSize: '0.78rem', color: 'var(--text-sub)', fontWeight: '600' }}>Configure Storage for Workspace / Tenant</div>
+          <AsyncSearchableDropdown
+            value={selectedTenantId}
+            onChange={(val) => setSelectedTenantId(val)}
+            fetchOptions={async (query) => {
+              try {
+                const res = await fetch(`/api/v1/tenants?search=${encodeURIComponent(query)}&page_size=20`);
+                if (res.ok) {
+                  const data = await res.json();
+                  const items = data.items || data || [];
+                  return items.map(t => ({ value: t.id, label: t.name }));
+                }
+              } catch (e) {
+                console.error('Error fetching tenant options:', e);
+              }
+              return [];
+            }}
+            placeholder="Search and select tenant..."
+            initialLabel={tenants.find(t => t.id === selectedTenantId)?.name || ''}
+          />
+        </div>
+      )}
+
       {/* Active Provider Badge */}
-      <div className="glass-box" style={{ padding: '16px 20px', display: 'flex', alignItems: 'center', gap: '14px' }}>
-        {React.createElement(activeProvider.icon, { size: 22, color: activeProvider.color })}
-        <div>
-          <div style={{ fontWeight: '700', fontSize: '0.96rem', color: 'var(--text-main)' }}>
-            Active Storage: <span style={{ color: activeProvider.color }}>{activeProvider.label}</span>
-          </div>
-          <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-            {activeProvider.description}
+      <div className="glass-box" style={{ padding: '16px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '14px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+          {React.createElement(activeProvider.icon, { size: 22, color: activeProvider.color })}
+          <div>
+            <div style={{ fontWeight: '700', fontSize: '0.96rem', color: 'var(--text-main)' }}>
+              Active Storage: <span style={{ color: activeProvider.color }}>{activeProvider.label}</span>
+            </div>
+            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+              {activeProvider.description}
+            </div>
           </div>
         </div>
+        <span className="badge-tag tag-shell" style={{ fontSize: '0.8rem', padding: '6px 12px' }}>
+          Workspace: {tenantName}
+        </span>
       </div>
 
       {loading ? (

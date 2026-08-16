@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { HardDrive, Server, Shield, Cloud, Save, Eye, EyeOff, Loader, Check, X } from 'lucide-react';
+import AsyncSearchableDropdown from './AsyncSearchableDropdown';
 
 const PROVIDERS = [
   {
@@ -108,6 +109,7 @@ function Field({ id, label, value, onChange, placeholder, type = 'text' }) {
 
 export default function SandboxSettings() {
   const [provider, setProvider] = useState('none');
+  const [tenantName, setTenantName] = useState('Global');
   const [form, setForm] = useState({
     e2b_api_key: '',
     azure_client_id: '',
@@ -129,14 +131,38 @@ export default function SandboxSettings() {
 
   const setField = (key, val) => setForm(prev => ({ ...prev, [key]: val }));
 
+  const [tenants, setTenants] = useState([]);
+  const [selectedTenantId, setSelectedTenantId] = useState('');
+
+  const fetchTenants = async () => {
+    try {
+      const res = await fetch('/api/v1/tenants');
+      if (res.ok) {
+        const data = await res.json();
+        setTenants(data || []);
+        if (data && data.length > 0) {
+          setSelectedTenantId(data[0].id);
+        }
+      }
+    } catch (e) {
+      console.error('Failed to fetch tenants', e);
+    }
+  };
+
   useEffect(() => {
+    fetchTenants();
+  }, []);
+
+  useEffect(() => {
+    if (!selectedTenantId) return;
     (async () => {
       setLoading(true);
       try {
-        const res = await fetch('/api/v1/sandbox/config');
+        const res = await fetch(`/api/v1/sandbox/config?tenant_id=${selectedTenantId}`);
         if (res.ok) {
           const data = await res.json();
           setProvider(data.provider || 'none');
+          setTenantName(data.tenant_name || 'Global');
           setForm(prev => ({
             ...prev,
             e2b_api_key: data.e2b_api_key || '',
@@ -158,7 +184,7 @@ export default function SandboxSettings() {
         setLoading(false);
       }
     })();
-  }, []);
+  }, [selectedTenantId]);
 
   const handleSave = async (e) => {
     e.preventDefault();
@@ -175,6 +201,7 @@ export default function SandboxSettings() {
         body: JSON.stringify({
           provider,
           ...form,
+          tenant_id: selectedTenantId,
         }),
       });
 
@@ -196,14 +223,45 @@ export default function SandboxSettings() {
 
   return (
     <div style={{ maxWidth: '900px', margin: '0 auto', padding: '24px 16px' }}>
-      <div style={{ marginBottom: '28px' }}>
-        <h2 style={{ fontSize: '1.4rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '6px' }}>
-          Remote Sandbox Configuration
-        </h2>
-        <p style={{ fontSize: '0.86rem', color: 'var(--text-muted)' }}>
-          Configure remote sandboxes to execute untrusted LLM-generated code in isolated cloud environments instead of Docker/local.
-        </p>
+      <div style={{ marginBottom: '28px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+        <div>
+          <h2 style={{ fontSize: '1.4rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '6px' }}>
+            Sandbox Configuration
+          </h2>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+            Configure remote runtimes to execute python commands, compile packages, and test generated code inside secure, isolated sandboxes.
+          </p>
+        </div>
+        <span className="badge-tag tag-shell" style={{ fontSize: '0.8rem', padding: '6px 12px' }}>
+          Workspace: {tenantName}
+        </span>
       </div>
+
+      {/* Tenant Selector Dropdown */}
+      {tenants && tenants.length > 0 && (
+        <div className="glass-box" style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '24px' }}>
+          <div style={{ fontSize: '0.78rem', color: 'var(--text-sub)', fontWeight: '600' }}>Configure Sandbox for Workspace / Tenant</div>
+          <AsyncSearchableDropdown
+            value={selectedTenantId}
+            onChange={(val) => setSelectedTenantId(val)}
+            fetchOptions={async (query) => {
+              try {
+                const res = await fetch(`/api/v1/tenants?search=${encodeURIComponent(query)}&page_size=20`);
+                if (res.ok) {
+                  const data = await res.json();
+                  const items = data.items || data || [];
+                  return items.map(t => ({ value: t.id, label: t.name }));
+                }
+              } catch (e) {
+                console.error('Error fetching tenant options:', e);
+              }
+              return [];
+            }}
+            placeholder="Search and select tenant..."
+            initialLabel={tenants.find(t => t.id === selectedTenantId)?.name || ''}
+          />
+        </div>
+      )}
 
       {loading ? (
         <div style={{ display: 'flex', justifyContent: 'center', padding: '60px' }}>

@@ -1,7 +1,66 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { RefreshCw, CheckCircle, AlertTriangle, ChevronDown, ChevronUp, ChevronLeft, ChevronRight } from 'lucide-react';
+import { RefreshCw, CheckCircle, AlertTriangle, ChevronLeft, ChevronRight, X } from 'lucide-react';
 import AsyncSearchableDropdown from './AsyncSearchableDropdown';
+
+function LogDetailDrawer({ log, onClose }) {
+  return (
+    <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: '520px', background: 'var(--bg-card)', borderLeft: '1px solid var(--border-subtle)', zIndex: 9998, display: 'flex', flexDirection: 'column', boxShadow: '-8px 0 32px rgba(0,0,0,0.5)' }}>
+      {/* Header */}
+      <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div>
+          <div style={{ fontWeight: '700', fontSize: '1rem', color: 'var(--text-main)' }}>Tool Execution Detail</div>
+          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px', fontFamily: 'var(--font-mono)' }}>Log ID: {log.id}</div>
+        </div>
+        <button className="btn-outline" onClick={onClose} style={{ padding: '6px 8px' }}><X size={16} /></button>
+      </div>
+
+      <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: '18px' }}>
+        {/* Meta */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+          {[
+            ['Status', log.exit_code === 0 ? (
+              <span style={{ color: 'var(--accent-emerald)', display: 'inline-flex', alignItems: 'center', gap: '4px', fontWeight: '500', fontSize: '0.82rem' }}>
+                <CheckCircle size={14} /> Clean Exit
+              </span>
+            ) : (
+              <span style={{ color: 'var(--accent-amber)', display: 'inline-flex', alignItems: 'center', gap: '4px', fontWeight: '500', fontSize: '0.82rem' }}>
+                <AlertTriangle size={14} /> Exit {log.exit_code}
+              </span>
+            )],
+            ['Time', log.created_at ? new Date(log.created_at).toLocaleString() : 'N/A'],
+            ['Tenant', log.tenant_name],
+            ['Model', log.model_name || '—'],
+            ['Skill / Tool', `${log.skill_name} / ${log.tool_name}`],
+            ['Duration', `${log.execution_time_ms} ms`],
+            ['Sandbox Environment', <span className={`badge-tag tag-${log.sandbox_type}`}>{log.sandbox_type}</span>],
+          ].map(([label, val]) => (
+            <div key={label} style={{ background: 'var(--bg-input)', borderRadius: '8px', padding: '10px 12px' }}>
+              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: '600', marginBottom: '4px' }}>{label}</div>
+              <div style={{ fontSize: '0.82rem', color: 'var(--text-main)', fontWeight: '500' }}>{val}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Executed Command / Code */}
+        <div>
+          <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)', fontWeight: '600', marginBottom: '6px' }}>EXECUTED COMMAND / CODE</div>
+          <pre className="code-display" style={{ maxHeight: '180px', margin: 0, padding: '12px', fontSize: '0.82rem', background: '#04070d', border: '1px solid var(--border-subtle)', borderRadius: '8px', color: '#93c5fd', overflow: 'auto', whiteSpace: 'pre-wrap' }}>
+            {log.command || 'N/A'}
+          </pre>
+        </div>
+
+        {/* Output stdout / stderr */}
+        <div>
+          <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)', fontWeight: '600', marginBottom: '6px' }}>OUTPUT (STDOUT / STDERR)</div>
+          <pre className="code-display" style={{ maxHeight: '220px', margin: 0, padding: '12px', fontSize: '0.82rem', background: '#04070d', border: '1px solid var(--border-subtle)', borderRadius: '8px', color: log.exit_code === 0 ? '#38bdf8' : '#f87171', overflow: 'auto', whiteSpace: 'pre-wrap' }}>
+            {log.stdout || log.stderr || 'Clean exit with no output.'}
+          </pre>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function LogViewer({ requestSource, title, subtitle, icon: IconComponent }) {
   const [logs, setLogs] = useState([]);
@@ -56,7 +115,7 @@ export default function LogViewer({ requestSource, title, subtitle, icon: IconCo
   const [uniqueTenants, setUniqueTenants] = useState([]);
   const [uniqueModels, setUniqueModels] = useState([]);
 
-  const [expandedLogId, setExpandedLogId] = useState(null);
+  const [selectedLog, setSelectedLog] = useState(null);
 
   const fetchFilters = async () => {
     try {
@@ -219,72 +278,51 @@ export default function LogViewer({ requestSource, title, subtitle, icon: IconCo
               </tr>
             ) : (
               logs.map((log) => {
-                const isExpanded = expandedLogId === log.id;
+                const isSelected = selectedLog && selectedLog.id === log.id;
                 return (
-                  <React.Fragment key={log.id}>
-                    <tr style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.04)', background: isExpanded ? 'rgba(0, 242, 254, 0.04)' : 'transparent' }}>
-                      <td style={{ padding: '14px 12px', color: 'var(--text-muted)', fontSize: '0.8rem', whiteSpace: 'nowrap' }}>
-                        <div>{log.created_at ? new Date(log.created_at).toLocaleTimeString() : 'N/A'}</div>
-                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px', fontWeight: '500' }}>{log.tenant_name}</div>
-                      </td>
-                      <td style={{ padding: '14px 12px', fontWeight: '600', color: 'var(--primary-cyan)' }}>
-                        <div>{log.skill_name} / {log.tool_name}</div>
-                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 'normal', marginTop: '2px' }}>
-                          Model: <span style={{ color: 'var(--text-sub)' }}>{log.model_name}</span>
-                        </div>
-                      </td>
-                      <td style={{ padding: '14px 12px' }}>
-                        <span className={`badge-tag tag-${log.sandbox_type}`}>{log.sandbox_type}</span>
-                      </td>
-                      <td style={{ padding: '14px 12px' }}>
-                        <code style={{ background: '#04070d', padding: '4px 10px', borderRadius: '6px', fontSize: '0.78rem', color: '#93c5fd' }}>
-                          {(log.command || '').length > 55 ? (log.command || '').substring(0, 55) + '...' : (log.command || 'N/A')}
-                        </code>
-                      </td>
-                      <td style={{ padding: '14px 12px', color: 'var(--text-sub)' }}>
-                        {log.execution_time_ms} ms
-                      </td>
-                      <td style={{ padding: '14px 12px' }}>
-                        {log.exit_code === 0 ? (
-                          <span style={{ color: 'var(--accent-emerald)', display: 'inline-flex', alignItems: 'center', gap: '4px', fontWeight: '500' }}>
-                            <CheckCircle size={14} /> Clean
-                          </span>
-                        ) : (
-                          <span style={{ color: 'var(--accent-amber)', display: 'inline-flex', alignItems: 'center', gap: '4px', fontWeight: '500' }}>
-                            <AlertTriangle size={14} /> Exit {log.exit_code}
-                          </span>
-                        )}
-                      </td>
-                      <td style={{ padding: '14px 12px' }}>
-                        <button
-                          className="btn-outline"
-                          onClick={() => setExpandedLogId(isExpanded ? null : log.id)}
-                          style={{ padding: '4px 10px', fontSize: '0.78rem' }}
-                        >
-                          {isExpanded ? 'Close' : 'View Trace'} {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                        </button>
-                      </td>
-                    </tr>
-
-                    {isExpanded && (
-                      <tr>
-                        <td colSpan={7} style={{ padding: '16px', background: '#04060b', borderBottom: '1px solid var(--border-subtle)' }}>
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                            <div>
-                               <div style={{ fontSize: '0.8rem', fontWeight: '600', color: 'var(--text-sub)', marginBottom: '6px' }}>Executed Command / Code</div>
-                              <pre className="code-display" style={{ maxHeight: '140px' }}>{log.command || 'N/A'}</pre>
-                            </div>
-                            <div>
-                              <div style={{ fontSize: '0.8rem', fontWeight: '600', color: 'var(--text-sub)', marginBottom: '6px' }}>Output (stdout / stderr)</div>
-                              <pre className="code-display" style={{ maxHeight: '140px', color: log.exit_code === 0 ? '#38bdf8' : '#f87171' }}>
-                                {log.stdout || log.stderr || 'Clean exit with no output.'}
-                              </pre>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-                  </React.Fragment>
+                  <tr key={log.id} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.04)', background: isSelected ? 'rgba(0, 242, 254, 0.04)' : 'transparent' }}>
+                    <td style={{ padding: '14px 12px', color: 'var(--text-muted)', fontSize: '0.8rem', whiteSpace: 'nowrap' }}>
+                      <div>{log.created_at ? new Date(log.created_at).toLocaleTimeString() : 'N/A'}</div>
+                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px', fontWeight: '500' }}>{log.tenant_name}</div>
+                    </td>
+                    <td style={{ padding: '14px 12px', fontWeight: '600', color: 'var(--primary-cyan)' }}>
+                      <div>{log.skill_name} / {log.tool_name}</div>
+                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 'normal', marginTop: '2px' }}>
+                        Model: <span style={{ color: 'var(--text-sub)' }}>{log.model_name}</span>
+                      </div>
+                    </td>
+                    <td style={{ padding: '14px 12px' }}>
+                      <span className={`badge-tag tag-${log.sandbox_type}`}>{log.sandbox_type}</span>
+                    </td>
+                    <td style={{ padding: '14px 12px' }}>
+                      <code style={{ background: '#04070d', padding: '4px 10px', borderRadius: '6px', fontSize: '0.78rem', color: '#93c5fd' }}>
+                        {(log.command || '').length > 55 ? (log.command || '').substring(0, 55) + '...' : (log.command || 'N/A')}
+                      </code>
+                    </td>
+                    <td style={{ padding: '14px 12px', color: 'var(--text-sub)' }}>
+                      {log.execution_time_ms} ms
+                    </td>
+                    <td style={{ padding: '14px 12px' }}>
+                      {log.exit_code === 0 ? (
+                        <span style={{ color: 'var(--accent-emerald)', display: 'inline-flex', alignItems: 'center', gap: '4px', fontWeight: '500' }}>
+                          <CheckCircle size={14} /> Clean
+                        </span>
+                      ) : (
+                        <span style={{ color: 'var(--accent-amber)', display: 'inline-flex', alignItems: 'center', gap: '4px', fontWeight: '500' }}>
+                          <AlertTriangle size={14} /> Exit {log.exit_code}
+                        </span>
+                      )}
+                    </td>
+                    <td style={{ padding: '14px 12px' }}>
+                      <button
+                        className="btn-outline"
+                        onClick={() => setSelectedLog(log)}
+                        style={{ padding: '4px 10px', fontSize: '0.78rem' }}
+                      >
+                        View Trace
+                      </button>
+                    </td>
+                  </tr>
                 );
               })
             )}
@@ -333,6 +371,17 @@ export default function LogViewer({ requestSource, title, subtitle, icon: IconCo
           </div>
         </div>
       </div>
+
+      {/* Detail Drawer */}
+      {selectedLog && (
+        <>
+          <div
+            onClick={() => setSelectedLog(null)}
+            style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 9997 }}
+          />
+          <LogDetailDrawer log={selectedLog} onClose={() => setSelectedLog(null)} />
+        </>
+      )}
     </div>
   );
 }

@@ -75,6 +75,9 @@ You can run the pre-built image directly from Docker Hub without cloning the sou
 
 1. **Start the container**:
    ```bash
+   # Generate a 32-byte Fernet key first:
+   # python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+
    docker run -d \
      --name ai_skill_engine \
      -p 2704:2704 \
@@ -83,6 +86,7 @@ You can run the pre-built image directly from Docker Hub without cloning the sou
      -v "$(pwd)/skill_manager.db:/app/skill_manager.db" \
      -e HOST_SANDBOX_DIR="$(pwd)/sandbox" \
      -e DATABASE_URL="sqlite:////app/skill_manager.db" \
+     -e ENCRYPTION_SECRET_KEY="YOUR_GENERATED_FERNET_KEY" \
      --restart unless-stopped \
      sandeshnaroju/ai-skill-engine:latest
    ```
@@ -159,12 +163,19 @@ You can configure several features of the AI Skill Engine (like SMTP for email O
 
 | Variable | Description | Example |
 | --- | --- | --- |
+| `ENCRYPTION_SECRET_KEY` | **Required** 32-byte base64 Fernet key to encrypt stored API keys & credentials | `j-A2fHiav45IjlHFpEIJkhYGcEEni9bd5KExyEeoovY=` |
 | `DATABASE_URL` | Connection URI of your database (defaults to local SQLite `skill_manager.db`) | `postgresql://postgres:password@localhost:5432/dbname` |
 | `SMTP_HOST` | Hostname of the SMTP server to send OTP codes | `smtp.gmail.com` |
 | `SMTP_PORT` | Port of the SMTP server (default: 587) | `587` |
 | `SMTP_USERNAME` | Username for SMTP server | `user@gmail.com` |
 | `SMTP_PASSWORD` | Password or App Password for SMTP server | `your-smtp-password` |
 | `SMTP_SENDER` | Sender email address (default: `SMTP_USERNAME`) | `no-reply@mycompany.com` |
+
+> 🔑 **Generating an `ENCRYPTION_SECRET_KEY`**:
+> Stored secrets (LLM API keys, SMTP passwords, cloud credentials) are encrypted using AES-128-CBC + HMAC-SHA256 (Fernet). You must supply a valid key on container start:
+> ```bash
+> python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+> ```
 
 ---
 
@@ -175,6 +186,7 @@ There are two primary ways to supply these environment variables to the containe
 #### Method A: Using a `.env` file (Recommended)
 1. Create a `.env` file in your root workspace:
    ```env
+   ENCRYPTION_SECRET_KEY=YOUR_GENERATED_FERNET_KEY
    SMTP_HOST=smtp.gmail.com
    SMTP_PORT=587
    SMTP_USERNAME=your-email@gmail.com
@@ -206,6 +218,7 @@ docker run -d \
   -v "$(pwd)/sandbox:/app/sandbox" \
   -v "$(pwd)/skill_manager.db:/app/skill_manager.db" \
   -e HOST_SANDBOX_DIR="$(pwd)/sandbox" \
+  -e ENCRYPTION_SECRET_KEY="YOUR_GENERATED_FERNET_KEY" \
   -e SMTP_HOST="smtp.gmail.com" \
   -e SMTP_PORT="587" \
   -e SMTP_USERNAME="user@gmail.com" \

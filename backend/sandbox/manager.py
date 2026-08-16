@@ -8,15 +8,22 @@ class SandboxManager:
         self.process_runner = ProcessRunner()
         self.force_process = force_process
 
-    def execute(self, command: str, code: str = None, timeout: int = 30, session_id: str = None) -> dict:
+    def execute(self, command: str, code: str = None, timeout: int = 30, session_id: str = None, tenant_id: str = None) -> dict:
         # Check if there is an active remote sandbox provider configured
         try:
             from database import SessionLocal
             from models import SandboxConfig
             from encryption_utils import decrypt_key
+            from sqlalchemy import or_
 
             db = SessionLocal()
-            config = db.query(SandboxConfig).filter(SandboxConfig.is_active == True).first()
+            if tenant_id:
+                config = db.query(SandboxConfig).filter(
+                    SandboxConfig.is_active == True,
+                    or_(SandboxConfig.tenant_id == tenant_id, SandboxConfig.tenant_id == None)
+                ).first()
+            else:
+                config = db.query(SandboxConfig).filter(SandboxConfig.is_active == True, SandboxConfig.tenant_id == None).first()
             db.close()
 
             if config and config.provider != "none":
@@ -38,9 +45,9 @@ class SandboxManager:
                 elif provider == "azure":
                     client_id = decrypt_key(config.azure_client_id_encrypted)
                     client_secret = decrypt_key(config.azure_client_secret_encrypted)
-                    tenant_id = decrypt_key(config.azure_tenant_id_encrypted)
+                    azure_tenant_id = decrypt_key(config.azure_tenant_id_encrypted)
                     pool_endpoint = config.azure_session_pool_endpoint
-                    if not (client_id and client_secret and tenant_id and pool_endpoint):
+                    if not (client_id and client_secret and azure_tenant_id and pool_endpoint):
                         return {
                             "stdout": "",
                             "stderr": "Error: Azure ACA Sandbox is active but dynamic session credentials/endpoint are incomplete.",
@@ -48,7 +55,7 @@ class SandboxManager:
                             "execution_time_ms": 0,
                             "sandbox_type": "azure_aca"
                         }
-                    return remote_runner.execute_azure(client_id, client_secret, tenant_id, pool_endpoint, command, code, timeout, session_id=session_id)
+                    return remote_runner.execute_azure(client_id, client_secret, azure_tenant_id, pool_endpoint, command, code, timeout, session_id=session_id)
 
                 elif provider == "fly":
                     api_token = decrypt_key(config.fly_api_token_encrypted)

@@ -25,7 +25,9 @@ export default function ApiDocs() {
     ],
     "model": "gemini-2.5-flash",
     "stream": true,
-    "session_id": "chatbot_user_session_101"
+    "session_id": "chatbot_user_session_101",
+    "app_id": "customer_support_prod",
+    "skill_names": ["weather_fetcher", "math_solver"]
   }'`,
         python: `from openai import OpenAI
 
@@ -38,12 +40,55 @@ client = OpenAI(
 response_stream = client.chat.completions.create(
     model="gemini-2.5-flash",
     messages=[{"role": "user", "content": "Calculate compound interest for 20k @ 12% for 20 yrs"}],
-    stream=True
+    stream=True,
+    extra_body={
+        "session_id": "chatbot_user_session_101",
+        "app_id": "customer_support_prod",
+        "skill_names": ["weather_fetcher", "math_solver"]
+    }
 )
 
 for chunk in response_stream:
-    if chunk.choices[0].delta.content:
-        print(chunk.choices[0].delta.content, end="", flush=True)`,
+    # 1. Handle top-level Done/Error event structures
+    raw = chunk.model_dump() if hasattr(chunk, "model_dump") else dict(chunk)
+    if raw.get("type") == "done":
+        print(f"\n[DONE] Tools called: {raw.get('tools_called')}")
+        continue
+    elif raw.get("type") == "error":
+        print(f"\n[ERROR] {raw.get('detail')}")
+        continue
+
+    if not chunk.choices:
+        continue
+    delta = chunk.choices[0].delta
+
+    # 2. Extract standard chat text assistant response
+    if delta.content:
+        print(delta.content, end="", flush=True)
+
+    # 3. Extract reasoning/thinking steps
+    reasoning = getattr(delta, "reasoning", None) or (delta.model_extra or {}).get("reasoning")
+    if reasoning:
+        print(f"\n[Reasoning] {reasoning}")
+
+    # 4. Extract tool execution calls
+    tool_call = getattr(delta, "tool_call", None) or (delta.model_extra or {}).get("tool_call")
+    if tool_call:
+        print(f"\n[Tool Call] {tool_call.get('name')} with args: {tool_call.get('arguments')}")
+
+    # 5. Extract sandbox execution results
+    tool_result = getattr(delta, "tool_result", None) or (delta.model_extra or {}).get("tool_result")
+    if tool_result:
+        print(f"\n[Tool Result] {tool_result.get('tool_name')} exit: {tool_result.get('exit_code')}")
+        print(f"Stdout: {tool_result.get('stdout')}")
+
+    # 6. Extract ProChat UI components if present
+    p_json = getattr(delta, "json", None) or (delta.model_extra or {}).get("json")
+    p_code = getattr(delta, "code", None) or (delta.model_extra or {}).get("code")
+    if p_json:
+        print("\nProChat JSON Schema:", p_json)
+    if p_code:
+        print("\nProChat React Code:", p_code)`,
         javascript: `const response = await fetch("http://localhost:8000/api/v1/chat/completions", {
   method: "POST",
   headers: {
@@ -53,17 +98,76 @@ for chunk in response_stream:
   body: JSON.stringify({
     messages: [{ role: "user", content: "Calculate compound interest for 20k @ 12% for 20 yrs" }],
     stream: true,
-    session_id: "user_session_202"
+    session_id: "user_session_202",
+    app_id: "customer_support_prod",
+    skill_names: ["weather_fetcher", "math_solver"]
   })
 });
 
 const reader = response.body.getReader();
 const decoder = new TextDecoder("utf-8");
+let buffer = "";
 
 while (true) {
   const { value, done } = await reader.read();
   if (done) break;
-  console.log("Chunk Event:", decoder.decode(value));
+
+  buffer += decoder.decode(value, { stream: true });
+  const lines = buffer.split("\n");
+  buffer = lines.pop();
+
+  for (const line of lines) {
+    const cleanLine = line.trim();
+    if (!cleanLine.startsWith("data: ")) continue;
+    const rawData = cleanLine.substring(6);
+    if (rawData === "[DONE]") break;
+
+    try {
+      const dataJson = JSON.parse(rawData);
+
+      // 1. Handle top-level control events (done / error)
+      if (dataJson.type === "done") {
+        console.log(\`\n[DONE] Tools called: \${dataJson.tools_called}\`);
+        continue;
+      }
+      if (dataJson.type === "error") {
+        console.error(\`\n[ERROR] \${dataJson.detail}\`);
+        continue;
+      }
+
+      const delta = dataJson.choices[0]?.delta;
+      if (!delta) continue;
+
+      // 2. Read natural language response
+      if (delta.content) {
+        process.stdout.write(delta.content);
+      }
+
+      // 3. Read status / reasoning logs
+      if (delta.reasoning) {
+        console.log(\`\n[Status] \${delta.reasoning}\`);
+      }
+
+      // 4. Read tool triggers / arguments
+      if (delta.tool_call) {
+        console.log(\`\n[Tool Call] \${delta.tool_call.name}\`, delta.tool_call.arguments);
+      }
+
+      // 5. Read sandbox output / tool results
+      if (delta.tool_result) {
+        console.log(\`\n[Tool Result] \${delta.tool_result.tool_name} exit=\${delta.tool_result.exit_code}\`);
+        console.log(\`Stdout: \${delta.tool_result.stdout}\`);
+      }
+
+      // 6. Read ProChat UI component (if configured)
+      if (delta.json) {
+        console.log("\nProChat JSON Component:", delta.json);
+      }
+      if (delta.code) {
+        console.log("\nProChat React Code:", delta.code);
+      }
+    } catch (err) {}
+  }
 }`,
       },
       sync: {
@@ -75,7 +179,9 @@ while (true) {
       {"role": "user", "content": "Check server disk space"}
     ],
     "stream": false,
-    "session_id": "chatbot_user_session_303"
+    "session_id": "user_session_404",
+    "app_id": "customer_support_prod",
+    "skill_names": ["weather_fetcher", "math_solver"]
   }'`,
         python: `import requests
 
@@ -87,7 +193,9 @@ headers = {
 payload = {
     "messages": [{"role": "user", "content": "Check server disk space"}],
     "stream": False,
-    "session_id": "user_session_404"
+    "session_id": "user_session_404",
+    "app_id": "customer_support_prod",
+    "skill_names": ["weather_fetcher", "math_solver"]
 }
 
 response = requests.post(url, headers=headers, json=payload).json()
@@ -102,7 +210,9 @@ print("Executed Tools:", response["executed_tools"])`,
   body: JSON.stringify({
     messages: [{ role: "user", content: "Check server disk space" }],
     stream: false,
-    session_id: "user_session_505"
+    session_id: "user_session_505",
+    app_id: "customer_support_prod",
+    skill_names: ["weather_fetcher", "math_solver"]
   })
 });
 
@@ -145,22 +255,46 @@ response_stream = client.chat.completions.create(
 )
 
 for chunk in response_stream:
+    # 1. Handle top-level Done/Error event structures
+    raw = chunk.model_dump() if hasattr(chunk, "model_dump") else dict(chunk)
+    if raw.get("type") == "done":
+        print(f"\n[DONE] Tools called: {raw.get('tools_called')}")
+        continue
+    elif raw.get("type") == "error":
+        print(f"\n[ERROR] {raw.get('detail')}")
+        continue
+
+    if not chunk.choices:
+        continue
     delta = chunk.choices[0].delta
-    # 1. Retrieve standard text content stream
+
+    # 2. Extract standard chat text assistant response
     if delta.content:
         print(delta.content, end="", flush=True)
 
-    # 2. Retrieve ProChat UI JSON structure & component Code stream
-    prochat_json = getattr(delta, "json", None) or (
-        delta.model_extra.get("json") if hasattr(delta, "model_extra") and delta.model_extra else None
-    )
-    prochat_code = getattr(delta, "code", None) or (
-        delta.model_extra.get("code") if hasattr(delta, "model_extra") and delta.model_extra else None
-    )
-    if prochat_json:
-        print("\\nProChat JSON:", prochat_json)
-    if prochat_code:
-        print("\\nProChat Code:", prochat_code)`,
+    # 3. Extract reasoning/thinking steps
+    reasoning = getattr(delta, "reasoning", None) or (delta.model_extra or {}).get("reasoning")
+    if reasoning:
+        print(f"\n[Reasoning] {reasoning}")
+
+    # 4. Extract tool execution calls
+    tool_call = getattr(delta, "tool_call", None) or (delta.model_extra or {}).get("tool_call")
+    if tool_call:
+        print(f"\n[Tool Call] {tool_call.get('name')} with args: {tool_call.get('arguments')}")
+
+    # 5. Extract sandbox execution results
+    tool_result = getattr(delta, "tool_result", None) or (delta.model_extra or {}).get("tool_result")
+    if tool_result:
+        print(f"\n[Tool Result] {tool_result.get('tool_name')} exit: {tool_result.get('exit_code')}")
+        print(f"Stdout: {tool_result.get('stdout')}")
+
+    # 6. Extract ProChat UI components if present
+    p_json = getattr(delta, "json", None) or (delta.model_extra or {}).get("json")
+    p_code = getattr(delta, "code", None) or (delta.model_extra or {}).get("code")
+    if p_json:
+        print("\nProChat JSON Schema:", p_json)
+    if p_code:
+        print("\nProChat React Code:", p_code)`,
         javascript: `const response = await fetch("http://localhost:8000/api/v1/chat/completions", {
   method: "POST",
   headers: {
@@ -184,7 +318,7 @@ while (true) {
   if (done) break;
 
   buffer += decoder.decode(value, { stream: true });
-  const lines = buffer.split("\\n");
+  const lines = buffer.split("\n");
   buffer = lines.pop(); // Keep partial line in buffer
 
   for (const line of lines) {
@@ -195,20 +329,47 @@ while (true) {
 
     try {
       const dataJson = JSON.parse(rawData);
+
+      // 1. Handle top-level control events (done / error)
+      if (dataJson.type === "done") {
+        console.log(\`\n[DONE] Tools called: \${dataJson.tools_called}\`);
+        continue;
+      }
+      if (dataJson.type === "error") {
+        console.error(\`\n[ERROR] \${dataJson.detail}\`);
+        continue;
+      }
+
       const delta = dataJson.choices[0]?.delta;
       if (!delta) continue;
 
-      // 1. Retrieve text content
+      // 2. Read natural language response
       if (delta.content) {
         process.stdout.write(delta.content);
       }
-      // 2. Retrieve ProChat UI JSON configuration
-      if (delta.json) {
-        console.log("\\nProChat JSON:", delta.json);
+
+      // 3. Read status / reasoning logs
+      if (delta.reasoning) {
+        console.log(\`\n[Status] \${delta.reasoning}\`);
       }
-      // 3. Retrieve ProChat UI Component Code
+
+      // 4. Read tool triggers / arguments
+      if (delta.tool_call) {
+        console.log(\`\n[Tool Call] \${delta.tool_call.name}\`, delta.tool_call.arguments);
+      }
+
+      // 5. Read sandbox output / tool results
+      if (delta.tool_result) {
+        console.log(\`\n[Tool Result] \${delta.tool_result.tool_name} exit=\${delta.tool_result.exit_code}\`);
+        console.log(\`Stdout: \${delta.tool_result.stdout}\`);
+      }
+
+      // 6. Read ProChat UI component (if configured)
+      if (delta.json) {
+        console.log("\nProChat JSON Component:", delta.json);
+      }
       if (delta.code) {
-        console.log("\\nProChat Code:", delta.code);
+        console.log("\nProChat React Code:", delta.code);
       }
     } catch (err) {}
   }
