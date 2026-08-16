@@ -25,13 +25,44 @@ db_creation_status = {
     "ready": False,
     "details": "Initializing server database connections...",
     "progress": 5,
-    "fresh_start": False
+    "fresh_start": False,
+    "error": None,          # Set to an error message string if startup fails
 }
 
 def init_db():
     global db_creation_status
     import models
-    
+
+    # ── Encryption key guard ──────────────────────────────────────────────────
+    # Must be checked before any DB work. If the key is missing we cannot
+    # decrypt stored credentials, so there is no point continuing.
+    _enc_key = os.getenv("ENCRYPTION_SECRET_KEY", "").strip()
+    if not _enc_key:
+        db_creation_status["error"] = (
+            "ENCRYPTION_SECRET_KEY is not set. "
+            "All stored credentials (LLM API keys, storage secrets, SMTP passwords) are "
+            "encrypted and cannot be read without this key. "
+            "Generate one with:\n"
+            "  python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\"\n"
+            "Then add it to your .env file or pass it via -e ENCRYPTION_SECRET_KEY=<key> in docker run."
+        )
+        db_creation_status["details"] = "Configuration error: ENCRYPTION_SECRET_KEY is not set."
+        db_creation_status["progress"] = 0
+        return
+    try:
+        from cryptography.fernet import Fernet
+        Fernet(_enc_key.encode())
+    except Exception as e:
+        db_creation_status["error"] = (
+            f"ENCRYPTION_SECRET_KEY is not a valid Fernet key: {e}. "
+            "Generate a fresh one with:\n"
+            "  python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\""
+        )
+        db_creation_status["details"] = "Configuration error: ENCRYPTION_SECRET_KEY is invalid."
+        db_creation_status["progress"] = 0
+        return
+    # ─────────────────────────────────────────────────────────────────────────
+
     db_creation_status["details"] = "Checking database connection..."
     db_creation_status["progress"] = 15
 

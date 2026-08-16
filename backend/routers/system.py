@@ -24,11 +24,11 @@ def get_health():
     can display configuration errors before the user interacts.
     """
     from database import db_creation_status
-    from main import _ENCRYPTION_ERROR
+    error = db_creation_status.get("error")
     return {
         "db_ready": db_creation_status.get("ready", False),
-        "encryption_ok": _ENCRYPTION_ERROR is None,
-        "encryption_error": _ENCRYPTION_ERROR,
+        "encryption_ok": error is None,
+        "encryption_error": error,
     }
 
 
