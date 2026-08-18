@@ -139,37 +139,30 @@ def create_tenant_llm(
         TenantLLM.model_name == payload.model_name
     ).first()
     
+    if existing:
+        raise HTTPException(
+            status_code=400,
+            detail=f"An LLM model with the name '{payload.model_name}' is already configured for this tenant workspace. Duplicate model names are not allowed."
+        )
+
     encrypted_key = encrypt_key(payload.api_key)
     
-    if existing:
-        existing.provider = payload.provider
-        existing.api_key_encrypted = encrypted_key
-        existing.base_url = payload.base_url
-        existing.input_rate = payload.input_rate
-        existing.output_rate = payload.output_rate
-        existing.audio_input_rate = payload.audio_input_rate
-        existing.audio_output_rate = payload.audio_output_rate
-        existing.is_active = True
-        db.commit()
-        db.refresh(existing)
-        return {"status": "updated", "id": existing.id}
-    else:
-        new_llm = TenantLLM(
-            tenant_id=tenant.id,
-            provider=payload.provider,
-            model_name=payload.model_name,
-            api_key_encrypted=encrypted_key,
-            base_url=payload.base_url,
-            input_rate=payload.input_rate,
-            output_rate=payload.output_rate,
-            audio_input_rate=payload.audio_input_rate,
-            audio_output_rate=payload.audio_output_rate,
-            is_active=True
-        )
-        db.add(new_llm)
-        db.commit()
-        db.refresh(new_llm)
-        return {"status": "created", "id": new_llm.id}
+    new_llm = TenantLLM(
+        tenant_id=tenant.id,
+        provider=payload.provider,
+        model_name=payload.model_name,
+        api_key_encrypted=encrypted_key,
+        base_url=payload.base_url,
+        input_rate=payload.input_rate,
+        output_rate=payload.output_rate,
+        audio_input_rate=payload.audio_input_rate,
+        audio_output_rate=payload.audio_output_rate,
+        is_active=True
+    )
+    db.add(new_llm)
+    db.commit()
+    db.refresh(new_llm)
+    return {"status": "created", "id": new_llm.id}
 
 
 @router.put("/llms/{llm_id}")

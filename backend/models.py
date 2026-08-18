@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import Column, String, DateTime, Text, Integer, ForeignKey, Boolean, Float
+from sqlalchemy import Column, String, DateTime, Text, Integer, ForeignKey, Boolean, Float, UniqueConstraint
 from sqlalchemy.orm import relationship
 from database import Base
 
@@ -135,10 +135,11 @@ class ChatRequest(Base):
 
 class CustomSkill(Base):
     __tablename__ = "custom_skills"
+    __table_args__ = (UniqueConstraint("tenant_id", "name", name="uix_custom_skill_tenant_name"),)
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     tenant_id = Column(String, ForeignKey("tenants.id"), nullable=True)
-    name = Column(String, unique=True, nullable=False, index=True)
+    name = Column(String, nullable=False, index=True)
     description = Column(Text, nullable=True)
     content = Column(Text, nullable=False)  # SKILL.md content
     is_active = Column(Boolean, default=True)
@@ -149,10 +150,11 @@ class CustomSkill(Base):
 
 class McpServer(Base):
     __tablename__ = "mcp_servers"
+    __table_args__ = (UniqueConstraint("tenant_id", "name", name="uix_mcp_tenant_name"),)
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     tenant_id = Column(String, ForeignKey("tenants.id"), nullable=True)
-    name = Column(String, unique=True, nullable=False, index=True)
+    name = Column(String, nullable=False, index=True)
     transport = Column(String, default="stdio")  # stdio or sse/http
     command = Column(Text, nullable=True)        # e.g. npx -y @modelcontextprotocol/server-filesystem /tmp
     url = Column(String, nullable=True)          # e.g. http://localhost:8001/sse
@@ -166,10 +168,11 @@ class McpServer(Base):
 
 class AppModel(Base):
     __tablename__ = "apps"
+    __table_args__ = (UniqueConstraint("tenant_id", "name", name="uix_app_tenant_name"),)
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     tenant_id = Column(String, ForeignKey("tenants.id"), nullable=True)
-    name = Column(String, unique=True, nullable=False, index=True)
+    name = Column(String, nullable=False, index=True)
     description = Column(Text, nullable=True)
     icon = Column(String, default="box")
     is_active = Column(Boolean, default=True)

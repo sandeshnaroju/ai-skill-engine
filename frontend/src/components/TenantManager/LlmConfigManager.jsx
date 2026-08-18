@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { Plus, Pencil, Trash2 } from 'lucide-react';
+import { tenantsApi } from '../../api';
+import { useToast } from '../../context/ToastContext';
 
 export default function LlmConfigManager({
   selectedTenant,
@@ -11,6 +13,7 @@ export default function LlmConfigManager({
   fetchTenantLlms,
   fetchTenants
 }) {
+  const { showSuccess, confirmAction } = useToast();
   const [provider, setProvider] = useState('openai');
   const [modelName, setModelName] = useState('');
   const [modelApiKey, setModelApiKey] = useState('');
@@ -28,35 +31,23 @@ export default function LlmConfigManager({
     if (!selectedTenant) return;
     setRegistryLoading(true);
     try {
-      const url = editingLlmId ? `/api/v1/tenant/llms/${editingLlmId}` : '/api/v1/tenant/llms';
-      const method = editingLlmId ? 'PUT' : 'POST';
-      
-      const res = await fetch(url, {
-        method: method,
-        headers: {
-          'Content-Type': 'application/json',
-          'X-API-Key': selectedTenant.api_key
-        },
-        body: JSON.stringify({
-          provider,
-          model_name: modelName,
-          api_key: modelApiKey,
-          base_url: baseUrl || null,
-          input_rate: parseFloat(inputRate),
-          output_rate: parseFloat(outputRate),
-          audio_input_rate: parseFloat(audioInputRate),
-          audio_output_rate: parseFloat(audioOutputRate)
-        })
-      });
-      if (res.ok) {
-        cancelEdit();
-        setModelPage(1);
-        fetchTenantLlms(selectedTenant);
-        fetchTenants();
-      } else {
-        const errData = await res.json();
-        alert(`Error: ${errData.detail || 'Failed to register model'}`);
-      }
+      const payload = {
+        provider,
+        model_name: modelName.trim(),
+        api_key: modelApiKey.trim(),
+        base_url: baseUrl.trim() || null,
+        input_rate: parseFloat(inputRate),
+        output_rate: parseFloat(outputRate),
+        audio_input_rate: parseFloat(audioInputRate),
+        audio_output_rate: parseFloat(audioOutputRate)
+      };
+
+      await tenantsApi.createLlm(payload, selectedTenant.api_key);
+      showSuccess(`LLM model "${modelName}" registered successfully`);
+      cancelEdit();
+      setModelPage(1);
+      fetchTenantLlms(selectedTenant);
+      fetchTenants();
     } catch (err) {
       console.error('Add model config error:', err);
     } finally {
@@ -88,20 +79,23 @@ export default function LlmConfigManager({
     setAudioOutputRate(20.0);
   };
 
-  const handleDeleteLlm = async (llmId) => {
-    if (!selectedTenant || !window.confirm('Delete this LLM model configuration?')) return;
-    try {
-      const res = await fetch(`/api/v1/tenant/llms/${llmId}`, {
-        method: 'DELETE',
-        headers: { 'X-API-Key': selectedTenant.api_key }
-      });
-      if (res.ok) {
-        fetchTenantLlms(selectedTenant);
-        fetchTenants(); 
+  const handleDeleteLlm = (llmId) => {
+    if (!selectedTenant) return;
+    confirmAction({
+      title: 'Delete Model Configuration',
+      message: 'Are you sure you want to delete this LLM model configuration?',
+      confirmText: 'Delete Model',
+      onConfirm: async () => {
+        try {
+          await tenantsApi.deleteLlm(llmId, selectedTenant.api_key);
+          fetchTenantLlms(selectedTenant);
+          fetchTenants();
+          showSuccess('Model configuration deleted successfully');
+        } catch (err) {
+          console.error('Delete model error:', err);
+        }
       }
-    } catch (err) {
-      console.error('Delete model error:', err);
-    }
+    });
   };
 
   return (

@@ -122,6 +122,27 @@ def init_db():
         finally:
             db.close()
 
+    for table_name in ("custom_skills", "apps", "mcp_servers"):
+        if inspector.has_table(table_name):
+            db = SessionLocal()
+            try:
+                indexes = inspector.get_indexes(table_name)
+                for idx in indexes:
+                    idx_name = idx.get("name")
+                    is_unique = idx.get("unique")
+                    cols = idx.get("column_names")
+                    if idx_name in (f"ix_{table_name}_name", f"sqlite_autoindex_{table_name}_1") or (is_unique and cols == ["name"]):
+                        try:
+                            db.execute(text(f"DROP INDEX IF EXISTS {idx_name}"))
+                            print(f"Migration: Dropped global unique index {idx_name} on {table_name}")
+                        except Exception as ex:
+                            print(f"Migration notice dropping index {idx_name}: {ex}")
+                db.commit()
+            except Exception as e:
+                print(f"Migration warning for {table_name}: {e}")
+            finally:
+                db.close()
+
     db_creation_status["progress"] = 40
 
     if inspector.has_table("execution_logs"):

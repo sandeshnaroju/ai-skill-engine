@@ -1,7 +1,7 @@
 import React from 'react';
-import { Cpu, Edit, Trash2, HardDrive, Database } from 'lucide-react';
+import { Cpu, Edit, Trash2, HardDrive, Database, Copy } from 'lucide-react';
 
-export default function SkillCard({ skill, handleOpenEditModal, handleDeleteSkill }) {
+export default function SkillCard({ skill, handleOpenEditModal, handleDeleteSkill, handleOpenDuplicateModal }) {
   return (
     <div className="glass-box" style={{ padding: '20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: '12px' }}>
       <div>
@@ -40,10 +40,20 @@ export default function SkillCard({ skill, handleOpenEditModal, handleDeleteSkil
         <button className="btn-outline" onClick={() => handleOpenEditModal(skill)} style={{ flex: 1, padding: '5px 10px', fontSize: '0.78rem' }}>
           <Edit size={12} /> {skill.source === 'file' ? 'View Schema' : 'Edit Skill'}
         </button>
+        {skill.source === 'database' && handleOpenDuplicateModal && (
+          <button
+            className="btn-outline"
+            onClick={() => handleOpenDuplicateModal(skill)}
+            style={{ padding: '5px 10px', fontSize: '0.78rem' }}
+            title="Duplicate Skill Across Workspaces"
+          >
+            <Copy size={12} /> Duplicate
+          </button>
+        )}
         {skill.source === 'database' && (
           <button
             className="btn-outline"
-            onClick={() => handleDeleteSkill(skill.name)}
+            onClick={() => handleDeleteSkill(skill.name, skill.tenant_id)}
             style={{ padding: '5px 8px', color: 'var(--accent-rose)', borderColor: 'rgba(244, 63, 94, 0.2)' }}
             title="Delete Custom Skill"
           >
