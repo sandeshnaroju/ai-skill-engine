@@ -2,8 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Layers, Plus, Trash2, Edit, Save, X, RefreshCw, ChevronLeft, ChevronRight, HelpCircle, Key } from 'lucide-react';
 import AsyncSearchableDropdown from './AsyncSearchableDropdown';
+import { userDataApi, tenantsApi } from '../api';
+import { useToast } from '../context/ToastContext';
 
 export default function UserDataTemplates() {
+  const { showError, showWarning, showSuccess, confirmAction } = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
   const [templates, setTemplates] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -42,16 +45,7 @@ export default function UserDataTemplates() {
   const fetchTemplates = async () => {
     setLoading(true);
     try {
-      const queryParams = new URLSearchParams({
-        page: page.toString(),
-        page_size: pageSize.toString()
-      });
-      const headers = {};
-      if (selectedTenantId) {
-        headers['X-Tenant-ID'] = selectedTenantId;
-      }
-      const res = await fetch(`/api/v1/user_data_templates?${queryParams.toString()}`, { headers });
-      const data = await res.json();
+      const data = await userDataApi.list({ page, page_size: pageSize, tenant_id: selectedTenantId || undefined });
 
       if (data && data.items !== undefined) {
         setTemplates(data.items || []);
@@ -71,13 +65,11 @@ export default function UserDataTemplates() {
 
   const fetchTenants = async () => {
     try {
-      const res = await fetch('/api/v1/tenants');
-      if (res.ok) {
-        const data = await res.json();
-        setTenants(data || []);
-        if (data && data.length > 0 && !selectedTenantId) {
-          setSelectedTenantId(data[0].id);
-        }
+      const data = await tenantsApi.list();
+      const items = Array.isArray(data) ? data : (data.items || data.data || []);
+      setTenants(items);
+      if (items.length > 0 && !selectedTenantId) {
+        setSelectedTenantId(items[0].id);
       }
     } catch (e) {
       console.error('Failed to fetch tenants', e);
@@ -97,27 +89,29 @@ export default function UserDataTemplates() {
   };
 
   const handleRemovePair = (index) => {
-    setPairs(pairs.filter((_, idx) => idx !== index));
+    const next = [...pairs];
+    next.splice(index, 1);
+    setPairs(next.length > 0 ? next : [{ key: '', value: '' }]);
   };
 
   const handlePairChange = (index, field, val) => {
-    const updated = [...pairs];
-    updated[index][field] = val;
-    setPairs(updated);
+    const next = [...pairs];
+    next[index][field] = val;
+    setPairs(next);
   };
 
   const handleEdit = (tpl) => {
     setEditingId(tpl.id);
     setName(tpl.name);
     setDescription(tpl.description || '');
-
-    // Map object properties to dynamic pair array
-    const mappedPairs = Object.entries(tpl.data || {}).map(([key, value]) => ({
+    const dataObj = tpl.data || {};
+    const mapped = Object.entries(dataObj).map(([key, value]) => ({
       key,
-      value: String(value)
+      value: typeof value === 'object' ? JSON.stringify(value) : String(value)
     }));
-    setPairs(mappedPairs.length > 0 ? mappedPairs : [{ key: '', value: '' }]);
-    setJsonText(JSON.stringify(tpl.data || {}, null, 2));
+    setPairs(mapped.length > 0 ? mapped : [{ key: '', value: '' }]);
+    setJsonText(JSON.stringify(dataObj, null, 2));
+    setInputMode('pairs');
   };
 
   const handleCancelEdit = () => {
@@ -129,11 +123,8 @@ export default function UserDataTemplates() {
     setInputMode('pairs');
   };
 
-  const handleToggleMode = (targetMode) => {
-    if (targetMode === inputMode) return;
-
-    if (targetMode === 'json') {
-      // Convert pairs to JSON
+  const handleToggleInputMode = () => {
+    if (inputMode === 'pairs') {
       const obj = {};
       pairs.forEach(p => {
         if (p.key.trim()) {
@@ -143,11 +134,10 @@ export default function UserDataTemplates() {
       setJsonText(JSON.stringify(obj, null, 2));
       setInputMode('json');
     } else {
-      // Convert JSON to pairs
       try {
         const parsed = JSON.parse(jsonText);
         if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-          alert('JSON must be a valid key-value object (e.g. { "key": "value" })');
+          showWarning('JSON must be a valid key-value object (e.g. { "key": "value" })');
           return;
         }
         const mapped = Object.entries(parsed).map(([key, value]) => ({
@@ -157,7 +147,7 @@ export default function UserDataTemplates() {
         setPairs(mapped.length > 0 ? mapped : [{ key: '', value: '' }]);
         setInputMode('pairs');
       } catch (err) {
-        alert(`Invalid JSON format: ${err.message}. Please fix the JSON before switching back to key-value list mode.`);
+        showWarning(`Invalid JSON format: ${err.message}. Please fix the JSON before switching back to key-value list mode.`);
       }
     }
   };
@@ -166,7 +156,6 @@ export default function UserDataTemplates() {
     e.preventDefault();
     if (!name.trim()) return;
 
-    // Get dictionary data based on active input mode
     let dataDict = {};
     if (inputMode === 'pairs') {
       pairs.forEach(p => {
@@ -178,40 +167,27 @@ export default function UserDataTemplates() {
       try {
         const parsed = JSON.parse(jsonText);
         if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-          alert('JSON must be a valid key-value object (e.g. { "key": "value" })');
+          showWarning('JSON must be a valid key-value object (e.g. { "key": "value" })');
           return;
         }
         dataDict = parsed;
       } catch (err) {
-        alert(`Invalid JSON: ${err.message}. Please correct it before saving.`);
+        showWarning(`Invalid JSON: ${err.message}. Please correct it before saving.`);
         return;
       }
     }
 
     setSaving(true);
     try {
-      const headers = { 'Content-Type': 'application/json' };
-      if (selectedTenantId) {
-        headers['X-Tenant-ID'] = selectedTenantId;
-      }
-      const res = await fetch('/api/v1/user_data_templates', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          name: name.trim(),
-          description: description.trim() || null,
-          data: dataDict,
-          tenant_id: selectedTenantId,
-        }),
-      });
-
-      if (res.ok) {
-        handleCancelEdit();
-        fetchTemplates();
+      if (editingId) {
+        await userDataApi.update(editingId, name.trim(), description.trim() || null, dataDict);
       } else {
-        const errData = await res.json();
-        alert(`Error: ${errData.detail || 'Failed to save User Data template'}`);
+        await userDataApi.create(name.trim(), description.trim() || null, dataDict, selectedTenantId);
       }
+
+      showSuccess(`User Data profile "${name.trim()}" saved successfully`);
+      handleCancelEdit();
+      fetchTemplates();
     } catch (err) {
       console.error('Save template error:', err);
     } finally {
@@ -219,20 +195,21 @@ export default function UserDataTemplates() {
     }
   };
 
-  const handleDelete = async (id, tplName) => {
-    if (!window.confirm(`Are you sure you want to delete User Data template "${tplName}"?`)) return;
-    try {
-      const headers = {};
-      if (selectedTenantId) {
-        headers['X-Tenant-ID'] = selectedTenantId;
+  const handleDelete = (id, tplName) => {
+    confirmAction({
+      title: 'Delete User Data Profile',
+      message: `Are you sure you want to delete User Data template "${tplName}"?`,
+      confirmText: 'Delete Profile',
+      onConfirm: async () => {
+        try {
+          await userDataApi.delete(id);
+          fetchTemplates();
+          showSuccess(`User Data template "${tplName}" deleted successfully`);
+        } catch (err) {
+          console.error('Delete template error:', err);
+        }
       }
-      const res = await fetch(`/api/v1/user_data_templates/${id}`, { method: 'DELETE', headers });
-      if (res.ok) {
-        fetchTemplates();
-      }
-    } catch (err) {
-      console.error('Delete template error:', err);
-    }
+    });
   };
 
   return (
@@ -251,12 +228,9 @@ export default function UserDataTemplates() {
                   onChange={(val) => setSelectedTenantId(val)}
                   fetchOptions={async (query) => {
                     try {
-                      const res = await fetch(`/api/v1/tenants?search=${encodeURIComponent(query)}&page_size=20`);
-                      if (res.ok) {
-                        const data = await res.json();
-                        const items = data.items || data || [];
-                        return items.map(t => ({ value: t.id, label: t.name }));
-                      }
+                      const data = await tenantsApi.list({ search: query, page_size: 20 });
+                      const items = data.items || Array.isArray(data) ? (data.items || data) : [];
+                      return items.map(t => ({ value: t.id, label: t.name }));
                     } catch (e) {
                       console.error('Error fetching tenant options:', e);
                     }
@@ -371,12 +345,9 @@ export default function UserDataTemplates() {
                 onChange={(val) => setSelectedTenantId(val)}
                 fetchOptions={async (query) => {
                   try {
-                    const res = await fetch(`/api/v1/tenants?search=${encodeURIComponent(query)}&page_size=20`);
-                    if (res.ok) {
-                      const data = await res.json();
-                      const items = data.items || data || [];
-                      return items.map(t => ({ value: t.id, label: t.name }));
-                    }
+                    const data = await tenantsApi.list({ search: query, page_size: 20 });
+                    const items = data.items || Array.isArray(data) ? (data.items || data) : [];
+                    return items.map(t => ({ value: t.id, label: t.name }));
                   } catch (e) {
                     console.error('Error fetching tenant options:', e);
                   }

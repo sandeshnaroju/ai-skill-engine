@@ -2,8 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Cpu, Plus, RefreshCw, Trash2, Check, Terminal, Globe, Layers, ShieldCheck, Zap, ChevronLeft, ChevronRight } from 'lucide-react';
 import AsyncSearchableDropdown from './AsyncSearchableDropdown';
+import { mcpApi, tenantsApi } from '../api';
+import { useToast } from '../context/ToastContext';
 
 export default function McpServerManager() {
+  const { showSuccess, confirmAction } = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
   const [servers, setServers] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -40,16 +43,7 @@ export default function McpServerManager() {
   const fetchServers = async () => {
     setLoading(true);
     try {
-      const queryParams = new URLSearchParams({
-        page: page.toString(),
-        page_size: pageSize.toString()
-      });
-      const headers = {};
-      if (selectedTenantId) {
-        headers['X-Tenant-ID'] = selectedTenantId;
-      }
-      const res = await fetch(`/api/v1/mcp_servers?${queryParams.toString()}`, { headers });
-      const data = await res.json();
+      const data = await mcpApi.list({ page, page_size: pageSize, tenant_id: selectedTenantId || undefined });
       
       if (data && data.items !== undefined) {
         setServers(data.items || []);
@@ -69,13 +63,11 @@ export default function McpServerManager() {
 
   const fetchTenants = async () => {
     try {
-      const res = await fetch('/api/v1/tenants');
-      if (res.ok) {
-        const data = await res.json();
-        setTenants(data || []);
-        if (data && data.length > 0 && !selectedTenantId) {
-          setSelectedTenantId(data[0].id);
-        }
+      const data = await tenantsApi.list();
+      const items = Array.isArray(data) ? data : (data.items || data.data || []);
+      setTenants(items);
+      if (items.length > 0 && !selectedTenantId) {
+        setSelectedTenantId(items[0].id);
       }
     } catch (e) {
       console.error('Failed to fetch tenants', e);
@@ -95,34 +87,22 @@ export default function McpServerManager() {
     if (!name.trim()) return;
     setAdding(true);
     try {
-      const headers = { 'Content-Type': 'application/json' };
-      if (selectedTenantId) {
-        headers['X-Tenant-ID'] = selectedTenantId;
-      }
-      const res = await fetch('/api/v1/mcp_servers', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          name: name.trim(),
-          transport,
-          command: command.trim() || null,
-          url: url.trim() || null,
-          env: env.trim() || null,
-          tenant_id: selectedTenantId,
-        }),
+      await mcpApi.create({
+        name: name.trim(),
+        transport,
+        command: command.trim() || null,
+        url: url.trim() || null,
+        env: env.trim() || null,
+        tenant_id: selectedTenantId,
       });
 
-      if (res.ok) {
-        setName('');
-        setCommand('');
-        setUrl('');
-        setEnv('');
-        setPage(1);
-        fetchServers();
-      } else {
-        const errData = await res.json();
-        alert(`Error: ${errData.detail || 'Failed to create MCP server'}`);
-      }
+      showSuccess(`MCP Server "${name}" registered successfully`);
+      setName('');
+      setCommand('');
+      setUrl('');
+      setEnv('');
+      setPage(1);
+      fetchServers();
     } catch (err) {
       console.error('Add MCP server error:', err);
     } finally {
@@ -130,20 +110,21 @@ export default function McpServerManager() {
     }
   };
 
-  const handleDeleteServer = async (id, srvName) => {
-    if (!window.confirm(`Are you sure you want to delete MCP server "${srvName}"?`)) return;
-    try {
-      const headers = {};
-      if (selectedTenantId) {
-        headers['X-Tenant-ID'] = selectedTenantId;
+  const handleDeleteServer = (id, srvName) => {
+    confirmAction({
+      title: 'Delete MCP Server',
+      message: `Are you sure you want to delete MCP server "${srvName}"?`,
+      confirmText: 'Delete Server',
+      onConfirm: async () => {
+        try {
+          await mcpApi.delete(id);
+          fetchServers();
+          showSuccess(`MCP Server "${srvName}" deleted successfully`);
+        } catch (err) {
+          console.error('Delete MCP server error:', err);
+        }
       }
-      const res = await fetch(`/api/v1/mcp_servers/${id}`, { method: 'DELETE', headers });
-      if (res.ok) {
-        fetchServers();
-      }
-    } catch (err) {
-      console.error('Delete MCP server error:', err);
-    }
+    });
   };
 
   return (
@@ -162,12 +143,9 @@ export default function McpServerManager() {
                   onChange={(val) => setSelectedTenantId(val)}
                   fetchOptions={async (query) => {
                     try {
-                      const res = await fetch(`/api/v1/tenants?search=${encodeURIComponent(query)}&page_size=20`);
-                      if (res.ok) {
-                        const data = await res.json();
-                        const items = data.items || data || [];
-                        return items.map(t => ({ value: t.id, label: t.name }));
-                      }
+                      const data = await tenantsApi.list({ search: query, page_size: 20 });
+                      const items = data.items || Array.isArray(data) ? (data.items || data) : [];
+                      return items.map(t => ({ value: t.id, label: t.name }));
                     } catch (e) {
                       console.error('Error fetching tenant options:', e);
                     }
@@ -231,9 +209,7 @@ export default function McpServerManager() {
                         className="btn-outline"
                         style={{ padding: '2px 8px', fontSize: '0.7rem' }}
                         onClick={async () => {
-                          const headers = {};
-                          if (selectedTenantId) headers['X-Tenant-ID'] = selectedTenantId;
-                          await fetch(`/api/v1/mcp_servers/${s.id}/sync`, { method: 'POST', headers });
+                          await mcpApi.refresh(s.id);
                           fetchServers();
                         }}
                       >
@@ -304,12 +280,9 @@ export default function McpServerManager() {
               onChange={(val) => setSelectedTenantId(val)}
               fetchOptions={async (query) => {
                 try {
-                  const res = await fetch(`/api/v1/tenants?search=${encodeURIComponent(query)}&page_size=20`);
-                  if (res.ok) {
-                    const data = await res.json();
-                    const items = data.items || data || [];
-                    return items.map(t => ({ value: t.id, label: t.name }));
-                  }
+                  const data = await tenantsApi.list({ search: query, page_size: 20 });
+                  const items = data.items || Array.isArray(data) ? (data.items || data) : [];
+                  return items.map(t => ({ value: t.id, label: t.name }));
                 } catch (e) {
                   console.error('Error fetching tenant options:', e);
                 }

@@ -33,14 +33,17 @@ def get_current_user(
 
 def get_current_tenant(
     authorization: Optional[str] = Header(None),
+    x_api_key: Optional[str] = Header(None),
     x_tenant_id: Optional[str] = Header(None),
     session_token: Optional[str] = Cookie(None),
     db: Session = Depends(get_db)
 ) -> Tenant:
-    # 1. API Key Auth (External API client calls)
+    # 1. API Key Auth (External API client calls or frontend tenantKey)
     api_key = None
     if authorization and authorization.startswith("Bearer "):
         api_key = authorization.split(" ")[1].strip()
+    elif x_api_key:
+        api_key = x_api_key.strip()
 
     if api_key:
         tenant = db.query(Tenant).filter(Tenant.api_key == api_key, Tenant.is_active == True).first()
@@ -53,8 +56,11 @@ def get_current_tenant(
         user = db.query(User).filter(User.session_token == session_token).first()
         if user:
             if x_tenant_id:
-                # Find matching user tenant
-                tenant = db.query(Tenant).filter(Tenant.id == x_tenant_id, Tenant.user_id == user.id, Tenant.is_active == True).first()
+                # Find matching tenant by ID or API Key
+                tenant = db.query(Tenant).filter(
+                    (Tenant.id == x_tenant_id) | (Tenant.api_key == x_tenant_id),
+                    Tenant.is_active == True
+                ).first()
                 if tenant:
                     return tenant
             

@@ -2,8 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Box, Plus, RefreshCw, Trash2, Check, Layers, Cpu, ShieldCheck, Zap, X, Edit, FolderPlus, ChevronLeft, ChevronRight, Copy } from 'lucide-react';
 import AsyncSearchableDropdown from './AsyncSearchableDropdown';
+import DuplicateAppModal from './DuplicateAppModal';
+import { appsApi, skillsApi, tenantsApi } from '../api';
+import { useToast } from '../context/ToastContext';
 
 export default function AppManager() {
+  const { showSuccess, confirmAction } = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
   const [apps, setApps] = useState([]);
   const [skills, setSkills] = useState([]);
@@ -37,23 +41,33 @@ export default function AppManager() {
   const [appName, setAppName] = useState('');
   const [appDescription, setAppDescription] = useState('');
   const [selectedSkills, setSelectedSkills] = useState([]);
-  const [saving, setSaving] = useState(false);
   const [tenants, setTenants] = useState([]);
   const [selectedTenantId, setSelectedTenantId] = useState('');
+
+  // Duplication Modal State
+  const [showDuplicateModal, setShowDuplicateModal] = useState(false);
+  const [duplicateAppTarget, setDuplicateAppTarget] = useState(null);
+
+  const handleOpenDuplicateModal = (app) => {
+    setDuplicateAppTarget(app);
+    setShowDuplicateModal(true);
+  };
+
+  const handleDuplicateApp = async (appId, targetTenantIds, newAppName) => {
+    try {
+      const res = await appsApi.duplicate(appId, targetTenantIds, newAppName);
+      const copiedList = (res.copied_to_tenants || []).join(', ');
+      showSuccess(`App container "${newAppName}" duplicated successfully to ${copiedList || 'target workspaces'}`);
+      fetchApps();
+    } catch (err) {
+      console.error('Duplicate app error:', err);
+    }
+  };
 
   const fetchApps = async () => {
     setLoading(true);
     try {
-      const queryParams = new URLSearchParams({
-        page: page.toString(),
-        page_size: pageSize.toString()
-      });
-      const headers = {};
-      if (selectedTenantId) {
-        headers['X-Tenant-ID'] = selectedTenantId;
-      }
-      const appsRes = await fetch(`/api/v1/apps?${queryParams.toString()}`, { headers });
-      const appsData = await appsRes.json();
+      const appsData = await appsApi.list({ page, page_size: pageSize, tenant_id: selectedTenantId || undefined });
 
       if (appsData && appsData.items !== undefined) {
         setApps(appsData.items || []);
@@ -73,12 +87,7 @@ export default function AppManager() {
 
   const fetchSkills = async (tenantId) => {
     try {
-      const headers = {};
-      if (tenantId) {
-        headers['X-Tenant-ID'] = tenantId;
-      }
-      const res = await fetch('/api/v1/skills?page_size=100', { headers });
-      const data = await res.json();
+      const data = await skillsApi.list({ page_size: 100, tenant_id: tenantId || undefined });
       setSkills(data.skills || data.items || []);
     } catch (e) {
       console.error('Failed to fetch skills:', e);
@@ -87,13 +96,11 @@ export default function AppManager() {
 
   const fetchTenants = async () => {
     try {
-      const res = await fetch('/api/v1/tenants');
-      if (res.ok) {
-        const data = await res.json();
-        setTenants(data || []);
-        if (data && data.length > 0 && !selectedTenantId) {
-          setSelectedTenantId(data[0].id);
-        }
+      const data = await tenantsApi.list();
+      const items = Array.isArray(data) ? data : (data.items || data.data || []);
+      setTenants(items);
+      if (items.length > 0 && !selectedTenantId) {
+        setSelectedTenantId(items[0].id);
       }
     } catch (e) {
       console.error('Failed to fetch tenants', e);
@@ -147,44 +154,49 @@ export default function AppManager() {
     setSaving(true);
 
     try {
-      const res = await fetch('/api/v1/apps', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: isEditing ? editingAppId : undefined,
+      if (isEditing) {
+        await appsApi.update(editingAppId, {
+          name: appName,
+          description: appDescription,
+          skill_names: selectedSkills,
+          icon: 'box'
+        });
+      } else {
+        await appsApi.create({
           name: appName,
           description: appDescription,
           skill_names: selectedSkills,
           icon: 'box',
           tenant_id: selectedTenantId,
-        }),
-      });
-
-      if (res.ok) {
-        setShowModal(false);
-        setPage(1);
-        fetchApps();
-      } else {
-        const data = await res.json();
-        alert(`Error: ${data.detail || 'Failed to create App'}`);
+        });
       }
+
+      setShowModal(false);
+      setPage(1);
+      fetchApps();
+      showSuccess(`App container "${appName}" saved successfully`);
     } catch (err) {
-      console.error('Create app error:', err);
+      console.error('Create/update app error:', err);
     } finally {
       setSaving(false);
     }
   };
 
-  const handleDeleteApp = async (id, name) => {
-    if (!window.confirm(`Are you sure you want to delete app "${name}"? This deletes the app container configuration.`)) return;
-    try {
-      const res = await fetch(`/api/v1/apps/${id}`, { method: 'DELETE' });
-      if (res.ok) {
-        fetchApps();
+  const handleDeleteApp = (id, name) => {
+    confirmAction({
+      title: 'Delete App Container',
+      message: `Are you sure you want to delete app "${name}"? This deletes the app container configuration.`,
+      confirmText: 'Delete App',
+      onConfirm: async () => {
+        try {
+          await appsApi.delete(id);
+          fetchApps();
+          showSuccess(`App container "${name}" deleted successfully`);
+        } catch (err) {
+          console.error('Delete app error:', err);
+        }
       }
-    } catch (err) {
-      console.error('Delete app error:', err);
-    }
+    });
   };
 
   return (
@@ -200,7 +212,35 @@ export default function AppManager() {
           </p>
         </div>
 
-        <div style={{ display: 'flex', gap: '12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+          {/* Workspace Filter Dropdown */}
+          <div style={{ width: '220px' }}>
+            <AsyncSearchableDropdown
+              value={selectedTenantId}
+              onChange={(val) => {
+                setSelectedTenantId(val);
+                setPage(1);
+              }}
+              fetchOptions={async (searchTerm) => {
+                const data = await tenantsApi.list({ search: searchTerm || '', page_size: 10, page: 1 });
+                const list = Array.isArray(data) ? data : (data.items || data.data || []);
+                setTenants(prev => {
+                  const newTenants = [...prev];
+                  list.forEach(t => {
+                    if (!newTenants.find(existing => existing.id === t.id)) newTenants.push(t);
+                  });
+                  return newTenants;
+                });
+                return list.map(t => ({
+                  value: t.id,
+                  label: `🔑 ${t.name}`
+                }));
+              }}
+              initialLabel={tenants.find(t => t.id === selectedTenantId)?.name ? `🔑 ${tenants.find(t => t.id === selectedTenantId).name}` : ''}
+              placeholder="Select Workspace"
+            />
+          </div>
+
           <button className="btn-outline" onClick={fetchApps} disabled={loading} style={{ padding: '8px 12px' }}>
             <RefreshCw size={15} className={loading ? 'spin' : ''} /> Refresh
           </button>
@@ -296,6 +336,14 @@ export default function AppManager() {
                     </button>
                     <button
                       className="btn-outline"
+                      onClick={() => handleOpenDuplicateModal(app)}
+                      style={{ padding: '4px 10px', fontSize: '0.78rem' }}
+                      title="Duplicate App Container Across Workspaces"
+                    >
+                      <Copy size={13} /> Duplicate
+                    </button>
+                    <button
+                      className="btn-outline"
                       onClick={() => handleDeleteApp(app.id, app.name)}
                       style={{ padding: '4px 10px', fontSize: '0.78rem', color: 'var(--accent-rose)', borderColor: 'rgba(244, 63, 94, 0.3)' }}
                     >
@@ -360,12 +408,9 @@ export default function AppManager() {
                     onChange={(val) => { setSelectedTenantId(val); setSelectedSkills([]); fetchSkills(val); }}
                     fetchOptions={async (query) => {
                       try {
-                        const res = await fetch(`/api/v1/tenants?search=${encodeURIComponent(query)}&page_size=20`);
-                        if (res.ok) {
-                          const data = await res.json();
-                          const items = data.items || data || [];
-                          return items.map(t => ({ value: t.id, label: t.name }));
-                        }
+                        const data = await tenantsApi.list({ search: query, page_size: 20 });
+                        const items = data.items || Array.isArray(data) ? (data.items || data) : [];
+                        return items.map(t => ({ value: t.id, label: t.name }));
                       } catch (e) {
                         console.error('Error fetching tenant options:', e);
                       }
@@ -435,6 +480,15 @@ export default function AppManager() {
           </div>
         </div>
       )}
+
+      {/* Cross-Tenant App Container Duplication Modal */}
+      <DuplicateAppModal
+        showModal={showDuplicateModal}
+        setShowModal={setShowDuplicateModal}
+        app={duplicateAppTarget}
+        tenants={tenants}
+        onDuplicate={handleDuplicateApp}
+      />
     </div>
   );
 }

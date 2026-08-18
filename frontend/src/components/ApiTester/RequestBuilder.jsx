@@ -1,6 +1,7 @@
 import React from 'react';
 import { Play, ToggleRight, ToggleLeft, X } from 'lucide-react';
 import AsyncSearchableDropdown from '../AsyncSearchableDropdown';
+import { userDataApi, tenantsApi, appsApi, skillsApi } from '../../api';
 
 export default function RequestBuilder({
   systemPrompt,
@@ -67,25 +68,24 @@ export default function RequestBuilder({
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
         <label style={{ fontSize: '0.76rem', color: 'var(--text-sub)', fontWeight: '600' }}>Auth Tenant Key</label>
-        <div style={{ width: '220px' }}>
+        <div style={{ width: '100%' }}>
           <AsyncSearchableDropdown
             value={selectedTenantId}
             onChange={(val) => setSelectedTenantId(val)}
             initialLabel={tenants.find(t => t.id === selectedTenantId)?.name ? `${tenants.find(t => t.id === selectedTenantId).name} (••••${(tenants.find(t => t.id === selectedTenantId).api_key || '').slice(-4)})` : ''}
             fetchOptions={async (searchTerm) => {
-              const url = `/api/v1/tenants?search=${encodeURIComponent(searchTerm || '')}&page_size=10&page=1`;
-              const res = await fetch(url);
-              const data = await res.json();
+              const data = await tenantsApi.list({ search: searchTerm || '', page_size: 10, page: 1 });
+              const items = data.items || Array.isArray(data) ? (data.items || data) : [];
               setTenants(prev => {
                 const newTs = [...prev];
-                (data.items || []).forEach(t => {
+                items.forEach(t => {
                   if (!newTs.find(existing => existing.id === t.id)) newTs.push(t);
                 });
                 return newTs;
               });
-              return (data.items || []).map(t => ({
+              return items.map(t => ({
                 value: t.id,
-                label: `${t.name} (••••${t.api_key.slice(-4)})`
+                label: `${t.name} (••••${(t.api_key || '').slice(-4)})`
               }));
             }}
             placeholder="Select Tenant"
@@ -102,10 +102,9 @@ export default function RequestBuilder({
               onChange={(val) => setModel(val)}
               fetchOptions={async (searchTerm) => {
                 if (!selectedTenantKey) return [];
-                const url = `/api/v1/tenant/llms?search=${encodeURIComponent(searchTerm || '')}&page_size=10&page=1`;
-                const res = await fetch(url, { headers: { 'Authorization': `Bearer ${selectedTenantKey}` } });
-                const data = await res.json();
-                return (data.items || [])
+                const data = await tenantsApi.listLlms(selectedTenantKey, { search: searchTerm || '', page_size: 10, page: 1 });
+                const items = data.items || Array.isArray(data) ? (data.items || data) : [];
+                return items
                   .filter(m => m.provider !== 'prochat' && !m.model_name.toLowerCase().includes('genui'))
                   .map(m => ({
                     value: m.model_name,
@@ -126,19 +125,18 @@ export default function RequestBuilder({
               onChange={(val) => setAppId(val)}
               initialLabel={apps.find(a => a.id === appId)?.name ? `📦 ${apps.find(a => a.id === appId).name}` : ''}
               fetchOptions={async (searchTerm) => {
-                const url = `/api/v1/apps?search=${encodeURIComponent(searchTerm || '')}&page_size=10&page=1`;
-                const res = await fetch(url);
-                const data = await res.json();
+                const data = await appsApi.list({ search: searchTerm || '', page_size: 10, page: 1, tenant_id: selectedTenantId || undefined });
+                const items = data.items || Array.isArray(data) ? (data.items || data) : [];
                 setApps(prev => {
                   const newApps = [...prev];
-                  (data.items || []).forEach(a => {
+                  items.forEach(a => {
                     if (!newApps.find(existing => existing.id === a.id)) newApps.push(a);
                   });
                   return newApps;
                 });
-                return (data.items || []).map(a => ({
+                return items.map(a => ({
                   value: a.id,
-                  label: a.name
+                  label: `📦 ${a.name} (${a.skills_count || (a.skill_names ? a.skill_names.length : 0)} skills)`
                 }));
               }}
               placeholder="Select Application..."
@@ -281,8 +279,7 @@ export default function RequestBuilder({
           value=''
           onChange={(val) => { if (val && !selectedSkillNames.includes(val)) setSelectedSkillNames(prev => [...prev, val]); }}
           fetchOptions={async (searchTerm) => {
-            const res = await fetch(`/api/v1/skills?search=${encodeURIComponent(searchTerm || '')}&page_size=30&page=1`);
-            const data = await res.json();
+            const data = await skillsApi.list({ search: searchTerm || '', page_size: 30, page: 1 });
             const items = Array.isArray(data.items) ? data.items : (Array.isArray(data) ? data : []);
             return items.filter(s => !selectedSkillNames.includes(s.name)).map(s => ({ value: s.name, label: `🧩 ${s.name}` }));
           }}
@@ -305,17 +302,16 @@ export default function RequestBuilder({
               onChange={handleTemplateChange}
               initialLabel={selectedTemplateId ? `📋 ${templates.find(t => t.id === selectedTemplateId)?.name || 'Loading Profile...'}` : ''}
               fetchOptions={async (searchTerm) => {
-                const url = `/api/v1/user_data_templates?search=${encodeURIComponent(searchTerm || '')}&page_size=20&page=1`;
-                const res = await fetch(url);
-                const data = await res.json();
+                const data = await userDataApi.list({ search: searchTerm || '', page_size: 20, page: 1 });
+                const items = data.items || Array.isArray(data) ? (data.items || data) : [];
                 setTemplates(prev => {
                   const newTs = [...prev];
-                  (data.items || []).forEach(t => {
+                  items.forEach(t => {
                     if (!newTs.find(existing => existing.id === t.id)) newTs.push(t);
                   });
                   return newTs;
                 });
-                return (data.items || []).map(t => ({
+                return items.map(t => ({
                   value: t.id,
                   label: `📋 ${t.name}`
                 }));

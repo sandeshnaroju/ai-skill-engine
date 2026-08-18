@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { RefreshCw, CheckCircle, AlertTriangle, ChevronLeft, ChevronRight, X } from 'lucide-react';
 import AsyncSearchableDropdown from './AsyncSearchableDropdown';
+import { logsApi, apiClient } from '../api';
 
 function LogDetailDrawer({ log, onClose }) {
   return (
@@ -119,12 +120,9 @@ export default function LogViewer({ requestSource, title, subtitle, icon: IconCo
 
   const fetchFilters = async () => {
     try {
-      const res = await fetch('/api/v1/logs/filters');
-      if (res.ok) {
-        const data = await res.json();
-        setUniqueTenants(data.tenants || []);
-        setUniqueModels(data.models || []);
-      }
+      const data = await apiClient.get('/api/v1/logs/filters');
+      setUniqueTenants(data.tenants || []);
+      setUniqueModels(data.models || []);
     } catch (e) {
       console.error('Failed to fetch filters:', e);
     }
@@ -133,17 +131,14 @@ export default function LogViewer({ requestSource, title, subtitle, icon: IconCo
   const fetchLogs = async () => {
     setLoading(true);
     try {
-      const queryParams = new URLSearchParams({
-        page: page.toString(),
-        page_size: pageSize.toString(),
+      const data = await logsApi.getExecutionLogs({
+        page,
+        page_size: pageSize,
         request_source: requestSource,
-        tenant_name: selectedTenant,
-        model_name: selectedModel,
-        sandbox_type: filterType
+        tenant_name: selectedTenant !== 'ALL' ? selectedTenant : undefined,
+        model_name: selectedModel !== 'ALL' ? selectedModel : undefined,
+        sandbox_type: filterType !== 'ALL' ? filterType : undefined
       });
-
-      const res = await fetch(`/api/v1/logs?${queryParams.toString()}`);
-      const data = await res.json();
       
       // Handle either paginated object or fallback raw array
       if (data && data.items !== undefined) {
@@ -194,9 +189,7 @@ export default function LogViewer({ requestSource, title, subtitle, icon: IconCo
                 value={selectedTenant}
                 onChange={setSelectedTenant}
                 fetchOptions={async (searchTerm) => {
-                  const url = `/api/v1/logs/filters?search_tenant=${encodeURIComponent(searchTerm || '')}`;
-                  const res = await fetch(url);
-                  const data = await res.json();
+                  const data = await logsApi.getFilters({ search_tenant: searchTerm || '' });
                   return [
                     { value: "ALL", label: "All Tenants" },
                     ...(data.tenants || []).map(t => ({ value: t, label: t }))
@@ -215,9 +208,7 @@ export default function LogViewer({ requestSource, title, subtitle, icon: IconCo
                 value={selectedModel}
                 onChange={setSelectedModel}
                 fetchOptions={async (searchTerm) => {
-                  const url = `/api/v1/logs/filters?search_model=${encodeURIComponent(searchTerm || '')}`;
-                  const res = await fetch(url);
-                  const data = await res.json();
+                  const data = await logsApi.getFilters({ search_model: searchTerm || '' });
                   return [
                     { value: "ALL", label: "All Models" },
                     ...(data.models || []).map(m => ({ value: m, label: m }))

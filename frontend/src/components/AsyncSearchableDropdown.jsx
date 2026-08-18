@@ -99,7 +99,13 @@ const AsyncSearchableDropdown = ({
   // Close on scroll/resize so menu tracks anchor correctly
   useEffect(() => {
     if (!isOpen) return;
-    const handleScrollResize = () => close();
+    const handleScrollResize = (e) => {
+      const portalMenu = document.querySelector('.async-dropdown-menu');
+      if (portalMenu && e.target && (portalMenu === e.target || portalMenu.contains(e.target))) {
+        return;
+      }
+      close();
+    };
     window.addEventListener('scroll', handleScrollResize, true);
     window.addEventListener('resize', handleScrollResize);
     return () => {

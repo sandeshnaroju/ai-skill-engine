@@ -83,22 +83,21 @@ def create_mcp_server(
         McpServer.tenant_id == target_tenant_id
     ).first()
     if srv:
-        srv.transport = payload.transport
-        srv.command = payload.command
-        srv.url = payload.url
-        srv.env = payload.env
-        srv.is_active = True
-    else:
-        srv = McpServer(
-            name=clean_name,
-            tenant_id=target_tenant_id,
-            transport=payload.transport,
-            command=payload.command,
-            url=payload.url,
-            env=payload.env,
-            is_active=True
+        raise HTTPException(
+            status_code=400,
+            detail=f"An MCP server named '{clean_name}' already exists for this tenant workspace. Duplicate MCP server names are not allowed."
         )
-        db.add(srv)
+
+    srv = McpServer(
+        name=clean_name,
+        tenant_id=target_tenant_id,
+        transport=payload.transport,
+        command=payload.command,
+        url=payload.url,
+        env=payload.env,
+        is_active=True
+    )
+    db.add(srv)
     db.commit()
     db.refresh(srv)
 

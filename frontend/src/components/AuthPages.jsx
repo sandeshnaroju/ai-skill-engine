@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Mail, Lock, CheckCircle, AlertTriangle, ArrowRight, Zap, RefreshCw, HelpCircle, ArrowLeft } from 'lucide-react';
+import { authApi } from '../api';
 
 export default function AuthPages({ onLoginSuccess }) {
   // Modes: 'login', 'register', 'forgot', 'reset', 'otp'
@@ -31,13 +32,7 @@ export default function AuthPages({ onLoginSuccess }) {
     setSuccess('');
     setLoading(true);
     try {
-      const res = await fetch('/api/v1/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || 'Login failed');
+      await authApi.login(email, password);
       setSuccess('Logged in successfully!');
       setTimeout(() => {
         onLoginSuccess();
@@ -64,13 +59,7 @@ export default function AuthPages({ onLoginSuccess }) {
     }
     setLoading(true);
     try {
-      const res = await fetch('/api/v1/auth/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || 'Registration failed');
+      const data = await authApi.register(email, password);
       
       if (data.verification_required) {
         setSuccess('Registration successful! Please enter the OTP sent to your email.');
@@ -100,13 +89,7 @@ export default function AuthPages({ onLoginSuccess }) {
     }
     setLoading(true);
     try {
-      const res = await fetch('/api/v1/auth/verify-otp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, otp: otpCode }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || 'Verification failed');
+      await authApi.verifyOtp(email, otpCode);
       setSuccess('Email verified successfully! You can now log in.');
       setOtpCode('');
       setTimeout(() => {
@@ -124,13 +107,7 @@ export default function AuthPages({ onLoginSuccess }) {
     setSuccess('');
     setLoading(true);
     try {
-      const res = await fetch('/api/v1/auth/resend-otp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || 'Resend failed');
+      await authApi.resendOtp(email);
       setSuccess('Verification code resent successfully.');
     } catch (err) {
       setError(err.message);
@@ -146,13 +123,7 @@ export default function AuthPages({ onLoginSuccess }) {
     setDebugLink('');
     setLoading(true);
     try {
-      const res = await fetch('/api/v1/auth/forgot-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || 'Request failed');
+      const data = await authApi.forgotPassword(email);
       setSuccess('Password reset link generated successfully!');
       if (data.debug_reset_link) {
         setDebugLink(data.debug_reset_link);
@@ -174,13 +145,7 @@ export default function AuthPages({ onLoginSuccess }) {
     }
     setLoading(true);
     try {
-      const res = await fetch('/api/v1/auth/reset-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: resetToken, new_password: password }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || 'Password reset failed');
+      await authApi.resetPassword(resetToken, password);
       setSuccess('Password reset successfully! Redirecting to login...');
       setTimeout(() => {
         setMode('login');

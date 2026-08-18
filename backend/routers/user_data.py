@@ -74,17 +74,49 @@ def create_or_update_user_data_template(
         UserDataTemplate.tenant_id == target_tenant_id
     ).first()
     if existing:
-        existing.description = payload.description
-        existing.data = data_str
-        tpl = existing
-    else:
-        tpl = UserDataTemplate(
-            name=clean_name,
-            tenant_id=target_tenant_id,
-            description=payload.description,
-            data=data_str
+        raise HTTPException(
+            status_code=400,
+            detail=f"A User Data context profile named '{clean_name}' already exists for this tenant workspace. Duplicate profile names are not allowed."
         )
-        db.add(tpl)
+
+    tpl = UserDataTemplate(
+        name=clean_name,
+        tenant_id=target_tenant_id,
+        description=payload.description,
+        data=data_str
+    )
+    db.add(tpl)
+    db.commit()
+    db.refresh(tpl)
+    return {
+        "status": "success",
+        "template_id": tpl.id,
+        "name": tpl.name,
+        "data": payload.data
+    }
+
+
+@router.put("/{template_id}")
+def update_user_data_template(
+    template_id: str,
+    payload: UserDataTemplateCreate,
+    db: Session = Depends(get_db),
+    current_tenant: Tenant = Depends(get_current_tenant)
+):
+    from models import UserDataTemplate
+    clean_name = payload.name.strip()
+    data_str = json.dumps(payload.data)
+
+    tpl = db.query(UserDataTemplate).filter(
+        UserDataTemplate.id == template_id,
+        UserDataTemplate.tenant_id == current_tenant.id
+    ).first()
+    if not tpl:
+        raise HTTPException(status_code=404, detail="User Data profile not found")
+
+    tpl.name = clean_name
+    tpl.description = payload.description
+    tpl.data = data_str
     db.commit()
     db.refresh(tpl)
     return {

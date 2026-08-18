@@ -5,6 +5,7 @@ import AsyncSearchableDropdown from '../AsyncSearchableDropdown';
 import ProChat from 'prochat';
 import RequestBuilder from './RequestBuilder';
 import ResponseViewer from './ResponseViewer';
+import { userDataApi, tenantsApi, appsApi, chatApi, apiClient } from '../../api';
 
 
 export default function ApiTester() {
@@ -65,8 +66,7 @@ export default function ApiTester() {
 
   const fetchTemplates = async () => {
     try {
-      const res = await fetch('/api/v1/user_data_templates?page_size=100&page=1');
-      const data = await res.json();
+      const data = await userDataApi.list({ page_size: 100, page: 1 });
       const items = Array.isArray(data.items) ? data.items : (Array.isArray(data) ? data : []);
       setTemplates(items);
     } catch (e) {
@@ -104,8 +104,7 @@ export default function ApiTester() {
     }
     // If not in list (e.g. search result not in initial fetch), fetch by ID directly
     try {
-      const res = await fetch(`/api/v1/user_data_templates?search=&page=1&page_size=100`);
-      const data = await res.json();
+      const data = await userDataApi.list({ search: '', page: 1, page_size: 100 });
       const items = Array.isArray(data.items) ? data.items : (Array.isArray(data) ? data : []);
       setTemplates(items);
       const found = items.find(t => String(t.id) === String(tplId));
@@ -231,29 +230,16 @@ export default function ApiTester() {
       const formData = new FormData();
       formData.append('file', file);
 
-      const headers = {};
-      if (selectedTenantKey) {
-        headers['Authorization'] = `Bearer ${selectedTenantKey.trim()}`;
-      }
-
-      const res = await fetch('/api/v1/files/upload', {
-        method: 'POST',
-        headers,
-        body: formData
+      const data = await apiClient.post('/api/v1/files/upload', formData, {
+        apiKey: selectedTenantKey.trim() || undefined
       });
-      if (res.ok) {
-        const data = await res.json();
-        setUploadedFile({
-          name: file.name,
-          url: data.url,
-          sandboxPath: data.sandbox_path,
-          type: file.type
-        });
-        logText(`File uploaded successfully! URL: ${data.url}`);
-      } else {
-        const errText = await res.text();
-        logText(`Upload failed: ${errText}`);
-      }
+      setUploadedFile({
+        name: file.name,
+        url: data.url,
+        sandboxPath: data.sandbox_path,
+        type: file.type
+      });
+      logText(`File uploaded successfully! URL: ${data.url}`);
     } catch (err) {
       logText(`Upload exception: ${err.message}`);
     } finally {
@@ -263,26 +249,25 @@ export default function ApiTester() {
 
   const loadMetaData = async () => {
     try {
-      const [tenantsRes, appsRes] = await Promise.all([
-        fetch('/api/v1/tenants'),
-        fetch('/api/v1/apps')
+      const [tenantsData, appsData] = await Promise.all([
+        tenantsApi.list(),
+        appsApi.list()
       ]);
-      const tenantsData = await tenantsRes.json();
-      const appsData = await appsRes.json();
 
+      const tenantsList = Array.isArray(tenantsData) ? tenantsData : (tenantsData.items || []);
       const appsList = appsData?.items || appsData || [];
-      setTenants(tenantsData || []);
+      setTenants(tenantsList);
       setApps(appsList);
 
       // Auto-select first tenant if none selected
       let tenantIdToUse = selectedTenantId;
-      if (tenantsData && tenantsData.length > 0 && !selectedTenantId) {
-        tenantIdToUse = tenantsData[0].id;
+      if (tenantsList && tenantsList.length > 0 && !selectedTenantId) {
+        tenantIdToUse = tenantsList[0].id;
         setSelectedTenantId(tenantIdToUse);
       }
 
       // Resolve key from selected/default tenant and load its models
-      const activeT = tenantsData.find(t => t.id === tenantIdToUse) || tenantsData[0];
+      const activeT = tenantsList.find(t => t.id === tenantIdToUse) || tenantsList[0];
       const keyToUse = activeT ? activeT.api_key : '';
       if (keyToUse) {
         fetchTenantModels(keyToUse);
@@ -304,23 +289,19 @@ export default function ApiTester() {
   const fetchTenantModels = async (key) => {
     if (!key) return;
     try {
-      const res = await fetch('/api/v1/tenant/llms', {
-        headers: { 'Authorization': `Bearer ${key}` }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setTenantModels(data || []);
-        const nonProchat = (data || []).filter(
-          m => m.provider !== 'prochat' && !m.model_name.toLowerCase().includes('genui')
-        );
-        // Only auto-select first model if no model is set or URL model doesn't exist in list
-        const urlModelExists = model && nonProchat.some(m => m.model_name === model);
-        if (!urlModelExists) {
-          if (nonProchat.length > 0) {
-            setModel(nonProchat[0].model_name);
-          } else {
-            setModel('');
-          }
+      const data = await tenantsApi.listLlms(key);
+      const items = Array.isArray(data) ? data : (data.items || []);
+      setTenantModels(items || []);
+      const nonProchat = (items || []).filter(
+        m => m.provider !== 'prochat' && !m.model_name.toLowerCase().includes('genui')
+      );
+      // Only auto-select first model if no model is set or URL model doesn't exist in list
+      const urlModelExists = model && nonProchat.some(m => m.model_name === model);
+      if (!urlModelExists) {
+        if (nonProchat.length > 0) {
+          setModel(nonProchat[0].model_name);
+        } else {
+          setModel('');
         }
       }
     } catch (e) {
@@ -400,10 +381,9 @@ export default function ApiTester() {
 
     try {
       logText(`Sending HTTP request...`);
-      const res = await fetch('/api/v1/chat/completions', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(payload),
+      const res = await chatApi.createStream(payload, null, {
+        apiKey: selectedTenantKey.trim() || null,
+        source: 'api',
         signal: controller.signal
       });
 

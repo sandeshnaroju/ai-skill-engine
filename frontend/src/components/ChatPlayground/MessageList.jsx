@@ -93,7 +93,7 @@ export default function MessageList({
     }
 
     if (textStr) {
-      const attachmentRegex = /\[Attached File:\s*([^\s\]]+)\s*\(URL:\s*([^\)]+)\)\]/g;
+      const attachmentRegex = /\[Attached File:\s*([^\]]+?)\s*\(URL:\s*([^\)]+)\)\]/g;
       let match;
       while ((match = attachmentRegex.exec(textStr)) !== null) {
         attachments.push({
