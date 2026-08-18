@@ -30,6 +30,10 @@ class SkillSaveRequest(BaseModel):
     content: str
     tenant_id: Optional[str] = None
 
+class SkillDuplicateRequest(BaseModel):
+    target_tenant_ids: List[str]
+    new_skill_name: Optional[str] = None
+
 class ApiCallDetail(BaseModel):
     method: str
     url: str
@@ -53,6 +57,10 @@ class AppCreate(BaseModel):
     icon: Optional[str] = "box"
     skill_names: List[str] = []
     tenant_id: Optional[str] = None
+
+class AppDuplicateRequest(BaseModel):
+    target_tenant_ids: List[str]
+    new_app_name: Optional[str] = None
 
 class TenantLlmCreate(BaseModel):
     provider: str

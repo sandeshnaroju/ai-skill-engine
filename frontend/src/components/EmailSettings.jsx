@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Mail, Save, Eye, EyeOff, Loader, Check, X, Send, Play } from 'lucide-react';
 import AsyncSearchableDropdown from './AsyncSearchableDropdown';
+import { systemApi, authApi, tenantsApi, apiClient } from '../api';
 
 function MaskedInput({ id, label, value, onChange, placeholder }) {
   const [visible, setVisible] = useState(false);
@@ -101,21 +102,14 @@ export default function EmailSettings() {
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch('/api/v1/auth/me');
-        if (res.ok) {
-          const user = await res.json();
-          setCurrentUser(user);
-          
-          // Fetch user's tenants to auto-select the first one
-          const tenantsRes = await fetch('/api/v1/tenants?page_size=10&page=1');
-          if (tenantsRes.ok) {
-            const tenantsData = await tenantsRes.json();
-            const items = tenantsData.items || [];
-            setTenants(items);
-            if (items.length > 0) {
-              handleTenantChange(items[0].id, items[0].name);
-            }
-          }
+        const user = await authApi.getProfile();
+        setCurrentUser(user);
+        
+        const tenantsData = await tenantsApi.list({ page_size: 100, page: 1 });
+        const items = Array.isArray(tenantsData) ? tenantsData : (tenantsData.items || []);
+        setTenants(items);
+        if (items.length > 0) {
+          handleTenantChange(items[0].id, items[0].name);
         }
       } catch (e) {
         console.error('Failed to query user profile or tenants:', e);
@@ -128,20 +122,16 @@ export default function EmailSettings() {
     setSaveStatus(null);
     setSaveMessage('');
     try {
-      const url = tenantId ? `/api/v1/email_config?tenant_id=${tenantId}` : '/api/v1/email_config';
-      const res = await fetch(url);
-      if (res.ok) {
-        const data = await res.json();
-        setForm({
-          smtp_host: data.smtp_host || '',
-          smtp_port: String(data.smtp_port || '587'),
-          smtp_username: data.smtp_username || '',
-          smtp_password: '',
-          sender_email: data.sender_email || '',
-          use_tls: data.use_tls ?? true,
-          use_ssl: data.use_ssl ?? false
-        });
-      }
+      const data = await apiClient.get('/api/v1/email_config', { params: { tenant_id: tenantId } });
+      setForm({
+        smtp_host: data.smtp_host || '',
+        smtp_port: String(data.smtp_port || '587'),
+        smtp_username: data.smtp_username || '',
+        smtp_password: '',
+        sender_email: data.sender_email || '',
+        use_tls: data.use_tls ?? true,
+        use_ssl: data.use_ssl ?? false
+      });
     } catch (e) {
       console.error('Failed to load email config:', e);
     } finally {
@@ -151,7 +141,7 @@ export default function EmailSettings() {
 
   const handleTenantChange = (tenantId, label) => {
     setSelectedTenantId(tenantId);
-    setSelectedTenantLabel(label);
+    if (label) setSelectedTenantLabel(label);
     if (tenantId) {
       loadEmailConfig(tenantId);
     } else {
@@ -194,27 +184,15 @@ export default function EmailSettings() {
         payload.smtp_password = form.smtp_password;
       }
 
-      const res = await fetch('/api/v1/email_config', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(payload)
-      });
+      const data = await apiClient.post('/api/v1/email_config', payload);
 
-      if (res.ok) {
-        setSaveStatus('success');
-        setSaveMessage('SMTP email settings successfully saved.');
-        // clear password input
-        setForm(prev => ({ ...prev, smtp_password: '' }));
-      } else {
-        const data = await res.json();
-        setSaveStatus('error');
-        setSaveMessage(data.detail || 'Failed to save SMTP config.');
-      }
+      setSaveStatus('success');
+      setSaveMessage('SMTP mail configuration saved successfully for this workspace!');
+      // clear password input
+      setForm(prev => ({ ...prev, smtp_password: '' }));
     } catch (err) {
       setSaveStatus('error');
-      setSaveMessage(err.message || 'A network error occurred.');
+      setSaveMessage(err.message || 'Failed to save SMTP configuration.');
     } finally {
       setSaving(false);
     }
@@ -233,25 +211,13 @@ export default function EmailSettings() {
     setTestMessage('');
 
     try {
-      const res = await fetch('/api/v1/email_config/test', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          tenant_id: selectedTenantId || null,
-          test_receiver: testReceiver
-        })
+      const data = await apiClient.post('/api/v1/email_config/test', {
+        tenant_id: selectedTenantId || null,
+        test_receiver: testReceiver
       });
 
-      const data = await res.json();
-      if (res.ok) {
-        setTestStatus('success');
-        setTestMessage(data.detail || 'Connection test successful! Email delivered.');
-      } else {
-        setTestStatus('error');
-        setTestMessage(data.detail || 'Connection test failed.');
-      }
+      setTestStatus('success');
+      setTestMessage(data.detail || 'Connection test successful! Email delivered.');
     } catch (err) {
       setTestStatus('error');
       setTestMessage(err.message || 'A network error occurred.');
@@ -284,13 +250,18 @@ export default function EmailSettings() {
               const found = tenants.find(t => t.id === val);
               handleTenantChange(val, found ? found.name : '');
             }}
-            initialLabel={selectedTenantLabel}
+            initialLabel={selectedTenantLabel || tenants.find(t => t.id === selectedTenantId)?.name || ''}
             fetchOptions={async (searchTerm) => {
-              const url = `/api/v1/tenants?search=${encodeURIComponent(searchTerm || '')}&page_size=30&page=1`;
-              const res = await fetch(url);
-              const data = await res.json();
-              setTenants(data.items || []);
-              return (data.items || []).map(t => ({
+              const data = await tenantsApi.list({ search: searchTerm || '', page_size: 30, page: 1 });
+              const items = data.items || Array.isArray(data) ? (data.items || data) : [];
+              setTenants(prev => {
+                const newTs = [...prev];
+                items.forEach(t => {
+                  if (!newTs.find(existing => existing.id === t.id)) newTs.push(t);
+                });
+                return newTs;
+              });
+              return items.map(t => ({
                 value: t.id,
                 label: t.name
               }));

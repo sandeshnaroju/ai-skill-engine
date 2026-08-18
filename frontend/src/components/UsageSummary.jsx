@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { DollarSign, Activity, Cpu, Key, RefreshCw, Layers, TrendingUp, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import AsyncSearchableDropdown from './AsyncSearchableDropdown';
+import { logsApi, tenantsApi } from '../api';
 
 const SOURCE_STYLES = {
   api: { label: 'API', bg: 'rgba(6, 182, 212, 0.12)', color: 'var(--primary-cyan)' },
@@ -71,26 +72,17 @@ export default function UsageSummary() {
   const fetchUsageData = useCallback(async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams({
-        page: page.toString(),
-        page_size: pageSize.toString()
+      const json = await logsApi.getUsageSummary({
+        page,
+        page_size: pageSize,
+        tenant_name: (selectedTenant && selectedTenant !== 'ALL') ? selectedTenant : undefined,
+        model_name: searchModel.trim() || undefined,
+        request_source: (selectedSource && selectedSource !== 'ALL') ? selectedSource : undefined,
       });
-      if (selectedTenant && selectedTenant !== 'ALL') {
-        params.append('tenant_name', selectedTenant);
-      }
-      if (searchModel.trim()) {
-        params.append('model_name', searchModel.trim());
-      }
-      if (selectedSource && selectedSource !== 'ALL') {
-        params.append('request_source', selectedSource);
-      }
-      const res = await fetch(`/api/v1/usage/summary?${params.toString()}`);
-      if (res.ok) {
-        const json = await res.json();
-        setData(json);
-        setTotalPages(json.pages || 1);
-        setTotalItems(json.total || 0);
-      }
+
+      setData(json);
+      setTotalPages(json.pages || 1);
+      setTotalItems(json.total || 0);
     } catch (e) {
       console.error('Failed to fetch usage summary:', e);
     } finally {
@@ -160,12 +152,11 @@ export default function UsageSummary() {
             value={selectedTenant}
             onChange={handleTenantChange}
             fetchOptions={async (searchTerm) => {
-              const url = `/api/v1/tenants?search=${encodeURIComponent(searchTerm || '')}&page_size=10&page=1`;
-              const res = await fetch(url);
-              const data = await res.json();
+              const data = await tenantsApi.list({ search: searchTerm || '', page_size: 10, page: 1 });
+              const items = data.items || Array.isArray(data) ? (data.items || data) : [];
               return [
                 { value: 'ALL', label: 'All Tenants' },
-                ...(data.items || []).map(t => ({ value: t.name, label: `🔑 ${t.name}` }))
+                ...items.map(t => ({ value: t.name, label: `🔑 ${t.name}` }))
               ];
             }}
             placeholder="All Tenants"

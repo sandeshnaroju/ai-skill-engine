@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { FileText, RefreshCw, ChevronLeft, ChevronRight, X, Clock, CheckCircle, AlertCircle, Loader, Terminal, Cpu, ChevronDown, ChevronUp, Search } from 'lucide-react';
 import AsyncSearchableDropdown from './AsyncSearchableDropdown';
+import { logsApi, tenantsApi } from '../api';
 
 const STATUS_STYLES = {
   completed: { color: 'var(--primary-emerald)', icon: CheckCircle, label: 'Completed' },
@@ -82,8 +83,7 @@ function RequestDrawer({ requestId, onClose }) {
   useEffect(() => {
     if (!requestId) return;
     setLoading(true);
-    fetch(`/api/v1/requests/${requestId}`)
-      .then(r => r.json())
+    logsApi.getRequestLogDetail(requestId)
       .then(d => { setData(d); setLoading(false); })
       .catch(() => setLoading(false));
   }, [requestId]);
@@ -248,14 +248,14 @@ export default function RequestLogs() {
   const fetchRequests = useCallback(async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams({ page: page.toString(), page_size: pageSize.toString() });
-      if (filterSource) params.append('request_source', filterSource);
-      if (filterStatus) params.append('status', filterStatus);
-      if (selectedTenant && selectedTenant !== 'ALL') params.append('tenant_name', selectedTenant);
-      if (searchMsg.trim()) params.append('search', searchMsg.trim());
-
-      const res = await fetch(`/api/v1/requests?${params.toString()}`);
-      const data = await res.json();
+      const data = await logsApi.getRequestLogs({
+        page,
+        page_size: pageSize,
+        request_source: filterSource || undefined,
+        status: filterStatus || undefined,
+        tenant_name: (selectedTenant && selectedTenant !== 'ALL') ? selectedTenant : undefined,
+        search: searchMsg.trim() || undefined,
+      });
       if (data.items !== undefined) {
         setRequests(data.items || []);
         setTotalPages(data.pages || 1);
@@ -320,12 +320,11 @@ export default function RequestLogs() {
             value={selectedTenant}
             onChange={val => { setSelectedTenant(val); setPage(1); }}
             fetchOptions={async (searchTerm) => {
-              const url = `/api/v1/tenants?search=${encodeURIComponent(searchTerm || '')}&page_size=10&page=1`;
-              const res = await fetch(url);
-              const data = await res.json();
+              const data = await tenantsApi.list({ search: searchTerm || '', page_size: 10, page: 1 });
+              const items = data.items || Array.isArray(data) ? (data.items || data) : [];
               return [
                 { value: 'ALL', label: 'All Tenants' },
-                ...(data.items || []).map(t => ({ value: t.name, label: t.name }))
+                ...items.map(t => ({ value: t.name, label: t.name }))
               ];
             }}
             placeholder="All Tenants"

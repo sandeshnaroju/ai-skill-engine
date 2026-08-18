@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Send, Bot, User, Terminal, Sparkles, Trash2, Check, Copy, Activity, Code2, Globe, Plus, MessageSquare, Brain, ChevronDown, ChevronUp, Cpu, ShieldCheck, Box, Key, Download, X, History, FileText, Sparkle, Sliders, Paperclip, Maximize2, Minimize2, Loader } from 'lucide-react';
 import AsyncSearchableDropdown from '../AsyncSearchableDropdown';
+import { chatApi, tenantsApi, appsApi, userDataApi, skillsApi, apiClient } from '../../api';
 import ChatInput from './ChatInput';
 import MessageList from './MessageList';
 import ProChat from 'prochat';
@@ -97,12 +98,7 @@ export default function ChatPlayground() {
 
   const fetchTemplates = async () => {
     try {
-      const headers = {};
-      if (selectedTenantId) {
-        headers['X-Tenant-ID'] = selectedTenantId;
-      }
-      const res = await fetch('/api/v1/user_data_templates?page_size=100&page=1', { headers });
-      const data = await res.json();
+      const data = await userDataApi.list({ page_size: 100, page: 1, tenant_id: selectedTenantId || undefined });
       const items = Array.isArray(data.items) ? data.items : (Array.isArray(data) ? data : []);
       setTemplates(items);
     } catch (e) {
@@ -140,12 +136,7 @@ export default function ChatPlayground() {
     }
     // If not found in the initial list, re-fetch all templates
     try {
-      const headers = {};
-      if (selectedTenantId) {
-        headers['X-Tenant-ID'] = selectedTenantId;
-      }
-      const res = await fetch('/api/v1/user_data_templates?search=&page=1&page_size=100', { headers });
-      const data = await res.json();
+      const data = await userDataApi.list({ search: '', page: 1, page_size: 100, tenant_id: selectedTenantId || undefined });
       const items = Array.isArray(data.items) ? data.items : (Array.isArray(data) ? data : []);
       setTemplates(items);
       const found = items.find(t => String(t.id) === String(tplId));
@@ -203,14 +194,9 @@ export default function ChatPlayground() {
           headers['X-API-Key'] = apiKey.trim();
         }
 
-        const res = await fetch('/api/v1/files/upload', {
-          method: 'POST',
-          headers,
-          body: formData
+        const data = await apiClient.post('/api/v1/files/upload', formData, {
+          tenantKey: apiKey.trim() || undefined
         });
-
-        if (!res.ok) throw new Error('File upload failed');
-        const data = await res.json();
 
         // Read file to base64 if it's an image
         let base64 = null;
@@ -233,8 +219,7 @@ export default function ChatPlayground() {
       }
       setAttachedFiles(prev => [...prev, ...uploadedList]);
     } catch (err) {
-      console.error(err);
-      alert('Error uploading files: ' + err.message);
+      console.error('Error uploading files:', err);
     } finally {
       setUploading(false);
       setLiveThought('');
@@ -277,35 +262,30 @@ export default function ChatPlayground() {
 
   const fetchSessionsList = async (activeKey) => {
     try {
-      const headers = {};
       const keyToUse = activeKey || apiKey;
-      if (keyToUse) headers['X-API-Key'] = keyToUse;
-      const queryParams = new URLSearchParams({
-        page: sessionsPage.toString(),
-        page_size: '6'
+      const data = await apiClient.get('/api/v1/sessions', {
+        params: { page: sessionsPage, page_size: 6 },
+        tenantKey: keyToUse || undefined
       });
-      const res = await fetch(`/api/v1/sessions?${queryParams.toString()}`, { headers });
-      if (res.ok) {
-        const data = await res.json();
-        if (data && data.items !== undefined) {
-          const mapped = data.items.map((s) => ({
-            id: s.id,
-            name: s.title || `Session ${s.id}`,
-            lastTime: s.created_at ? new Date(s.created_at).toLocaleTimeString() : 'Recent',
-          }));
-          setSessions(mapped);
-          setSessionsTotalPages(data.pages || 1);
-          setSessionsTotalItems(data.total || 0);
-        } else {
-          const mapped = data.map((s) => ({
-            id: s.id,
-            name: s.title || `Session ${s.id}`,
-            lastTime: 'Recent',
-          }));
-          setSessions(mapped);
-          setSessionsTotalPages(1);
-          setSessionsTotalItems(data.length);
-        }
+
+      if (data && data.items !== undefined) {
+        const mapped = data.items.map((s) => ({
+          id: s.id,
+          name: s.title || `Session ${s.id}`,
+          lastTime: s.created_at ? new Date(s.created_at).toLocaleTimeString() : 'Recent',
+        }));
+        setSessions(mapped);
+        setSessionsTotalPages(data.pages || 1);
+        setSessionsTotalItems(data.total || 0);
+      } else {
+        const mapped = (data || []).map((s) => ({
+          id: s.id,
+          name: s.title || `Session ${s.id}`,
+          lastTime: 'Recent',
+        }));
+        setSessions(mapped);
+        setSessionsTotalPages(1);
+        setSessionsTotalItems((data || []).length);
       }
     } catch (e) {
       console.error('Failed to fetch sessions:', e);
@@ -397,25 +377,21 @@ export default function ChatPlayground() {
 
   const fetchSessionMessages = async (sessionId, activeKey) => {
     try {
-      const headers = {};
       const keyToUse = activeKey || apiKey;
-      if (keyToUse) headers['X-API-Key'] = keyToUse;
-
-      const res = await fetch(`/api/v1/sessions/${sessionId}/messages`, { headers });
-      if (res.ok) {
-        const data = await res.json();
-        if (data && data.length > 0) {
-          const loadedMsgs = processLoadedMessages(data);
-          setMessages(loadedMsgs);
-        } else {
-          setMessages([
-            {
-              role: 'assistant',
-              content: `Switched to chat session (${sessionId}). How can I assist you?`,
-              timestamp: new Date().toLocaleTimeString(),
-            },
-          ]);
-        }
+      const data = await apiClient.get(`/api/v1/sessions/${sessionId}/messages`, {
+        tenantKey: keyToUse || undefined
+      });
+      if (data && data.length > 0) {
+        const loadedMsgs = processLoadedMessages(data);
+        setMessages(loadedMsgs);
+      } else {
+        setMessages([
+          {
+            role: 'assistant',
+            content: `Switched to chat session (${sessionId}). How can I assist you?`,
+            timestamp: new Date().toLocaleTimeString(),
+          },
+        ]);
       }
     } catch (e) {
       console.error('Failed to fetch session messages:', e);
@@ -430,12 +406,7 @@ export default function ChatPlayground() {
 
   const loadApps = async () => {
     try {
-      const headers = {};
-      if (selectedTenantId) {
-        headers['X-Tenant-ID'] = selectedTenantId;
-      }
-      const appsRes = await fetch('/api/v1/apps?page_size=100', { headers });
-      const appsData = await appsRes.json();
+      const appsData = await appsApi.list({ page_size: 100, tenant_id: selectedTenantId || undefined });
       const appsList = appsData?.items || appsData || [];
       setApps(appsList);
 
@@ -454,9 +425,9 @@ export default function ChatPlayground() {
 
   const loadMetaData = async () => {
     try {
-      const tenantsRes = await fetch('/api/v1/tenants');
-      const tenantsData = await tenantsRes.json();
-      setTenants(tenantsData || []);
+      const tenantsData = await tenantsApi.list();
+      const items = Array.isArray(tenantsData) ? tenantsData : (tenantsData.items || tenantsData.data || []);
+      setTenants(items || []);
 
       // Auto-select first tenant if none selected
       let tenantIdToUse = selectedTenantId;
@@ -492,25 +463,18 @@ export default function ChatPlayground() {
 
   const fetchTenantModels = async () => {
     try {
-      const headers = {};
-      if (selectedTenantId) {
-        headers['X-Tenant-ID'] = selectedTenantId;
-      }
-      const res = await fetch('/api/v1/tenant/llms', { headers });
-      if (res.ok) {
-        const data = await res.json();
-        setTenantModels(data || []);
-        const nonProchat = (data || []).filter(
-          m => m.provider !== 'prochat' && !m.model_name.toLowerCase().includes('genui')
-        );
-        // Only auto-select first model if no model is already set or the URL model doesn't exist
-        const urlModelExists = selectedModel && nonProchat.some(m => m.model_name === selectedModel);
-        if (!urlModelExists) {
-          if (nonProchat.length > 0) {
-            setSelectedModel(nonProchat[0].model_name);
-          } else {
-            setSelectedModel('');
-          }
+      const data = await tenantsApi.listLlms(null, { tenant_id: selectedTenantId || undefined });
+      const items = Array.isArray(data) ? data : (data.items || []);
+      setTenantModels(items || []);
+      const nonProchat = (items || []).filter(
+        m => m.provider !== 'prochat' && !m.model_name.toLowerCase().includes('genui')
+      );
+      const urlModelExists = selectedModel && nonProchat.some(m => m.model_name === selectedModel);
+      if (!urlModelExists) {
+        if (nonProchat.length > 0) {
+          setSelectedModel(nonProchat[0].model_name);
+        } else {
+          setSelectedModel('');
         }
       }
     } catch (e) {
@@ -526,27 +490,21 @@ export default function ChatPlayground() {
 
   const fetchPreviewMessages = async (sessionId, activeKey) => {
     try {
-      const headers = {};
       const keyToUse = activeKey || apiKey;
-      if (keyToUse) headers['X-API-Key'] = keyToUse;
-      const queryParams = new URLSearchParams({
-        page: previewPage.toString(),
-        page_size: '10'
+      const data = await apiClient.get(`/api/v1/sessions/${sessionId}/messages`, {
+        params: { page: previewPage, page_size: 10 },
+        tenantKey: keyToUse || undefined
       });
-      const res = await fetch(`/api/v1/sessions/${sessionId}/messages?${queryParams.toString()}`, { headers });
-      if (res.ok) {
-        const data = await res.json();
-        if (data && data.items !== undefined) {
-          const loadedMsgs = processLoadedMessages(data.items);
-          setPreviewMessages(loadedMsgs);
-          setPreviewTotalPages(data.pages || 1);
-          setPreviewTotalItems(data.total || 0);
-        } else {
-          const loadedMsgs = processLoadedMessages(data);
-          setPreviewMessages(loadedMsgs);
-          setPreviewTotalPages(1);
-          setPreviewTotalItems(data.length);
-        }
+      if (data && data.items !== undefined) {
+        const loadedMsgs = processLoadedMessages(data.items);
+        setPreviewMessages(loadedMsgs);
+        setPreviewTotalPages(data.pages || 1);
+        setPreviewTotalItems(data.total || 0);
+      } else {
+        const loadedMsgs = processLoadedMessages(data);
+        setPreviewMessages(loadedMsgs);
+        setPreviewTotalPages(1);
+        setPreviewTotalItems((data || []).length);
       }
     } catch (e) {
       console.error('Failed to fetch preview messages:', e);
@@ -592,28 +550,17 @@ export default function ChatPlayground() {
   // LLM Thread Title Generator
   const generateLLMThreadTitle = async (queryText) => {
     try {
-      const headers = {
-        'Content-Type': 'application/json',
-        'X-Request-Source': 'dashboard'
-      };
-      if (apiKey.trim()) headers['X-API-Key'] = apiKey.trim();
+      const data = await chatApi.createCompletion({
+        messages: [
+          {
+            role: 'user',
+            content: `Generate a concise, 3-5 word title summarizing a chat starting with user query: "${queryText}". Return ONLY the title string, no quotes or markdown.`,
+          },
+        ],
+        model: selectedModel,
+        stream: false,
+      }, apiKey.trim() || undefined);
 
-      const res = await fetch('/api/v1/chat/completions', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          messages: [
-            {
-              role: 'user',
-              content: `Generate a concise, 3-5 word title summarizing a chat starting with user query: "${queryText}". Return ONLY the title string, no quotes or markdown.`,
-            },
-          ],
-          model: selectedModel,
-          stream: false,
-        }),
-      });
-
-      const data = await res.json();
       const generatedTitle = data.choices && data.choices[0] && data.choices[0].message ? data.choices[0].message.content.trim() : null;
 
       if (generatedTitle) {
@@ -711,11 +658,9 @@ export default function ChatPlayground() {
         payload.skill_names = selectedSkillNames;
       }
 
-      const res = await fetch('/api/v1/chat/completions', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(payload),
-        signal: controller.signal,
+      const res = await chatApi.createStream(payload, apiKey.trim() || null, {
+        source: 'dashboard',
+        signal: controller.signal
       });
 
       const reader = res.body.getReader();
@@ -1057,17 +1002,16 @@ export default function ChatPlayground() {
                   }}
                   initialLabel={tenants.find(t => t.id === selectedTenantId)?.name ? `🔑 ${tenants.find(t => t.id === selectedTenantId).name}` : ''}
                   fetchOptions={async (searchTerm) => {
-                    const url = `/api/v1/tenants?search=${encodeURIComponent(searchTerm || '')}&page_size=10&page=1`;
-                    const res = await fetch(url);
-                    const data = await res.json();
+                    const data = await tenantsApi.list({ search: searchTerm || '', page_size: 10, page: 1 });
+                    const items = data.items || Array.isArray(data) ? (data.items || data) : [];
                     setTenants(prev => {
                       const newTs = [...prev];
-                      (data.items || []).forEach(t => {
+                      items.forEach(t => {
                         if (!newTs.find(existing => existing.id === t.id)) newTs.push(t);
                       });
                       return newTs;
                     });
-                    return (data.items || []).map(t => ({
+                    return items.map(t => ({
                       value: t.id,
                       label: `🔑 ${t.name}`
                     }));
@@ -1085,14 +1029,9 @@ export default function ChatPlayground() {
                   value={selectedModel}
                   onChange={(val) => setSelectedModel(val)}
                   fetchOptions={async (searchTerm) => {
-                    const url = `/api/v1/tenant/llms?search=${encodeURIComponent(searchTerm || '')}&page_size=10&page=1`;
-                    const headers = {};
-                    if (selectedTenantId) {
-                      headers['X-Tenant-ID'] = selectedTenantId;
-                    }
-                    const res = await fetch(url, { headers });
-                    const data = await res.json();
-                    return (data.items || [])
+                    const data = await tenantsApi.listLlms(null, { search: searchTerm || '', page_size: 10, page: 1, tenant_id: selectedTenantId || undefined });
+                    const items = data.items || Array.isArray(data) ? (data.items || data) : [];
+                    return items
                       .filter(m => m.provider !== 'prochat' && !m.model_name.toLowerCase().includes('genui'))
                       .map(m => ({
                         value: m.model_name,
@@ -1114,23 +1053,18 @@ export default function ChatPlayground() {
                   onChange={(val) => setSelectedAppId(val)}
                   initialLabel={apps.find(a => a.id === selectedAppId)?.name ? `📦 ${apps.find(a => a.id === selectedAppId).name}` : ''}
                   fetchOptions={async (searchTerm) => {
-                    const url = `/api/v1/apps?search=${encodeURIComponent(searchTerm || '')}&page_size=10&page=1`;
-                    const headers = {};
-                    if (selectedTenantId) {
-                      headers['X-Tenant-ID'] = selectedTenantId;
-                    }
-                    const res = await fetch(url, { headers });
-                    const data = await res.json();
+                    const data = await appsApi.list({ search: searchTerm || '', page_size: 10, page: 1, tenant_id: selectedTenantId || undefined });
+                    const items = data.items || Array.isArray(data) ? (data.items || data) : [];
                     setApps(prev => {
                       const newApps = [...prev];
-                      (data.items || []).forEach(a => {
+                      items.forEach(a => {
                         if (!newApps.find(existing => existing.id === a.id)) newApps.push(a);
                       });
                       return newApps;
                     });
-                    return (data.items || []).map(a => ({
+                    return items.map(a => ({
                       value: a.id,
-                      label: `📦 ${a.name} (${a.skills_count} skills)`
+                      label: `📦 ${a.name} (${a.skills_count || (a.skill_names ? a.skill_names.length : 0)} skills)`
                     }));
                   }}
                   placeholder="Select Application..."
@@ -1223,12 +1157,7 @@ export default function ChatPlayground() {
                   value=''
                   onChange={(val) => { if (val && !selectedSkillNames.includes(val)) setSelectedSkillNames(prev => [...prev, val]); }}
                   fetchOptions={async (searchTerm) => {
-                    const headers = {};
-                    if (selectedTenantId) {
-                      headers['X-Tenant-ID'] = selectedTenantId;
-                    }
-                    const res = await fetch(`/api/v1/skills?search=${encodeURIComponent(searchTerm || '')}&page_size=30&page=1`, { headers });
-                    const data = await res.json();
+                    const data = await skillsApi.list({ search: searchTerm || '', page_size: 30, page: 1, tenant_id: selectedTenantId || undefined });
                     const items = Array.isArray(data.items) ? data.items : (Array.isArray(data) ? data : []);
                     return items.filter(s => !selectedSkillNames.includes(s.name)).map(s => ({ value: s.name, label: `🧩 ${s.name}` }));
                   }}
@@ -1254,21 +1183,16 @@ export default function ChatPlayground() {
                       onChange={handleTemplateChange}
                       initialLabel={selectedTemplateId ? `📋 ${templates.find(t => t.id === selectedTemplateId)?.name || 'Loading Profile...'}` : ''}
                       fetchOptions={async (searchTerm) => {
-                        const url = `/api/v1/user_data_templates?search=${encodeURIComponent(searchTerm || '')}&page_size=20&page=1`;
-                        const headers = {};
-                        if (selectedTenantId) {
-                          headers['X-Tenant-ID'] = selectedTenantId;
-                        }
-                        const res = await fetch(url, { headers });
-                        const data = await res.json();
+                        const data = await userDataApi.list({ search: searchTerm || '', page_size: 20, page: 1, tenant_id: selectedTenantId || undefined });
+                        const items = data.items || Array.isArray(data) ? (data.items || data) : [];
                         setTemplates(prev => {
                           const newTs = [...prev];
-                          (data.items || []).forEach(t => {
+                          items.forEach(t => {
                             if (!newTs.find(existing => existing.id === t.id)) newTs.push(t);
                           });
                           return newTs;
                         });
-                        return (data.items || []).map(t => ({
+                        return items.map(t => ({
                           value: t.id,
                           label: `📋 ${t.name}`
                         }));

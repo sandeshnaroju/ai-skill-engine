@@ -17,8 +17,23 @@ import StorageSettings from './components/StorageSettings';
 import SandboxSettings from './components/SandboxSettings';
 import UserDataTemplates from './components/UserDataTemplates';
 import EmailSettings from './components/EmailSettings';
+import { authApi, skillsApi, tenantsApi, logsApi, apiClient } from './api';
+import { ToastProvider, useToast } from './context/ToastContext';
 
-export default function App() {
+function ApiErrorListenerBridge() {
+  const { showError } = useToast();
+
+  useEffect(() => {
+    const unsubscribe = apiClient.onError((error) => {
+      showError(error.message || 'An unexpected API error occurred', error.status || null);
+    });
+    return unsubscribe;
+  }, [showError]);
+
+  return null;
+}
+
+function AppContent() {
   const navItems = [
     { id: 'playground', label: 'Chat Playground', icon: MessageSquare, order: 10 },
     { id: 'tester', label: 'API Tester', icon: Terminal, order: 20 },
@@ -128,14 +143,9 @@ export default function App() {
 
   const checkAuth = async () => {
     try {
-      const res = await fetch('/api/v1/auth/me');
-      if (res.ok) {
-        const data = await res.json();
-        setIsAuthenticated(true);
-        setUserEmail(data.email);
-      } else {
-        setIsAuthenticated(false);
-      }
+      const data = await authApi.getProfile();
+      setIsAuthenticated(true);
+      setUserEmail(data.email);
     } catch (e) {
       setIsAuthenticated(false);
     }
@@ -152,8 +162,7 @@ export default function App() {
     let intervalId;
     const checkDbStatus = async () => {
       try {
-        const res = await fetch('/api/v1/db-status');
-        const data = await res.json();
+        const data = await apiClient.get('/api/v1/db-status');
         setDbStatus(data);
         if (data.ready) {
           clearInterval(intervalId);
@@ -206,18 +215,19 @@ export default function App() {
   const loadStats = async () => {
     if (!dbStatus.ready) return;
     try {
-      const [skillsRes, tenantsRes, logsRes] = await Promise.all([
-        fetch('/api/v1/skills'),
-        fetch('/api/v1/tenants'),
-        fetch('/api/v1/logs?limit=100'),
+      const [skillsData, tenantsData, logsData] = await Promise.all([
+        skillsApi.list(),
+        tenantsApi.list(),
+        logsApi.getExecutionLogs({ limit: 100 }),
       ]);
-      const skillsData = await skillsRes.json();
-      const tenantsData = await tenantsRes.json();
-      const logsData = await logsRes.json();
+
+      const skillsList = Array.isArray(skillsData) ? skillsData : (skillsData.skills || []);
+      const tenantsList = Array.isArray(tenantsData) ? tenantsData : (tenantsData.items || tenantsData.data || []);
+      const logsList = Array.isArray(logsData) ? logsData : (logsData.logs || logsData.data || []);
 
       setStats({
-        skillsCount: (skillsData.skills || []).length,
-        tenantsCount: (tenantsData || []).length,
+        skillsCount: skillsList.length,
+        tenantsCount: tenantsList.length,
         logsCount: (logsData || []).length,
       });
     } catch (e) {
@@ -730,7 +740,7 @@ export default function App() {
             className="btn-outline"
             onClick={async () => {
               try {
-                await fetch('/api/v1/auth/logout', { method: 'POST' });
+                await authApi.logout();
               } catch (e) {
                 console.error('Logout failed:', e);
               }
@@ -833,5 +843,14 @@ export default function App() {
         </main>
       </div>
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <ToastProvider>
+      <ApiErrorListenerBridge />
+      <AppContent />
+    </ToastProvider>
   );
 }

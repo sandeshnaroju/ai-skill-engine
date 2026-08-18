@@ -1,25 +1,25 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Cpu, RefreshCw, Layers, Search, Code, Plus, Edit, Trash2, X, Check, Save, FileText, Database, HardDrive, Box, Filter, ChevronLeft, ChevronRight, Key } from 'lucide-react';
-import AsyncSearchableDropdown from '../AsyncSearchableDropdown';
-
+import { Layers, Search, Filter, Cpu, Plus, Code, CheckCircle, Trash2, Edit, AlertCircle, FileText, ChevronLeft, ChevronRight, X, Sparkles, BookOpen, Key, RefreshCw, Box } from 'lucide-react';
 import SkillEditorModal from './SkillEditorModal';
 import SkillGeneratorModal from './SkillGeneratorModal';
+import DuplicateSkillModal from './DuplicateSkillModal';
+import AsyncSearchableDropdown from '../AsyncSearchableDropdown';
+import { skillsApi, tenantsApi, appsApi, apiClient } from '../../api';
 import SkillCard from './SkillCard';
+import { useToast } from '../../context/ToastContext';
+
 export default function SkillCatalog() {
+  const { showError, showWarning, showSuccess, confirmAction } = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
   const [skills, setSkills] = useState([]);
-  const [toolsSchema, setToolsSchema] = useState([]);
   const [apps, setApps] = useState([]);
-  const [selectedAppId, setSelectedAppId] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [tenants, setTenants] = useState([]);
-  const [selectedTenantId, setSelectedTenantId] = useState('');
+  const [loading, setLoading] = useState(true);
 
-  // Syncing with URL parameters
+  // URL State Sync for Search & Page
   const page = parseInt(searchParams.get('page') || '1', 10);
   const pageSize = parseInt(searchParams.get('page_size') || '15', 10);
-  const search = searchParams.get('search') || '';
+  const searchQuery = searchParams.get('search') || '';
 
   const setPage = (val) => {
     const nextParams = new URLSearchParams(searchParams);
@@ -27,14 +27,7 @@ export default function SkillCatalog() {
     setSearchParams(nextParams);
   };
 
-  const setPageSize = (val) => {
-    const nextParams = new URLSearchParams(searchParams);
-    nextParams.set('page_size', typeof val === 'function' ? val(pageSize).toString() : val.toString());
-    nextParams.set('page', '1');
-    setSearchParams(nextParams);
-  };
-
-  const setSearch = (val) => {
+  const setSearchQuery = (val) => {
     const nextParams = new URLSearchParams(searchParams);
     if (val) {
       nextParams.set('search', val);
@@ -47,6 +40,11 @@ export default function SkillCatalog() {
 
   const [totalPages, setTotalPages] = useState(1);
   const [totalItems, setTotalItems] = useState(0);
+
+  const [tenants, setTenants] = useState([]);
+  const [selectedTenantId, setSelectedTenantId] = useState('');
+  const [selectedAppId, setSelectedAppId] = useState('');
+  const [toolsSchema, setToolsSchema] = useState([]);
 
   // Editor Modal State
   const [showModal, setShowModal] = useState(false);
@@ -68,6 +66,26 @@ export default function SkillCatalog() {
   const [genBehavior, setGenBehavior] = useState('');
   const [generating, setGenerating] = useState(false);
 
+  // Duplication Modal State
+  const [showDuplicateModal, setShowDuplicateModal] = useState(false);
+  const [duplicateSkillTarget, setDuplicateSkillTarget] = useState(null);
+
+  const handleOpenDuplicateModal = (skill) => {
+    setDuplicateSkillTarget(skill);
+    setShowDuplicateModal(true);
+  };
+
+  const handleDuplicateSkill = async (sourceName, targetTenantIds, newSkillName) => {
+    try {
+      const res = await skillsApi.duplicate(sourceName, targetTenantIds, newSkillName);
+      const copiedList = (res.copied_to_tenants || []).join(', ');
+      showSuccess(`Skill "${newSkillName}" duplicated successfully to ${copiedList || 'target workspaces'}`);
+      fetchSkillsAndApps();
+    } catch (err) {
+      console.error('Duplicate skill error:', err);
+    }
+  };
+
   const defaultSkillTemplate = `---
 name: my_new_skill
 description: Skill description explaining when to trigger this skill.
@@ -88,18 +106,12 @@ Provide instructions for the LLM on how to resolve queries using this skill.
   const fetchSkillsAndApps = async () => {
     setLoading(true);
     try {
-      const queryParams = new URLSearchParams({
-        page: page.toString(),
-        page_size: pageSize.toString()
+      const skillsData = await skillsApi.list({
+        page,
+        page_size: pageSize,
+        tenant_id: selectedTenantId || undefined,
+        search: searchQuery || undefined
       });
-      const headers = {};
-      if (selectedTenantId) {
-        headers['X-Tenant-ID'] = selectedTenantId;
-      }
-      const [skillsRes] = await Promise.all([
-        fetch(`/api/v1/skills?${queryParams.toString()}`, { headers })
-      ]);
-      const skillsData = await skillsRes.json();
 
       if (skillsData && skillsData.items !== undefined) {
         setSkills(skillsData.items || []);
@@ -107,9 +119,9 @@ Provide instructions for the LLM on how to resolve queries using this skill.
         setTotalItems(skillsData.total || 0);
         setToolsSchema(dataToolsSchema(skillsData.tools_schema || []));
       } else {
-        setSkills(skillsData.skills || []);
+        setSkills(skillsData.skills || (Array.isArray(skillsData) ? skillsData : []));
         setTotalPages(1);
-        setTotalItems(skillsData.skills ? skillsData.skills.length : 0);
+        setTotalItems(skillsData.skills ? skillsData.skills.length : (Array.isArray(skillsData) ? skillsData.length : 0));
         setToolsSchema(dataToolsSchema(skillsData.tools_schema || []));
       }
 
@@ -122,13 +134,11 @@ Provide instructions for the LLM on how to resolve queries using this skill.
 
   const fetchTenants = async () => {
     try {
-      const res = await fetch('/api/v1/tenants');
-      if (res.ok) {
-        const data = await res.json();
-        setTenants(data || []);
-        if (data && data.length > 0 && !selectedTenantId) {
-          setSelectedTenantId(data[0].id);
-        }
+      const data = await tenantsApi.list();
+      const items = Array.isArray(data) ? data : (data.items || data.data || []);
+      setTenants(items);
+      if (items.length > 0 && !selectedTenantId) {
+        setSelectedTenantId(items[0].id);
       }
     } catch (e) {
       console.error('Failed to fetch tenants', e);
@@ -137,7 +147,7 @@ Provide instructions for the LLM on how to resolve queries using this skill.
 
   useEffect(() => {
     fetchSkillsAndApps();
-  }, [page, pageSize, selectedTenantId]);
+  }, [page, pageSize, selectedTenantId, searchQuery]);
 
   useEffect(() => {
     setSelectedAppId('');
@@ -168,13 +178,10 @@ Provide instructions for the LLM on how to resolve queries using this skill.
     setShowGenModal(true);
 
     try {
-      const res = await fetch('/api/v1/generator/models');
-      if (res.ok) {
-        const data = await res.json();
-        setGenModels(data || []);
-        if (data && data.length > 0) {
-          setGenModelIndex('0');
-        }
+      const data = await apiClient.get('/api/v1/generator/models');
+      setGenModels(data || []);
+      if (data && data.length > 0) {
+        setGenModelIndex('0');
       }
     } catch (err) {
       console.error('Failed to load generator models:', err);
@@ -220,65 +227,47 @@ Provide instructions for the LLM on how to resolve queries using this skill.
 
   const handleGenerateSkill = async () => {
     if (!genModelIndex || genModels.length === 0) {
-      alert('Please select a model.');
+      showWarning('Please select a model.');
       return;
     }
     if (!genName.trim()) {
-      alert('Please enter a skill name.');
+      showWarning('Please enter a skill name.');
       return;
     }
     setGenerating(true);
     const selectedModel = genModels[parseInt(genModelIndex, 10)];
     try {
-      const res = await fetch('/api/v1/generator/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          tenant_id: selectedModel.tenant_id,
-          model_name: selectedModel.model_name,
-          skill_name: genName,
-          description: genDesc,
-          api_calls: genApiCalls,
-          inputs_secrets: genInputsSecrets,
-          behavior: genBehavior
-        })
+      const data = await skillsApi.generate({
+        tenant_id: selectedModel.tenant_id,
+        model_name: selectedModel.model_name,
+        skill_name: genName,
+        description: genDesc,
+        api_calls: genApiCalls,
+        inputs_secrets: genInputsSecrets,
+        behavior: genBehavior
       });
-      if (res.ok) {
-        const data = await res.json();
-        setShowGenModal(false);
-        setSkillNameInput(genName.trim().toLowerCase().replace(" ", "_"));
-        setSkillContentInput(data.content || '');
-        setIsEditing(false);
-        setShowModal(true);
-      } else {
-        const errData = await res.json();
-        alert(`Generation failed: ${errData.detail || 'unknown error'}`);
-      }
+
+      setShowGenModal(false);
+      setSkillNameInput(genName.trim().toLowerCase().replace(" ", "_"));
+      setSkillContentInput(data.content || '');
+      setIsEditing(false);
+      setShowModal(true);
     } catch (e) {
       console.error('Failed to generate skill:', e);
-      alert('Network or Server error generating skill.');
     } finally {
       setGenerating(false);
     }
   };
 
   const handleOpenEditModal = async (skill) => {
-    setEditingSkillName(skill.name);
     setSkillNameInput(skill.name);
     setSkillContentInput('');
     setIsEditing(true);
     setShowModal(true);
 
     try {
-      const headers = {};
-      if (selectedTenantId) {
-        headers['X-Tenant-ID'] = selectedTenantId;
-      }
-      const res = await fetch(`/api/v1/skills/${encodeURIComponent(skill.name)}`, { headers });
-      if (res.ok) {
-        const data = await res.json();
-        setSkillContentInput(data.content || '');
-      }
+      const data = await skillsApi.get(skill.name, skill.tenant_id || selectedTenantId);
+      setSkillContentInput(data.content || '');
     } catch (err) {
       console.error('Failed to fetch skill content:', err);
     }
@@ -289,32 +278,16 @@ Provide instructions for the LLM on how to resolve queries using this skill.
     if (!skillNameInput.trim()) return;
     const nameValid = /^[a-z0-9_]+$/.test(skillNameInput.trim());
     if (!nameValid) {
-      alert('Skill name can only contain lowercase letters, numbers, and underscores (_). No spaces or special characters allowed.');
+      showWarning('Skill name can only contain lowercase letters, numbers, and underscores (_). No spaces or special characters allowed.');
       return;
     }
     setSaving(true);
     try {
-      const headers = { 'Content-Type': 'application/json' };
-      if (selectedTenantId) {
-        headers['X-Tenant-ID'] = selectedTenantId;
-      }
-      const res = await fetch('/api/v1/skills', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          skill_name: skillNameInput,
-          content: skillContentInput,
-          tenant_id: selectedTenantId,
-        }),
-      });
-      if (res.ok) {
-        setShowModal(false);
-        setPage(1);
-        fetchSkillsAndApps();
-      } else {
-        const data = await res.json();
-        alert(`Error: ${data.detail || 'Failed to save skill'}`);
-      }
+      await skillsApi.create(skillNameInput, skillContentInput, selectedTenantId);
+      showSuccess(`Skill "${skillNameInput}" saved successfully`);
+      setShowModal(false);
+      setPage(1);
+      fetchSkillsAndApps();
     } catch (err) {
       console.error('Save skill error:', err);
     } finally {
@@ -322,20 +295,22 @@ Provide instructions for the LLM on how to resolve queries using this skill.
     }
   };
 
-  const handleDeleteSkill = async (name) => {
-    if (!window.confirm(`Are you sure you want to delete custom skill "${name}"? This deletes the database record.`)) return;
-    try {
-      const headers = {};
-      if (selectedTenantId) {
-        headers['X-Tenant-ID'] = selectedTenantId;
+  const handleDeleteSkill = (name, tenantId = null) => {
+    const targetTenant = tenantId || selectedTenantId;
+    confirmAction({
+      title: 'Delete Custom Skill',
+      message: `Are you sure you want to delete custom skill "${name}"? This deletes the database record.`,
+      confirmText: 'Delete Skill',
+      onConfirm: async () => {
+        try {
+          await skillsApi.delete(name, targetTenant);
+          fetchSkillsAndApps();
+          showSuccess(`Skill "${name}" deleted successfully`);
+        } catch (err) {
+          console.error('Delete skill error:', err);
+        }
       }
-      const res = await fetch(`/api/v1/skills/${name}`, { method: 'DELETE', headers });
-      if (res.ok) {
-        fetchSkillsAndApps();
-      }
-    } catch (err) {
-      console.error('Delete skill error:', err);
-    }
+    });
   };
 
   // Resolve active App model details if one is selected
@@ -348,13 +323,17 @@ Provide instructions for the LLM on how to resolve queries using this skill.
     if (allowedSkillNames && !allowedSkillNames.includes(s.name)) {
       return false;
     }
-    // 2. Search Text Filter
-    const query = search.toLowerCase().trim();
-    if (!query) return true;
-    return (
-      s.name.toLowerCase().includes(query) ||
-      (s.description && s.description.toLowerCase().includes(query))
-    );
+
+    // 2. Text Search Query Filter
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase().trim();
+      const matchName = s.name && s.name.toLowerCase().includes(query);
+      const matchDesc = s.description && s.description.toLowerCase().includes(query);
+      const matchSource = s.source && s.source.toLowerCase().includes(query);
+      return matchName || matchDesc || matchSource;
+    }
+
+    return true;
   });
 
   return (
@@ -379,10 +358,8 @@ Provide instructions for the LLM on how to resolve queries using this skill.
                 value={selectedTenantId}
                 onChange={(val) => setSelectedTenantId(val)}
                 fetchOptions={async (searchTerm) => {
-                  const url = `/api/v1/tenants?search=${encodeURIComponent(searchTerm || '')}&page_size=10&page=1`;
-                  const res = await fetch(url);
-                  const data = await res.json();
-                  const list = data.items || data || [];
+                  const data = await tenantsApi.list({ search: searchTerm || '', page_size: 10, page: 1 });
+                  const list = data.items || (Array.isArray(data) ? data : []);
                   setTenants(prev => {
                     const newTenants = [...prev];
                     list.forEach(t => {
@@ -409,25 +386,20 @@ Provide instructions for the LLM on how to resolve queries using this skill.
                 value={selectedAppId}
                 onChange={(val) => setSelectedAppId(val)}
                 fetchOptions={async (searchTerm) => {
-                  const url = `/api/v1/apps?search=${encodeURIComponent(searchTerm || '')}&page_size=10&page=1`;
-                  const headers = {};
-                  if (selectedTenantId) {
-                    headers['X-Tenant-ID'] = selectedTenantId;
-                  }
-                  const res = await fetch(url, { headers });
-                  const data = await res.json();
+                  const data = await appsApi.list({ search: searchTerm || '', page_size: 10, page: 1, tenant_id: selectedTenantId || undefined });
+                  const items = data.items || (Array.isArray(data) ? data : []);
                   setApps(prev => {
                     const newApps = [...prev];
-                    (data.items || []).forEach(a => {
+                    items.forEach(a => {
                       if (!newApps.find(existing => existing.id === a.id)) newApps.push(a);
                     });
                     return newApps;
                   });
                   return [
                     { value: "", label: "🌐 All Apps & Global Skills" },
-                    ...(data.items || []).map(a => ({
+                    ...items.map(a => ({
                       value: a.id,
-                      label: `📦 ${a.name} (${a.skills_count} skills)`
+                      label: `📦 ${a.name} (${a.skills_count || (a.skill_names ? a.skill_names.length : 0)} skills)`
                     }))
                   ];
                 }}
@@ -442,8 +414,8 @@ Provide instructions for the LLM on how to resolve queries using this skill.
             <input
               type="text"
               placeholder="Search skills..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
               style={{ paddingLeft: '32px', fontSize: '0.85rem' }}
             />
           </div>
@@ -483,6 +455,7 @@ Provide instructions for the LLM on how to resolve queries using this skill.
                 skill={s}
                 handleOpenEditModal={handleOpenEditModal}
                 handleDeleteSkill={handleDeleteSkill}
+                handleOpenDuplicateModal={handleOpenDuplicateModal}
               />
             ))}
           </div>
@@ -551,6 +524,15 @@ Provide instructions for the LLM on how to resolve queries using this skill.
         setGenBehavior={setGenBehavior}
         generating={generating}
         handleGenerateSkill={handleGenerateSkill}
+      />
+
+      {/* Cross-Tenant Skill Duplication Modal */}
+      <DuplicateSkillModal
+        showModal={showDuplicateModal}
+        setShowModal={setShowDuplicateModal}
+        skill={duplicateSkillTarget}
+        tenants={tenants}
+        onDuplicate={handleDuplicateSkill}
       />
     </div>
   );

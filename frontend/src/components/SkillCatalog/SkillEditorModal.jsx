@@ -1,6 +1,7 @@
 import React from 'react';
 import { X } from 'lucide-react';
 import AsyncSearchableDropdown from '../AsyncSearchableDropdown';
+import { tenantsApi } from '../../api';
 
 export default function SkillEditorModal({
   showModal,
@@ -61,12 +62,9 @@ export default function SkillEditorModal({
                 onChange={(val) => setSelectedTenantId(val)}
                 fetchOptions={async (query) => {
                   try {
-                    const res = await fetch(`/api/v1/tenants?search=${encodeURIComponent(query)}&page_size=20`);
-                    if (res.ok) {
-                      const data = await res.json();
-                      const items = data.items || data || [];
-                      return items.map(t => ({ value: t.id, label: t.name }));
-                    }
+                    const data = await tenantsApi.list({ search: query, page_size: 20 });
+                    const items = data.items || data || [];
+                    return items.map(t => ({ value: t.id, label: t.name }));
                   } catch (e) {
                     console.error('Error fetching tenant options:', e);
                   }

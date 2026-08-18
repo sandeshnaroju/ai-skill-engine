@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { AlertTriangle, Trash2, X } from 'lucide-react';
+import { tenantsApi } from '../../api';
 
 export default function DeleteTenantModal({ tenant, onClose, onDeleteSuccess }) {
   const [confirmInput, setConfirmInput] = useState('');
@@ -18,19 +19,12 @@ export default function DeleteTenantModal({ tenant, onClose, onDeleteSuccess }) 
     setErrorMsg('');
 
     try {
-      const res = await fetch(`/api/v1/tenants/${tenant.id}?confirm_name=${encodeURIComponent(confirmInput.trim())}`, {
-        method: 'DELETE',
-      });
-      if (res.ok) {
-        onDeleteSuccess();
-        onClose();
-      } else {
-        const data = await res.json();
-        setErrorMsg(data.detail || 'Failed to delete tenant');
-      }
+      await tenantsApi.delete(tenant.id, confirmInput.trim());
+      onDeleteSuccess();
+      onClose();
     } catch (err) {
       console.error('Delete tenant error:', err);
-      setErrorMsg('Network error occurred while attempting deletion');
+      setErrorMsg(err.message || 'Network error occurred while attempting deletion');
     } finally {
       setDeleting(false);
     }

@@ -3,8 +3,11 @@ import { Key, Plus, Trash2, Cpu, Check, Copy, ChevronLeft, ChevronRight } from '
 import { useSearchParams } from 'react-router-dom';
 import TenantModal from './TenantModal';
 import DeleteTenantModal from './DeleteTenantModal';
+import { tenantsApi } from '../../api';
+import { useToast } from '../../context/ToastContext';
 
 export default function TenantManager() {
+  const { showSuccess, confirmAction } = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
   const [tenants, setTenants] = useState([]);
   const [newTenantName, setNewTenantName] = useState('');
@@ -35,15 +38,8 @@ export default function TenantManager() {
 
   const [tenantLlms, setTenantLlms] = useState([]);
   
-  const modelPage = parseInt(searchParams.get('model_page') || '1', 10);
-  const modelPageSize = parseInt(searchParams.get('model_page_size') || '4', 10);
-
-  const setModelPage = (val) => {
-    const nextParams = new URLSearchParams(searchParams);
-    nextParams.set('model_page', typeof val === 'function' ? val(modelPage).toString() : val.toString());
-    setSearchParams(nextParams);
-  };
-
+  const [modelPage, setModelPage] = useState(1);
+  const [modelPageSize, setModelPageSize] = useState(10);
   const [modelTotalPages, setModelTotalPages] = useState(1);
   const [modelTotalItems, setModelTotalItems] = useState(0);
 
@@ -61,13 +57,10 @@ export default function TenantManager() {
 
   const fetchTenants = async () => {
     try {
-      const res = await fetch(`/api/v1/tenants?page=${page}&page_size=${pageSize}`);
-      if (res.ok) {
-        const data = await res.json();
-        setTenants(data.items || []);
-        setTotalPages(data.pages || 1);
-        setTotalItems(data.total || 0);
-      }
+      const data = await tenantsApi.list({ page, page_size: pageSize });
+      setTenants(data.items || []);
+      setTotalPages(data.pages || 1);
+      setTotalItems(data.total || 0);
     } catch (err) {
       console.error('Fetch tenants error:', err);
     }
@@ -75,15 +68,10 @@ export default function TenantManager() {
 
   const fetchTenantLlms = async (tenant) => {
     try {
-      const res = await fetch(`/api/v1/tenant/llms?page=${modelPage}&page_size=${modelPageSize}`, {
-        headers: { 'X-API-Key': tenant.api_key }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setTenantLlms(data.items || []);
-        setModelTotalPages(data.pages || 1);
-        setModelTotalItems(data.total || 0);
-      }
+      const data = await tenantsApi.listLlms(tenant.api_key, { page: modelPage, page_size: modelPageSize });
+      setTenantLlms(data.items || []);
+      setModelTotalPages(data.pages || 1);
+      setModelTotalItems(data.total || 0);
     } catch (err) {
       console.error('Fetch LLMs error:', err);
     }
@@ -94,19 +82,11 @@ export default function TenantManager() {
     if (!newTenantName.trim()) return;
     setLoading(true);
     try {
-      const res = await fetch('/api/v1/tenants', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newTenantName })
-      });
-      if (res.ok) {
-        setNewTenantName('');
-        setPage(1);
-        fetchTenants();
-      } else {
-        const data = await res.json();
-        alert(`Error: ${data.detail || 'Failed to create tenant'}`);
-      }
+      await tenantsApi.create(newTenantName);
+      showSuccess(`Tenant workspace "${newTenantName}" created successfully`);
+      setNewTenantName('');
+      setPage(1);
+      fetchTenants();
     } catch (err) {
       console.error('Create tenant error:', err);
     } finally {
@@ -114,16 +94,21 @@ export default function TenantManager() {
     }
   };
 
-  const handleDeleteTenant = async (id, name) => {
-    if (!window.confirm(`Are you sure you want to delete tenant "${name}"? This deletes all their model configs.`)) return;
-    try {
-      const res = await fetch(`/api/v1/tenants/${id}`, { method: 'DELETE' });
-      if (res.ok) {
-        fetchTenants();
+  const handleDeleteTenant = (id, name) => {
+    confirmAction({
+      title: 'Delete Tenant Workspace',
+      message: `Are you sure you want to delete tenant "${name}"? This deletes all their model configs.`,
+      confirmText: 'Delete Tenant',
+      onConfirm: async () => {
+        try {
+          await tenantsApi.delete(id, name);
+          fetchTenants();
+          showSuccess(`Tenant "${name}" deleted successfully`);
+        } catch (err) {
+          console.error('Delete tenant error:', err);
+        }
       }
-    } catch (err) {
-      console.error('Delete tenant error:', err);
-    }
+    });
   };
 
   const copyToClipboard = (key) => {

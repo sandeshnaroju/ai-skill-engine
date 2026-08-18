@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { HardDrive, Server, Shield, Cloud, Save, Eye, EyeOff, Loader, Check, X } from 'lucide-react';
 import AsyncSearchableDropdown from './AsyncSearchableDropdown';
+import { systemApi, tenantsApi, apiClient } from '../api';
 
 const PROVIDERS = [
   {
@@ -136,13 +137,11 @@ export default function SandboxSettings() {
 
   const fetchTenants = async () => {
     try {
-      const res = await fetch('/api/v1/tenants');
-      if (res.ok) {
-        const data = await res.json();
-        setTenants(data || []);
-        if (data && data.length > 0) {
-          setSelectedTenantId(data[0].id);
-        }
+      const data = await tenantsApi.list();
+      const items = Array.isArray(data) ? data : (data.items || data.data || []);
+      setTenants(items);
+      if (items.length > 0) {
+        setSelectedTenantId(items[0].id);
       }
     } catch (e) {
       console.error('Failed to fetch tenants', e);
@@ -158,26 +157,23 @@ export default function SandboxSettings() {
     (async () => {
       setLoading(true);
       try {
-        const res = await fetch(`/api/v1/sandbox/config?tenant_id=${selectedTenantId}`);
-        if (res.ok) {
-          const data = await res.json();
-          setProvider(data.provider || 'none');
-          setTenantName(data.tenant_name || 'Global');
-          setForm(prev => ({
-            ...prev,
-            e2b_api_key: data.e2b_api_key || '',
-            azure_client_id: data.azure_client_id || '',
-            azure_client_secret: data.azure_client_secret || '',
-            azure_tenant_id: data.azure_tenant_id || '',
-            azure_session_pool_endpoint: data.azure_session_pool_endpoint || '',
-            fly_api_token: data.fly_api_token || '',
-            fly_app_name: data.fly_app_name || '',
-            aws_access_key: data.aws_access_key || '',
-            aws_secret_key: data.aws_secret_key || '',
-            aws_region: data.aws_region || 'us-east-1',
-            aws_function_name: data.aws_function_name || '',
-          }));
-        }
+        const data = await apiClient.get('/api/v1/sandbox/config', { params: { tenant_id: selectedTenantId } });
+        setProvider(data.provider || 'none');
+        setTenantName(data.tenant_name || 'Global');
+        setForm(prev => ({
+          ...prev,
+          e2b_api_key: data.e2b_api_key || '',
+          azure_client_id: data.azure_client_id || '',
+          azure_client_secret: data.azure_client_secret || '',
+          azure_tenant_id: data.azure_tenant_id || '',
+          azure_session_pool_endpoint: data.azure_session_pool_endpoint || '',
+          fly_api_token: data.fly_api_token || '',
+          fly_app_name: data.fly_app_name || '',
+          aws_access_key: data.aws_access_key || '',
+          aws_secret_key: data.aws_secret_key || '',
+          aws_region: data.aws_region || 'us-east-1',
+          aws_function_name: data.aws_function_name || '',
+        }));
       } catch (e) {
         console.error('Failed to load sandbox config', e);
       } finally {
@@ -193,29 +189,17 @@ export default function SandboxSettings() {
     setSaveMessage('');
 
     try {
-      const res = await fetch('/api/v1/sandbox/config', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          provider,
-          ...form,
-          tenant_id: selectedTenantId,
-        }),
+      const data = await apiClient.put('/api/v1/sandbox/config', {
+        provider,
+        ...form,
+        tenant_id: selectedTenantId,
       });
 
-      const data = await res.json();
-      if (res.ok) {
-        setSaveStatus('success');
-        setSaveMessage(data.message || 'Sandbox configuration saved successfully.');
-      } else {
-        setSaveStatus('error');
-        setSaveMessage(data.detail || 'Failed to save configuration.');
-      }
+      setSaveStatus('success');
+      setSaveMessage(data.message || 'Sandbox configuration saved successfully.');
     } catch (err) {
       setSaveStatus('error');
-      setSaveMessage('Network error occurred while saving.');
+      setSaveMessage(err.message || 'Failed to save configuration.');
     } finally {
       setSaving(false);
     }
@@ -246,12 +230,9 @@ export default function SandboxSettings() {
             onChange={(val) => setSelectedTenantId(val)}
             fetchOptions={async (query) => {
               try {
-                const res = await fetch(`/api/v1/tenants?search=${encodeURIComponent(query)}&page_size=20`);
-                if (res.ok) {
-                  const data = await res.json();
-                  const items = data.items || data || [];
-                  return items.map(t => ({ value: t.id, label: t.name }));
-                }
+                const data = await tenantsApi.list({ search: query, page_size: 20 });
+                const items = data.items || Array.isArray(data) ? (data.items || data) : [];
+                return items.map(t => ({ value: t.id, label: t.name }));
               } catch (e) {
                 console.error('Error fetching tenant options:', e);
               }

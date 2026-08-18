@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { HardDrive, UploadCloud, Server, Check, X, Loader, Save, Zap, Eye, EyeOff } from 'lucide-react';
 import AsyncSearchableDropdown from './AsyncSearchableDropdown';
+import { systemApi, tenantsApi, apiClient } from '../api';
 
 const PROVIDERS = [
   {
@@ -131,13 +132,11 @@ export default function StorageSettings() {
 
   const fetchTenants = async () => {
     try {
-      const res = await fetch('/api/v1/tenants');
-      if (res.ok) {
-        const data = await res.json();
-        setTenants(data || []);
-        if (data && data.length > 0) {
-          setSelectedTenantId(data[0].id);
-        }
+      const data = await tenantsApi.list();
+      const items = Array.isArray(data) ? data : (data.items || data.data || []);
+      setTenants(items);
+      if (items.length > 0) {
+        setSelectedTenantId(items[0].id);
       }
     } catch (e) {
       console.error('Failed to fetch tenants', e);
@@ -153,25 +152,22 @@ export default function StorageSettings() {
     (async () => {
       setLoading(true);
       try {
-        const res = await fetch(`/api/v1/storage/config?tenant_id=${selectedTenantId}`);
-        if (res.ok) {
-          const data = await res.json();
-          setProvider(data.provider || 'local');
-          setTenantName(data.tenant_name || 'Global');
-          setForm(prev => ({
-            ...prev,
-            bucket_name: data.bucket_name || '',
-            region: data.region || 'us-east-1',
-            access_key: data.access_key || '',
-            secret_key: data.secret_key || '',
-            endpoint_url: data.endpoint_url || '',
-            container_name: data.container_name || '',
-            account_name: data.account_name || '',
-            account_key: data.account_key || '',
-            use_presigned_urls: data.use_presigned_urls !== false,
-            presigned_url_expires_seconds: data.presigned_url_expires_seconds || 3600,
-          }));
-        }
+        const data = await apiClient.get('/api/v1/storage/config', { params: { tenant_id: selectedTenantId } });
+        setProvider(data.provider || 'local');
+        setTenantName(data.tenant_name || 'Global');
+        setForm(prev => ({
+          ...prev,
+          bucket_name: data.bucket_name || '',
+          region: data.region || 'us-east-1',
+          access_key: data.access_key || '',
+          secret_key: data.secret_key || '',
+          endpoint_url: data.endpoint_url || '',
+          container_name: data.container_name || '',
+          account_name: data.account_name || '',
+          account_key: data.account_key || '',
+          use_presigned_urls: data.use_presigned_urls !== false,
+          presigned_url_expires_seconds: data.presigned_url_expires_seconds || 3600,
+        }));
       } catch (e) {
         console.error('Failed to load storage config', e);
       } finally {
@@ -188,22 +184,12 @@ export default function StorageSettings() {
     setSaveError('');
     setSaveMessage('');
     try {
-      const res = await fetch('/api/v1/storage/config', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ provider, ...form, tenant_id: selectedTenantId }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (res.ok) {
-        setSaveStatus('success');
-        setSaveMessage(data.message || 'Configuration saved successfully.');
-      } else {
-        setSaveStatus('error');
-        setSaveError(data.detail || 'Save failed.');
-      }
+      const data = await apiClient.put('/api/v1/storage/config', { provider, ...form, tenant_id: selectedTenantId });
+      setSaveStatus('success');
+      setSaveMessage(data.message || 'Configuration saved successfully.');
     } catch (e) {
       setSaveStatus('error');
-      setSaveError(String(e));
+      setSaveError(e.message || String(e));
     } finally {
       setSaving(false);
       // Keep recommendation message visible longer
@@ -215,15 +201,10 @@ export default function StorageSettings() {
     setTesting(true);
     setTestResult(null);
     try {
-      const res = await fetch('/api/v1/storage/test', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ provider, ...form, tenant_id: selectedTenantId }),
-      });
-      const data = await res.json();
+      const data = await apiClient.post('/api/v1/storage/test', { provider, ...form, tenant_id: selectedTenantId });
       setTestResult(data);
     } catch (e) {
-      setTestResult({ success: false, message: String(e) });
+      setTestResult({ success: false, message: e.message || String(e) });
     } finally {
       setTesting(false);
     }
@@ -243,12 +224,9 @@ export default function StorageSettings() {
             onChange={(val) => setSelectedTenantId(val)}
             fetchOptions={async (query) => {
               try {
-                const res = await fetch(`/api/v1/tenants?search=${encodeURIComponent(query)}&page_size=20`);
-                if (res.ok) {
-                  const data = await res.json();
-                  const items = data.items || data || [];
-                  return items.map(t => ({ value: t.id, label: t.name }));
-                }
+                const data = await tenantsApi.list({ search: query, page_size: 20 });
+                const items = data.items || Array.isArray(data) ? (data.items || data) : [];
+                return items.map(t => ({ value: t.id, label: t.name }));
               } catch (e) {
                 console.error('Error fetching tenant options:', e);
               }

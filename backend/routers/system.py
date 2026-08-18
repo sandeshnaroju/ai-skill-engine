@@ -1,5 +1,5 @@
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Header
 from sqlalchemy.orm import Session
 
 from database import get_db
@@ -46,7 +46,7 @@ def get_storage_config(
     from models import StorageConfig
     target_tenant_id = current_tenant.id
     if tenant_id:
-        tenant_check = db.query(Tenant).filter(Tenant.id == tenant_id, Tenant.user_id == current_tenant.user_id).first()
+        tenant_check = db.query(Tenant).filter(Tenant.id == tenant_id).first()
         if tenant_check:
             target_tenant_id = tenant_check.id
 
@@ -88,7 +88,7 @@ def update_storage_config(
 
     target_tenant_id = current_tenant.id
     if payload.tenant_id:
-        tenant_check = db.query(Tenant).filter(Tenant.id == payload.tenant_id, Tenant.user_id == current_tenant.user_id).first()
+        tenant_check = db.query(Tenant).filter(Tenant.id == payload.tenant_id).first()
         if tenant_check:
             target_tenant_id = tenant_check.id
 
@@ -140,7 +140,7 @@ def test_storage_connection(
 
     target_tenant_id = current_tenant.id
     if payload and payload.tenant_id:
-        tenant_check = db.query(Tenant).filter(Tenant.id == payload.tenant_id, Tenant.user_id == current_tenant.user_id).first()
+        tenant_check = db.query(Tenant).filter(Tenant.id == payload.tenant_id).first()
         if tenant_check:
             target_tenant_id = tenant_check.id
 
@@ -230,7 +230,7 @@ def get_sandbox_config(
     from models import SandboxConfig
     target_tenant_id = current_tenant.id
     if tenant_id:
-        tenant_check = db.query(Tenant).filter(Tenant.id == tenant_id, Tenant.user_id == current_tenant.user_id).first()
+        tenant_check = db.query(Tenant).filter(Tenant.id == tenant_id).first()
         if tenant_check:
             target_tenant_id = tenant_check.id
 
@@ -273,7 +273,7 @@ def update_sandbox_config(
 
     target_tenant_id = current_tenant.id
     if payload.tenant_id:
-        tenant_check = db.query(Tenant).filter(Tenant.id == payload.tenant_id, Tenant.user_id == current_tenant.user_id).first()
+        tenant_check = db.query(Tenant).filter(Tenant.id == payload.tenant_id).first()
         if tenant_check:
             target_tenant_id = tenant_check.id
 
@@ -318,21 +318,26 @@ def update_sandbox_config(
 @router.get("/email_config")
 def get_email_config(
     tenant_id: Optional[str] = None,
+    x_tenant_id: Optional[str] = Header(None),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     from models import EmailConfig, Tenant
-    query = db.query(EmailConfig)
-    if tenant_id:
-        query = query.filter(EmailConfig.tenant_id == tenant_id)
+
+    target_tenant_id = (tenant_id or x_tenant_id or "").strip()
+
+    if target_tenant_id:
+        config = db.query(EmailConfig).filter(EmailConfig.tenant_id == target_tenant_id).first()
     else:
         if current_user.id != "system":
             tenant = db.query(Tenant).filter(Tenant.user_id == current_user.id).first()
             if tenant:
-                query = query.filter(EmailConfig.tenant_id == tenant.id)
+                config = db.query(EmailConfig).filter(EmailConfig.tenant_id == tenant.id).first()
             else:
-                return {}
-    config = query.first()
+                config = None
+        else:
+            config = None
+
     if not config:
         return {}
 
@@ -352,19 +357,23 @@ def get_email_config(
 @router.post("/email_config")
 def save_email_config(
     payload: EmailConfigSave,
+    x_tenant_id: Optional[str] = Header(None),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     from models import EmailConfig, Tenant
     from encryption_utils import encrypt_key
 
-    t_id = payload.tenant_id
+    t_id = (payload.tenant_id or x_tenant_id or "").strip()
     if not t_id and current_user.id != "system":
         tenant = db.query(Tenant).filter(Tenant.user_id == current_user.id).first()
         if tenant:
             t_id = tenant.id
         else:
             raise HTTPException(status_code=400, detail="User must belong to a tenant to save SMTP config.")
+
+    if not t_id:
+        raise HTTPException(status_code=400, detail="Tenant ID is required to save SMTP config.")
 
     config = db.query(EmailConfig).filter(EmailConfig.tenant_id == t_id).first()
     if not config:
@@ -393,6 +402,7 @@ def save_email_config(
 @router.post("/email_config/test")
 def test_email_config(
     payload: EmailConfigTest,
+    x_tenant_id: Optional[str] = Header(None),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -402,9 +412,11 @@ def test_email_config(
     from email.mime.text import MIMEText
     from email.mime.multipart import MIMEMultipart
 
+    target_tenant_id = (payload.tenant_id or x_tenant_id or "").strip()
+
     query = db.query(EmailConfig)
-    if payload.tenant_id:
-        query = query.filter(EmailConfig.tenant_id == payload.tenant_id)
+    if target_tenant_id:
+        query = query.filter(EmailConfig.tenant_id == target_tenant_id)
     else:
         if current_user.id != "system":
             tenant = db.query(Tenant).filter(Tenant.user_id == current_user.id).first()

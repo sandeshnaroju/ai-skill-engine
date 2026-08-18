@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { User, Mail, Calendar, Shield, Cpu, Key, Copy, Check, Lock, AlertTriangle } from 'lucide-react';
+import { authApi, tenantsApi, apiClient } from '../api';
 
 export default function Profile() {
   const [profile, setProfile] = useState(null);
@@ -18,20 +19,14 @@ export default function Profile() {
   useEffect(() => {
     const fetchProfileData = async () => {
       try {
-        const [meRes, tenantsRes] = await Promise.all([
-          fetch('/api/v1/auth/me'),
-          fetch('/api/v1/tenants')
+        const [meData, tenantsData] = await Promise.all([
+          authApi.getProfile(),
+          tenantsApi.list()
         ]);
-        if (meRes.ok) {
-          const meData = await meRes.json();
-          setProfile(meData);
-        }
-        if (tenantsRes.ok) {
-          const tenantsData = await tenantsRes.json();
-          // Find the active default tenant
-          const activeTenant = (tenantsData.items || tenantsData || []).find(t => t.is_active) || (tenantsData.items || tenantsData || [])[0];
-          setTenant(activeTenant);
-        }
+        setProfile(meData);
+        const tenantsList = Array.isArray(tenantsData) ? tenantsData : (tenantsData.items || []);
+        const activeTenant = tenantsList.find(t => t.is_active) || tenantsList[0];
+        setTenant(activeTenant);
       } catch (err) {
         console.error('Failed to load profile details:', err);
       } finally {
@@ -61,13 +56,7 @@ export default function Profile() {
     }
     setPasswordLoading(true);
     try {
-      const res = await fetch('/api/v1/auth/change-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ old_password: oldPassword, new_password: newPassword })
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || 'Failed to change password');
+      await apiClient.post('/api/v1/auth/change-password', { old_password: oldPassword, new_password: newPassword });
       setSuccess('Password changed successfully! Logging out...');
       setOldPassword('');
       setNewPassword('');
