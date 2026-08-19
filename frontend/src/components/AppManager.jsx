@@ -36,6 +36,7 @@ export default function AppManager() {
 
   // Modal State
   const [showModal, setShowModal] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editingAppId, setEditingAppId] = useState(null);
   const [appName, setAppName] = useState('');
@@ -487,6 +488,7 @@ export default function AppManager() {
         setShowModal={setShowDuplicateModal}
         app={duplicateAppTarget}
         tenants={tenants}
+        currentTenantId={selectedTenantId}
         onDuplicate={handleDuplicateApp}
       />
     </div>

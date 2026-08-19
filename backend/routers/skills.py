@@ -190,21 +190,36 @@ def duplicate_skill(
     source_clean_name = skill_name.strip().lower().replace(" ", "_")
     
     content = None
-    source_db_skill = db.query(CustomSkill).filter(
-        CustomSkill.name == source_clean_name,
-        CustomSkill.tenant_id == current_tenant.id
-    ).first()
+    source_tenant_id = payload.source_tenant_id or current_tenant.id
+
+    # 1. Search database for custom skill in specified source tenant or current tenant or global
+    query = db.query(CustomSkill).filter(CustomSkill.name == source_clean_name)
+    if payload.source_tenant_id:
+        query = query.filter((CustomSkill.tenant_id == payload.source_tenant_id) | (CustomSkill.tenant_id == None))
+    else:
+        query = query.filter((CustomSkill.tenant_id == current_tenant.id) | (CustomSkill.tenant_id == None))
+
+    source_db_skill = query.first()
+
+    # Fallback search across any custom skill in DB if not found specifically
+    if not source_db_skill:
+        source_db_skill = db.query(CustomSkill).filter(CustomSkill.name == source_clean_name).first()
+
     if source_db_skill:
         content = source_db_skill.content
-    else:
-        file_skills = skill_registry.get_skills_dict(tenant_id=current_tenant.id)
-        if source_clean_name in file_skills:
-            content = file_skills[source_clean_name].get("content")
-            
+    
+    # 2. Check skill registry for source tenant or global skills
     if not content:
-        all_skills = skill_registry.get_skills_dict()
-        if source_clean_name in all_skills:
-            content = all_skills[source_clean_name].get("content")
+        tenant_skills = skill_registry.get_skills_dict(tenant_id=source_tenant_id)
+        skill_info = tenant_skills.get(source_clean_name) or skill_registry.get_skills_dict().get(source_clean_name)
+        if skill_info:
+            content = skill_info.get("content")
+            if not content and skill_info.get("filepath") and os.path.exists(skill_info.get("filepath")):
+                try:
+                    with open(skill_info["filepath"], "r", encoding="utf-8") as f:
+                        content = f.read()
+                except Exception as e:
+                    print(f"Error reading skill file {skill_info['filepath']}: {e}")
 
     if not content:
         raise HTTPException(status_code=404, detail=f"Skill '{skill_name}' not found.")

@@ -77,7 +77,8 @@ export default function SkillCatalog() {
 
   const handleDuplicateSkill = async (sourceName, targetTenantIds, newSkillName) => {
     try {
-      const res = await skillsApi.duplicate(sourceName, targetTenantIds, newSkillName);
+      const sourceTenantId = duplicateSkillTarget?.tenant_id || selectedTenantId || undefined;
+      const res = await skillsApi.duplicate(sourceName, targetTenantIds, newSkillName, sourceTenantId);
       const copiedList = (res.copied_to_tenants || []).join(', ');
       showSuccess(`Skill "${newSkillName}" duplicated successfully to ${copiedList || 'target workspaces'}`);
       fetchSkillsAndApps();
@@ -260,6 +261,7 @@ Provide instructions for the LLM on how to resolve queries using this skill.
   };
 
   const handleOpenEditModal = async (skill) => {
+    setEditingSkillName(skill.name);
     setSkillNameInput(skill.name);
     setSkillContentInput('');
     setIsEditing(true);
@@ -283,8 +285,13 @@ Provide instructions for the LLM on how to resolve queries using this skill.
     }
     setSaving(true);
     try {
-      await skillsApi.create(skillNameInput, skillContentInput, selectedTenantId);
-      showSuccess(`Skill "${skillNameInput}" saved successfully`);
+      if (isEditing) {
+        await skillsApi.update(editingSkillName || skillNameInput, skillContentInput, selectedTenantId);
+        showSuccess(`Skill "${skillNameInput}" updated successfully`);
+      } else {
+        await skillsApi.create(skillNameInput, skillContentInput, selectedTenantId);
+        showSuccess(`Skill "${skillNameInput}" saved successfully`);
+      }
       setShowModal(false);
       setPage(1);
       fetchSkillsAndApps();
@@ -532,6 +539,7 @@ Provide instructions for the LLM on how to resolve queries using this skill.
         setShowModal={setShowDuplicateModal}
         skill={duplicateSkillTarget}
         tenants={tenants}
+        currentTenantId={selectedTenantId}
         onDuplicate={handleDuplicateSkill}
       />
     </div>
