@@ -103,16 +103,18 @@ def update_user_data_template(
     db: Session = Depends(get_db),
     current_tenant: Tenant = Depends(get_current_tenant)
 ):
-    from models import UserDataTemplate
+    from models import UserDataTemplate, Tenant as DBTenant
     clean_name = payload.name.strip()
     data_str = json.dumps(payload.data)
 
-    tpl = db.query(UserDataTemplate).filter(
-        UserDataTemplate.id == template_id,
-        UserDataTemplate.tenant_id == current_tenant.id
-    ).first()
+    tpl = db.query(UserDataTemplate).filter(UserDataTemplate.id == template_id).first()
     if not tpl:
         raise HTTPException(status_code=404, detail="User Data profile not found")
+
+    if tpl.tenant_id and tpl.tenant_id != current_tenant.id:
+        target_tenant = db.query(DBTenant).filter(DBTenant.id == tpl.tenant_id).first()
+        if target_tenant and target_tenant.user_id != current_tenant.user_id:
+            raise HTTPException(status_code=403, detail="Permission denied to update profile from this tenant workspace.")
 
     tpl.name = clean_name
     tpl.description = payload.description
@@ -133,13 +135,16 @@ def delete_user_data_template(
     db: Session = Depends(get_db),
     current_tenant: Tenant = Depends(get_current_tenant)
 ):
-    from models import UserDataTemplate
-    tpl = db.query(UserDataTemplate).filter(
-        UserDataTemplate.id == template_id,
-        UserDataTemplate.tenant_id == current_tenant.id
-    ).first()
+    from models import UserDataTemplate, Tenant as DBTenant
+    tpl = db.query(UserDataTemplate).filter(UserDataTemplate.id == template_id).first()
     if not tpl:
         raise HTTPException(status_code=404, detail="Template not found")
+        
+    if tpl.tenant_id and tpl.tenant_id != current_tenant.id:
+        target_tenant = db.query(DBTenant).filter(DBTenant.id == tpl.tenant_id).first()
+        if target_tenant and target_tenant.user_id != current_tenant.user_id:
+            raise HTTPException(status_code=403, detail="Permission denied to delete profile from this tenant workspace.")
+
     db.delete(tpl)
     db.commit()
     return {"status": "deleted", "template_id": template_id}

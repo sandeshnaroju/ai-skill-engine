@@ -23,9 +23,10 @@ export const skillsApi = {
   generate: (payload) =>
     apiClient.post('/api/v1/generate/skill', payload),
 
-  duplicate: (skillName, targetTenantIds, newSkillName = null) =>
+  duplicate: (skillName, targetTenantIds, newSkillName = null, sourceTenantId = null) =>
     apiClient.post(`/api/v1/skills/${encodeURIComponent(skillName)}/duplicate`, {
       target_tenant_ids: targetTenantIds,
-      new_skill_name: newSkillName
+      new_skill_name: newSkillName,
+      source_tenant_id: sourceTenantId
     }),
 };

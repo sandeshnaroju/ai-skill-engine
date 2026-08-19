@@ -33,6 +33,7 @@ class SkillSaveRequest(BaseModel):
 class SkillDuplicateRequest(BaseModel):
     target_tenant_ids: List[str]
     new_skill_name: Optional[str] = None
+    source_tenant_id: Optional[str] = None
 
 class ApiCallDetail(BaseModel):
     method: str

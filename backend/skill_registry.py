@@ -49,6 +49,7 @@ class SkillRegistry:
                         metadata["body"] = markdown_body
                         metadata["filepath"] = filepath
                         metadata["source"] = "file"
+                        metadata["content"] = content
                         metadata["created_at"] = mtime
                         
                         self.file_skills_cache[filepath] = metadata
