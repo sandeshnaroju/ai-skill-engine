@@ -88,8 +88,10 @@ export default function SkillEditorModal({
           </div>
 
           <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '14px', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-            <button type="button" className="btn-outline" onClick={() => setShowModal(false)} style={{ padding: '8px 16px' }}>Cancel</button>
-            {(!isEditing || (isEditing && skills.find(s=>s.name === editingSkillName)?.source === 'database')) && (
+            <button type="button" className="btn-outline" onClick={() => setShowModal(false)} style={{ padding: '8px 16px' }}>
+              {isEditing && skills.find(s => s.name === editingSkillName)?.source === 'file' ? 'Close' : 'Cancel'}
+            </button>
+            {(!isEditing || skills.find(s => s.name === editingSkillName)?.source !== 'file') && (
               <button type="submit" className="btn-gradient" disabled={saving || !skillNameInput.trim() || !/^[a-z0-9_]+$/.test(skillNameInput.trim())} style={{ padding: '8px 20px' }}>
                 {saving ? 'Saving...' : 'Save Skill'}
               </button>

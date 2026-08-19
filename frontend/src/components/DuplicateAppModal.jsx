@@ -6,13 +6,17 @@ export default function DuplicateAppModal({
   setShowModal,
   app,
   tenants,
+  currentTenantId,
   onDuplicate
 }) {
   if (!showModal || !app) return null;
 
+  const currentSourceTenantId = app.tenant_id || currentTenantId;
+  const destinationTenants = tenants.filter(t => t.id !== currentSourceTenantId);
+
   const [newAppName, setNewAppName] = useState(app.name);
   const [selectedTenantIds, setSelectedTenantIds] = useState(
-    tenants.length > 0 ? [tenants[0].id] : []
+    destinationTenants.length > 0 ? [destinationTenants[0].id] : []
   );
   const [submitting, setSubmitting] = useState(false);
 
@@ -25,7 +29,7 @@ export default function DuplicateAppModal({
   };
 
   const selectAllTenants = () => {
-    setSelectedTenantIds(tenants.map(t => t.id));
+    setSelectedTenantIds(destinationTenants.map(t => t.id));
   };
 
   const deselectAllTenants = () => {
@@ -105,12 +109,12 @@ export default function DuplicateAppModal({
             </div>
 
             <div style={{ maxHeight: '200px', overflowY: 'auto', background: 'var(--bg-input)', border: '1px solid var(--border-subtle)', borderRadius: '10px', padding: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              {tenants.length === 0 ? (
+              {destinationTenants.length === 0 ? (
                 <div style={{ color: 'var(--text-muted)', fontSize: '0.82rem', textAlign: 'center', padding: '12px' }}>
-                  No workspaces available.
+                  No other destination workspaces available.
                 </div>
               ) : (
-                tenants.map((t) => {
+                destinationTenants.map((t) => {
                   const isChecked = selectedTenantIds.includes(t.id);
                   return (
                     <div

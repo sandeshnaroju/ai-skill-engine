@@ -7,11 +7,19 @@ export const appsApi = {
   get: (appId) =>
     apiClient.get(`/api/v1/apps/${appId}`),
 
-  create: (name, description = '', icon = 'box', skillNames = []) =>
-    apiClient.post('/api/v1/apps', { name, description, icon, skill_names: skillNames }),
+  create: (dataOrName, description = '', icon = 'box', skillNames = []) => {
+    if (typeof dataOrName === 'object' && dataOrName !== null) {
+      return apiClient.post('/api/v1/apps', dataOrName);
+    }
+    return apiClient.post('/api/v1/apps', { name: dataOrName, description, icon, skill_names: skillNames });
+  },
 
-  update: (appId, name, description, icon, skillNames) =>
-    apiClient.put(`/api/v1/apps/${appId}`, { name, description, icon, skill_names: skillNames }),
+  update: (appId, dataOrName, description, icon, skillNames) => {
+    if (typeof dataOrName === 'object' && dataOrName !== null) {
+      return apiClient.post('/api/v1/apps', { ...dataOrName, id: appId });
+    }
+    return apiClient.post('/api/v1/apps', { id: appId, name: dataOrName, description, icon, skill_names: skillNames });
+  },
 
   delete: (appId) =>
     apiClient.delete(`/api/v1/apps/${appId}`),
