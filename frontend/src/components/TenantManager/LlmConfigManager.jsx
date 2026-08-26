@@ -26,7 +26,7 @@ export default function LlmConfigManager({
   const [editingLlmId, setEditingLlmId] = useState(null);
   const [registryLoading, setRegistryLoading] = useState(false);
 
-  const handleAddLlm = async (e) => {
+  const handleSaveLlm = async (e) => {
     e.preventDefault();
     if (!selectedTenant) return;
     setRegistryLoading(true);
@@ -42,14 +42,19 @@ export default function LlmConfigManager({
         audio_output_rate: parseFloat(audioOutputRate)
       };
 
-      await tenantsApi.createLlm(payload, selectedTenant.api_key);
-      showSuccess(`LLM model "${modelName}" registered successfully`);
+      if (editingLlmId) {
+        await tenantsApi.updateLlm(editingLlmId, payload, selectedTenant.api_key);
+        showSuccess(`LLM model "${modelName}" updated successfully`);
+      } else {
+        await tenantsApi.createLlm(payload, selectedTenant.api_key);
+        showSuccess(`LLM model "${modelName}" registered successfully`);
+        setModelPage(1);
+      }
       cancelEdit();
-      setModelPage(1);
       fetchTenantLlms(selectedTenant);
       fetchTenants();
     } catch (err) {
-      console.error('Add model config error:', err);
+      console.error('Save model config error:', err);
     } finally {
       setRegistryLoading(false);
     }
@@ -61,10 +66,10 @@ export default function LlmConfigManager({
     setModelName(l.model_name || '');
     setModelApiKey(''); 
     setBaseUrl(l.base_url || '');
-    setInputRate(l.input_rate !== undefined ? l.input_rate : 1.0);
-    setOutputRate(l.output_rate !== undefined ? l.output_rate : 2.0);
-    setAudioInputRate(l.audio_input_rate !== undefined ? l.audio_input_rate : 10.0);
-    setAudioOutputRate(l.audio_output_rate !== undefined ? l.audio_output_rate : 20.0);
+    setInputRate(l.input_rate != null ? l.input_rate : 1.0);
+    setOutputRate(l.output_rate != null ? l.output_rate : 2.0);
+    setAudioInputRate(l.audio_input_rate != null ? l.audio_input_rate : 10.0);
+    setAudioOutputRate(l.audio_output_rate != null ? l.audio_output_rate : 20.0);
   };
 
   const cancelEdit = () => {
@@ -100,7 +105,7 @@ export default function LlmConfigManager({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-      <form onSubmit={handleAddLlm} autoComplete="off" style={{ background: 'var(--bg-input)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+      <form onSubmit={handleSaveLlm} autoComplete="off" style={{ background: 'var(--bg-input)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
         <input type="text" name="decoy_username" style={{ display: 'none' }} autoComplete="off" />
         <input type="password" name="decoy_password" style={{ display: 'none' }} autoComplete="new-password" />
 

@@ -118,6 +118,10 @@ def list_tenant_llms(
             "provider": l.provider,
             "model_name": l.model_name,
             "base_url": l.base_url,
+            "input_rate": l.input_rate,
+            "output_rate": l.output_rate,
+            "audio_input_rate": l.audio_input_rate,
+            "audio_output_rate": l.audio_output_rate,
             "is_active": l.is_active,
             "created_at": l.created_at.isoformat() if l.created_at else None
         }

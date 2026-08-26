@@ -194,7 +194,7 @@ def get_usage_summary(
     ).filter(ChatRequest.status == "completed")
 
     if model_name:
-        query = query.filter(ChatRequest.model_name == model_name)
+        query = query.filter(ChatRequest.model_name.ilike(f"%{model_name}%"))
     if tenant_name and tenant_name != "ALL":
         query = query.join(Tenant).filter(Tenant.name == tenant_name)
     if request_source and request_source != "ALL":
@@ -233,7 +233,7 @@ def get_usage_summary(
     ).filter(ChatRequest.status == "completed")
 
     if model_name:
-        totals_query = totals_query.filter(ChatRequest.model_name == model_name)
+        totals_query = totals_query.filter(ChatRequest.model_name.ilike(f"%{model_name}%"))
     if tenant_name and tenant_name != "ALL":
         totals_query = totals_query.join(Tenant).filter(Tenant.name == tenant_name)
     if request_source and request_source != "ALL":

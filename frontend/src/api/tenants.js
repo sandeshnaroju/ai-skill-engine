@@ -16,6 +16,9 @@ export const tenantsApi = {
   createLlm: (llmData, tenantKeyOrId = null) =>
     apiClient.post('/api/v1/tenant/llms', llmData, { tenantKey: tenantKeyOrId, tenantId: tenantKeyOrId }),
 
+  updateLlm: (llmId, llmData, tenantKeyOrId = null) =>
+    apiClient.put(`/api/v1/tenant/llms/${llmId}`, llmData, { tenantKey: tenantKeyOrId, tenantId: tenantKeyOrId }),
+
   deleteLlm: (llmId, tenantKeyOrId = null) =>
     apiClient.delete(`/api/v1/tenant/llms/${llmId}`, { tenantKey: tenantKeyOrId, tenantId: tenantKeyOrId }),
 };

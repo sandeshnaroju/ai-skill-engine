@@ -6,16 +6,24 @@ def update_request_usage(chat_req, usage_obj, input_rate: float, output_rate: fl
     audio_output_tokens = 0
     
     if usage_obj:
-        prompt_tokens = getattr(usage_obj, "prompt_tokens", 0) or 0
-        completion_tokens = getattr(usage_obj, "completion_tokens", 0) or 0
-        
-        prompt_details = getattr(usage_obj, "prompt_tokens_details", None)
-        if prompt_details and hasattr(prompt_details, "audio_tokens"):
-            audio_input_tokens = getattr(prompt_details, "audio_tokens", 0) or 0
+        if isinstance(usage_obj, dict):
+            prompt_tokens = usage_obj.get("prompt_tokens") or 0
+            completion_tokens = usage_obj.get("completion_tokens") or 0
+            prompt_details = usage_obj.get("prompt_tokens_details") or {}
+            audio_input_tokens = prompt_details.get("audio_tokens") if isinstance(prompt_details, dict) else getattr(prompt_details, "audio_tokens", 0) or 0
+            completion_details = usage_obj.get("completion_tokens_details") or {}
+            audio_output_tokens = completion_details.get("audio_tokens") if isinstance(completion_details, dict) else getattr(completion_details, "audio_tokens", 0) or 0
+        else:
+            prompt_tokens = getattr(usage_obj, "prompt_tokens", 0) or 0
+            completion_tokens = getattr(usage_obj, "completion_tokens", 0) or 0
             
-        completion_details = getattr(usage_obj, "completion_tokens_details", None)
-        if completion_details and hasattr(completion_details, "audio_tokens"):
-            audio_output_tokens = getattr(completion_details, "audio_tokens", 0) or 0
+            prompt_details = getattr(usage_obj, "prompt_tokens_details", None)
+            if prompt_details and hasattr(prompt_details, "audio_tokens"):
+                audio_input_tokens = getattr(prompt_details, "audio_tokens", 0) or 0
+                
+            completion_details = getattr(usage_obj, "completion_tokens_details", None)
+            if completion_details and hasattr(completion_details, "audio_tokens"):
+                audio_output_tokens = getattr(completion_details, "audio_tokens", 0) or 0
             
     standard_input_tokens = max(0, prompt_tokens - audio_input_tokens)
     standard_output_tokens = max(0, completion_tokens - audio_output_tokens)
