@@ -65,7 +65,8 @@ def create_chat_request(db: DbSession, tenant, session_id: str, app_id,
 
 def finalize_request(db: DbSession, chat_req: ChatRequest, final_answer: str,
                      executed_logs: list, start_time: float, usage_obj=None,
-                     in_rate=1.0, out_rate=2.0, au_in_rate=10.0, au_out_rate=20.0):
+                     in_rate=1.0, out_rate=2.0, au_in_rate=10.0, au_out_rate=20.0,
+                     model_name: str = None):
     """Mark a ChatRequest as completed and persist usage/cost data."""
     import time
     duration_ms = int((time.time() - start_time) * 1000)
@@ -74,7 +75,8 @@ def finalize_request(db: DbSession, chat_req: ChatRequest, final_answer: str,
     chat_req.total_duration_ms = duration_ms
     chat_req.status = "completed"
     chat_req.completed_at = datetime.utcnow()
-    update_request_usage(chat_req, usage_obj, in_rate, out_rate, au_in_rate, au_out_rate)
+    primary_model = model_name or chat_req.model_name
+    update_request_usage(chat_req, usage_obj, in_rate, out_rate, au_in_rate, au_out_rate, is_secondary=False, model_name=primary_model)
     db.commit()
 
 
