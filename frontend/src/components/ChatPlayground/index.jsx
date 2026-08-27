@@ -316,14 +316,15 @@ export default function ChatPlayground() {
         }
 
         if (toolCalls && toolCalls.length > 0) {
-          pendingReasoning.push(`💭 Consulting LLM model (Turn)...`);
+          pendingReasoning.push(`💭 Analyzing query context & invoking tool dependencies...`);
           toolCalls.forEach(tc => {
-            const name = tc.function?.name || tc.name || 'tool';
+            const rawName = tc.function?.name || tc.name || 'tool';
+            const cleanName = rawName.split('__').pop().replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
             const args = typeof tc.function?.arguments === 'string'
               ? tc.function.arguments
               : JSON.stringify(tc.function?.arguments || tc.arguments || {});
-            pendingReasoning.push(`💭 Invoking tool ${name}...`);
-            pendingReasoning.push(`🛠️ Invoking Tool: ${name}\nArgs: ${args}`);
+            pendingReasoning.push(`💭 Invoking ${cleanName}...`);
+            pendingReasoning.push(`🛠️ Invoking Tool: ${cleanName}\nArgs: ${args}`);
           });
         }
 
@@ -730,12 +731,16 @@ export default function ChatPlayground() {
               stateChanged = true;
             }
             if (delta.tool_call) {
-              setLiveThought(`Invoking tool ${delta.tool_call.name}...`);
-              reasoningTraces.push(`🛠️ Invoking Tool: ${delta.tool_call.name}\nArgs: ${JSON.stringify(delta.tool_call.arguments)}`);
+              const rawName = delta.tool_call.name || 'tool';
+              const cleanName = rawName.split('__').pop().replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+              setLiveThought(`Invoking ${cleanName}...`);
+              reasoningTraces.push(`🛠️ Invoking Tool: ${cleanName}\nArgs: ${JSON.stringify(delta.tool_call.arguments)}`);
               stateChanged = true;
             }
             if (delta.tool_result) {
-              setLiveThought(`Tool ${delta.tool_result.tool_name} finished in ${delta.tool_result.execution_time_ms}ms.`);
+              const rawName = delta.tool_result.tool_name || 'tool';
+              const cleanName = rawName.split('__').pop().replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+              setLiveThought(`${cleanName} finished in ${delta.tool_result.execution_time_ms}ms.`);
               reasoningTraces.push(`⚡ Executed in ${delta.tool_result.sandbox_type} sandbox (${delta.tool_result.execution_time_ms}ms, Exit: ${delta.tool_result.exit_code})\nOutput: ${(delta.tool_result.stdout || delta.tool_result.stderr || '').trim()}`);
               setExecutedTools((prev) => [...prev, delta.tool_result]);
               if (delta.tool_result.generated_files && delta.tool_result.generated_files.length > 0) {

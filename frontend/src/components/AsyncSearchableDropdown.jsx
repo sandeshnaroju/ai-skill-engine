@@ -96,22 +96,12 @@ const AsyncSearchableDropdown = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isOpen]);
 
-  // Close on scroll/resize so menu tracks anchor correctly
+  // Close on resize so menu tracks anchor correctly
   useEffect(() => {
     if (!isOpen) return;
-    const handleScrollResize = (e) => {
-      const portalMenu = document.querySelector('.async-dropdown-menu');
-      if (portalMenu && e.target && (portalMenu === e.target || portalMenu.contains(e.target))) {
-        return;
-      }
-      close();
-    };
-    window.addEventListener('scroll', handleScrollResize, true);
-    window.addEventListener('resize', handleScrollResize);
-    return () => {
-      window.removeEventListener('scroll', handleScrollResize, true);
-      window.removeEventListener('resize', handleScrollResize);
-    };
+    const handleResize = () => close();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
   }, [isOpen]);
 
   function close() {
@@ -218,8 +208,7 @@ const AsyncSearchableDropdown = ({
             <div
               key={`${option.value}-${idx}`}
               className={`async-dropdown-option ${String(value) === String(option.value) ? 'selected' : ''}`}
-              onMouseDown={e => {
-                e.preventDefault();
+              onClick={() => {
                 onChange(option.value);
                 setCurrentLabel(option.label);
                 close();

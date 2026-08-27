@@ -134,15 +134,21 @@ export default function UsageSummary() {
 
       {/* Filters Panel */}
       <div className="glass-box" style={{ padding: '16px 20px', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-        {/* Search Model */}
-        <div style={{ position: 'relative', flex: '1', minWidth: '180px' }}>
-          <Search size={14} color="var(--text-muted)" style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)' }} />
-          <input
-            type="text"
-            placeholder="Search LLM model names (e.g. gemini)..."
+        {/* Model Filter (Dropdown + Search) */}
+        <div style={{ width: '220px' }}>
+          <AsyncSearchableDropdown
             value={searchModel}
-            onChange={handleModelChange}
-            style={{ paddingLeft: '32px', fontSize: '0.84rem', width: '100%' }}
+            onChange={(val) => setSearchModel(val === 'ALL' ? '' : val)}
+            fetchOptions={async (searchTerm) => {
+              const data = await tenantsApi.listLlms(null, { search: searchTerm || '', page_size: 15, page: 1 });
+              const items = data.items || [];
+              const uniqueModels = Array.from(new Set(items.map(m => m.model_name).filter(Boolean)));
+              return [
+                { value: 'ALL', label: '🤖 All LLM Models' },
+                ...uniqueModels.map(m => ({ value: m, label: `🤖 ${m}` }))
+              ];
+            }}
+            placeholder="Filter by Model"
           />
         </div>
 

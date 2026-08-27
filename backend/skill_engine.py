@@ -14,7 +14,7 @@ import openai
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from sqlalchemy.orm import Session
 
-from engine.usage import get_model_rates
+from engine.usage import get_model_rates, update_request_usage
 from engine.messages import resolve_user_data_placeholders
 from engine.tool_executor import execute_tool, prefetch_mcp_servers
 from engine.prochat import get_prochat_ui, stream_prochat_ui
@@ -238,13 +238,18 @@ class SkillEngine:
                     final_answer = response_msg.content or ""
                     extracted_json, extracted_code = None, None
                     if prochat_model:
-                        extracted_json, extracted_code = get_prochat_ui(db, tenant, messages, final_answer, prochat_model)
+                        res_tuple = get_prochat_ui(db, tenant, messages, final_answer, prochat_model)
+                        if res_tuple:
+                            extracted_json, extracted_code, prochat_usage, prochat_rates = res_tuple
+                            if prochat_usage and prochat_rates:
+                                pin_r, pout_r, pau_in_r, pau_out_r = prochat_rates
+                                update_request_usage(chat_req, prochat_usage, pin_r, pout_r, pau_in_r, pau_out_r, is_secondary=True, model_name=prochat_model or "genui-mars-0.1")
 
                     if persist and session_obj:
                         save_message(db, session_obj, "assistant", content=final_answer, json_data=extracted_json, code=extracted_code)
 
                     finalize_request(db, chat_req, final_answer, executed_logs, start_time,
-                                     getattr(response, "usage", None), in_r, out_r, au_in_r, au_out_r)
+                                     getattr(response, "usage", None), in_r, out_r, au_in_r, au_out_r, model_name=model_name)
                     return {
                         "response": final_answer, "json": extracted_json, "code": extracted_code,
                         "session_id": session_id, "request_id": request_id,
@@ -255,11 +260,16 @@ class SkillEngine:
             final_res = messages[-1].get("content") or "Reached maximum tool execution turns."
             extracted_json, extracted_code = None, None
             if prochat_model:
-                extracted_json, extracted_code = get_prochat_ui(db, tenant, messages, final_res, prochat_model)
+                res_tuple = get_prochat_ui(db, tenant, messages, final_res, prochat_model)
+                if res_tuple:
+                    extracted_json, extracted_code, prochat_usage, prochat_rates = res_tuple
+                    if prochat_usage and prochat_rates:
+                        pin_r, pout_r, pau_in_r, pau_out_r = prochat_rates
+                        update_request_usage(chat_req, prochat_usage, pin_r, pout_r, pau_in_r, pau_out_r, is_secondary=True, model_name=prochat_model or "genui-mars-0.1")
             if persist and session_obj:
                 save_message(db, session_obj, "assistant", content=final_res, json_data=extracted_json, code=extracted_code)
             finalize_request(db, chat_req, final_res, executed_logs, start_time,
-                             getattr(response, "usage", None), in_r, out_r, au_in_r, au_out_r)
+                             getattr(response, "usage", None), in_r, out_r, au_in_r, au_out_r, model_name=model_name)
             return {
                 "response": final_res, "json": extracted_json, "code": extracted_code,
                 "session_id": session_id, "request_id": request_id,
@@ -313,6 +323,7 @@ class SkillEngine:
 
             executed_logs = []
             final_answer = ""
+            accumulated_usage = {"prompt_tokens": 0, "completion_tokens": 0}  # summed across all turns
 
             if persist:
                 session_obj = get_or_create_session(db, tenant, session_id)
@@ -333,14 +344,17 @@ class SkillEngine:
 
             for turn in range(max_turns):
                 kwargs = {"model": model_name, "messages": messages, "stream": True}
-                if "gemini" not in model_name.lower():
-                    kwargs["stream_options"] = {"include_usage": True}
+                kwargs["stream_options"] = {"include_usage": True}
                 if available_tools and turn < max_turns - 1:
                     kwargs["tools"] = available_tools
                 if turn == max_turns - 1:
                     messages.append({"role": "user", "content": "[System Notice: Maximum tool execution turns reached. You can no longer call any tools. Please summarize the tool outputs and provide your final response to the user.]"})
 
-                yield _chunk(session_id, model_name, reasoning=f"Consulting LLM model {model_name} (Turn {turn+1})...")
+                if turn == 0:
+                    turn_msg = "Analyzing conversation context & planning query execution..."
+                else:
+                    turn_msg = f"Processing tool outputs & synthesizing response (Turn {turn+1})..."
+                yield _chunk(session_id, model_name, reasoning=turn_msg)
 
                 try:
                     response_stream = llm.chat.completions.create(**kwargs)
@@ -360,11 +374,11 @@ class SkillEngine:
                 tool_calls_accumulator = {}
                 id_to_index = {}
                 last_idx = 0
-                last_usage = None
+                turn_usage = None
 
                 for chunk in response_stream:
                     if getattr(chunk, "usage", None):
-                        last_usage = chunk.usage
+                        turn_usage = chunk.usage
                     if not chunk.choices:
                         continue
                     choice = chunk.choices[0]
@@ -398,6 +412,30 @@ class SkillEngine:
                                 extra = extra.model_dump() if hasattr(extra, "model_dump") else extra.dict() if hasattr(extra, "dict") else extra
                                 tool_calls_accumulator[tc_idx]["extra_content"] = extra
 
+
+                # Accumulate this turn's token usage into the running total.
+                # If the API didn't return a usage chunk (e.g. some Gemini streams),
+                # estimate from character counts so cost is never silently zero.
+                if turn_usage:
+                    accumulated_usage["prompt_tokens"] += getattr(turn_usage, "prompt_tokens", 0) or 0
+                    accumulated_usage["completion_tokens"] += getattr(turn_usage, "completion_tokens", 0) or 0
+                else:
+                    # Rough estimate: ~4 chars per token
+                    # Some messages have list/None content (tool-call turns), guard carefully
+                    def _safe_content_str(m):
+                        if not isinstance(m, dict):
+                            return ""
+                        c = m.get("content")
+                        if c is None:
+                            return ""
+                        if isinstance(c, (list, dict)):
+                            return str(c)
+                        return str(c)
+                    messages_text = " ".join(_safe_content_str(m) for m in messages)
+                    answer_text = full_text or ""
+                    accumulated_usage["prompt_tokens"] += max(1, len(messages_text) // 4)
+                    accumulated_usage["completion_tokens"] += max(1, len(answer_text) // 4)
+
                 if tool_calls_accumulator:
                     tool_calls_list = []
                     for _, tc_data in tool_calls_accumulator.items():
@@ -419,9 +457,14 @@ class SkillEngine:
                         except Exception:
                             args = {}
                         skill_name, _ = skill_registry.find_tool(fn_name, tenant_id=tenant.id)
+                        
+                        raw_name = fn_name.split("__")[-1]
+                        clean_name = raw_name.replace("_", " ").title()
+                        clean_skill = (skill_name or "System").replace("_", " ").title()
+                        
                         yield _chunk(session_id, model_name,
-                                     reasoning=f"Invoking tool {fn_name} (Skill: {skill_name})...",
-                                     tool_call={"name": fn_name, "arguments": args})
+                                     reasoning=f"Invoking {clean_name} (Skill: {clean_skill})...",
+                                     tool_call={"name": clean_name, "arguments": args})
 
                     # Execute tools in parallel
                     def run_one_stream(tc):
@@ -458,10 +501,14 @@ class SkillEngine:
                                 "generated_files": exec_res.get("generated_files", [])
                             })
 
+                            raw_name = fn_name.split("__")[-1]
+                            clean_name = raw_name.replace("_", " ").title()
+                            clean_skill = (skill_name or "System").replace("_", " ").title()
+
                             yield _chunk(session_id, model_name,
-                                         reasoning=f"Tool {fn_name} finished in {exec_res.get('execution_time_ms')}ms ({exec_res.get('sandbox_type')}).",
+                                         reasoning=f"{clean_name} finished in {exec_res.get('execution_time_ms')}ms.",
                                          tool_result={
-                                             "tool_name": fn_name, "skill_name": skill_name,
+                                             "tool_name": clean_name, "skill_name": clean_skill,
                                              "stdout": exec_res.get("stdout"), "stderr": exec_res.get("stderr"),
                                              "sandbox_type": exec_res.get("sandbox_type"),
                                              "execution_time_ms": exec_res.get("execution_time_ms"),
@@ -482,15 +529,22 @@ class SkillEngine:
                             while True:
                                 yield next(gen)
                         except StopIteration as si:
-                            last_extracted_json, last_extracted_code = si.value or (None, None)
+                            res_val = si.value
+                            if res_val and len(res_val) >= 4:
+                                last_extracted_json, last_extracted_code, prochat_usage, prochat_rates = res_val[:4]
+                                if prochat_usage and prochat_rates:
+                                    pin_r, pout_r, pau_in_r, pau_out_r = prochat_rates
+                                    update_request_usage(chat_req, prochat_usage, pin_r, pout_r, pau_in_r, pau_out_r, is_secondary=True, model_name=prochat_model or "genui-mars-0.1")
+                            elif res_val:
+                                last_extracted_json, last_extracted_code = res_val[0], res_val[1]
 
                     if persist and session_obj:
                         save_message(db, session_obj, "assistant", content=full_text,
                                      json_data=last_extracted_json, code=last_extracted_code)
 
-                    usage_obj = getattr(last_usage, "usage", last_usage) if last_usage else None
                     finalize_request(db, chat_req, full_text, executed_logs, start_time,
-                                     usage_obj, in_r, out_r, au_in_r, au_out_r)
+                                     accumulated_usage if accumulated_usage["prompt_tokens"] else None,
+                                     in_r, out_r, au_in_r, au_out_r, model_name=model_name)
 
                     yield f"data: {json.dumps({'type': 'done', 'request_id': request_id, 'tools_called': len(executed_logs)})}\n\n"
                     yield "data: [DONE]\n\n"
@@ -504,15 +558,22 @@ class SkillEngine:
                     while True:
                         yield next(gen)
                 except StopIteration as si:
-                    last_extracted_json, last_extracted_code = si.value or (None, None)
+                    res_val = si.value
+                    if res_val and len(res_val) >= 4:
+                        last_extracted_json, last_extracted_code, prochat_usage, prochat_rates = res_val[:4]
+                        if prochat_usage and prochat_rates:
+                            pin_r, pout_r, pau_in_r, pau_out_r = prochat_rates
+                            update_request_usage(chat_req, prochat_usage, pin_r, pout_r, pau_in_r, pau_out_r, is_secondary=True, model_name=prochat_model or "genui-mars-0.1")
+                    elif res_val:
+                        last_extracted_json, last_extracted_code = res_val[0], res_val[1]
 
             if persist and session_obj:
                 save_message(db, session_obj, "assistant", content=final_answer,
                              json_data=last_extracted_json, code=last_extracted_code)
 
-            usage_obj = getattr(last_usage, "usage", last_usage) if last_usage else None
             finalize_request(db, chat_req, final_answer, executed_logs, start_time,
-                             usage_obj, in_r, out_r, au_in_r, au_out_r)
+                             accumulated_usage if accumulated_usage["prompt_tokens"] else None,
+                             in_r, out_r, au_in_r, au_out_r, model_name=model_name)
             yield f"data: {json.dumps({'type': 'done', 'request_id': request_id, 'tools_called': len(executed_logs)})}\n\n"
             yield "data: [DONE]\n\n"
 

@@ -183,18 +183,30 @@ def init_db():
 
     if inspector.has_table("chat_requests"):
         columns = [c["name"] for c in inspector.get_columns("chat_requests")]
-        if "prompt_tokens" not in columns:
-            db = SessionLocal()
-            try:
+        db = SessionLocal()
+        try:
+            if "prompt_tokens" not in columns:
                 db.execute(text("ALTER TABLE chat_requests ADD COLUMN prompt_tokens INTEGER DEFAULT 0"))
                 db.execute(text("ALTER TABLE chat_requests ADD COLUMN completion_tokens INTEGER DEFAULT 0"))
                 db.execute(text("ALTER TABLE chat_requests ADD COLUMN cost_usd FLOAT DEFAULT 0.0"))
-                db.commit()
                 print("Migration: Added prompt_tokens, completion_tokens, and cost_usd columns to chat_requests table")
-            except Exception as e:
-                print(f"Migration warning: Could not add token/cost columns to chat_requests: {e}")
-            finally:
-                db.close()
+            if "primary_model_name" not in columns:
+                db.execute(text("ALTER TABLE chat_requests ADD COLUMN primary_model_name TEXT"))
+                db.execute(text("ALTER TABLE chat_requests ADD COLUMN primary_prompt_tokens INTEGER DEFAULT 0"))
+                db.execute(text("ALTER TABLE chat_requests ADD COLUMN primary_completion_tokens INTEGER DEFAULT 0"))
+                db.execute(text("ALTER TABLE chat_requests ADD COLUMN primary_cost_usd FLOAT DEFAULT 0.0"))
+                print("Migration: Added primary LLM columns to chat_requests table")
+            if "secondary_model_name" not in columns:
+                db.execute(text("ALTER TABLE chat_requests ADD COLUMN secondary_model_name TEXT"))
+                db.execute(text("ALTER TABLE chat_requests ADD COLUMN secondary_prompt_tokens INTEGER DEFAULT 0"))
+                db.execute(text("ALTER TABLE chat_requests ADD COLUMN secondary_completion_tokens INTEGER DEFAULT 0"))
+                db.execute(text("ALTER TABLE chat_requests ADD COLUMN secondary_cost_usd FLOAT DEFAULT 0.0"))
+                print("Migration: Added secondary LLM columns to chat_requests table")
+            db.commit()
+        except Exception as e:
+            print(f"Migration warning: Could not update chat_requests columns: {e}")
+        finally:
+            db.close()
 
     if inspector.has_table("chat_messages"):
         columns = [c["name"] for c in inspector.get_columns("chat_messages")]

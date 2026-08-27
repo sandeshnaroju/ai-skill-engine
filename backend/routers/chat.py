@@ -29,6 +29,7 @@ def interact(
         tenant=tenant,
         session_id=req.session_id,
         user_message=req.message,
+        request_source="dashboard",
         prochat_model=req.prochat_model,
         user_data=req.user_data,
         skill_names=req.skill_names
@@ -48,6 +49,7 @@ def stream_interact(
             tenant=tenant,
             session_id=req.session_id,
             user_message=req.message,
+            request_source="dashboard",
             prochat_model=req.prochat_model,
             user_data=req.user_data,
             skill_names=req.skill_names
