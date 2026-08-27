@@ -124,6 +124,14 @@ class ChatRequest(Base):
     prompt_tokens = Column(Integer, default=0)                  # input tokens count
     completion_tokens = Column(Integer, default=0)              # output tokens count
     cost_usd = Column(Float, default=0.0)                       # estimated USD cost of request
+    primary_model_name = Column(String, nullable=True)
+    primary_prompt_tokens = Column(Integer, default=0)
+    primary_completion_tokens = Column(Integer, default=0)
+    primary_cost_usd = Column(Float, default=0.0)
+    secondary_model_name = Column(String, nullable=True)
+    secondary_prompt_tokens = Column(Integer, default=0)
+    secondary_completion_tokens = Column(Integer, default=0)
+    secondary_cost_usd = Column(Float, default=0.0)
     status = Column(String, nullable=False, default="pending")  # pending | completed | error
     error_detail = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)

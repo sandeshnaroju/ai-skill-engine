@@ -18,10 +18,10 @@ export default function LlmConfigManager({
   const [modelName, setModelName] = useState('');
   const [modelApiKey, setModelApiKey] = useState('');
   const [baseUrl, setBaseUrl] = useState('');
-  const [inputRate, setInputRate] = useState(1.0);
-  const [outputRate, setOutputRate] = useState(2.0);
-  const [audioInputRate, setAudioInputRate] = useState(10.0);
-  const [audioOutputRate, setAudioOutputRate] = useState(20.0);
+  const [inputRate, setInputRate] = useState(0.0);
+  const [outputRate, setOutputRate] = useState(0.0);
+  const [audioInputRate, setAudioInputRate] = useState(0.0);
+  const [audioOutputRate, setAudioOutputRate] = useState(0.0);
   const [showAdvancedRates, setShowAdvancedRates] = useState(false);
   const [editingLlmId, setEditingLlmId] = useState(null);
   const [registryLoading, setRegistryLoading] = useState(false);
@@ -66,10 +66,10 @@ export default function LlmConfigManager({
     setModelName(l.model_name || '');
     setModelApiKey(''); 
     setBaseUrl(l.base_url || '');
-    setInputRate(l.input_rate != null ? l.input_rate : 1.0);
-    setOutputRate(l.output_rate != null ? l.output_rate : 2.0);
-    setAudioInputRate(l.audio_input_rate != null ? l.audio_input_rate : 10.0);
-    setAudioOutputRate(l.audio_output_rate != null ? l.audio_output_rate : 20.0);
+    setInputRate(l.input_rate != null ? l.input_rate : 0.0);
+    setOutputRate(l.output_rate != null ? l.output_rate : 0.0);
+    setAudioInputRate(l.audio_input_rate != null ? l.audio_input_rate : 0.0);
+    setAudioOutputRate(l.audio_output_rate != null ? l.audio_output_rate : 0.0);
   };
 
   const cancelEdit = () => {
@@ -78,10 +78,10 @@ export default function LlmConfigManager({
     setModelName('');
     setModelApiKey('');
     setBaseUrl('');
-    setInputRate(1.0);
-    setOutputRate(2.0);
-    setAudioInputRate(10.0);
-    setAudioOutputRate(20.0);
+    setInputRate(0.0);
+    setOutputRate(0.0);
+    setAudioInputRate(0.0);
+    setAudioOutputRate(0.0);
   };
 
   const handleDeleteLlm = (llmId) => {

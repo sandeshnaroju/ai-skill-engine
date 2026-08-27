@@ -33,6 +33,13 @@ def get_prochat_ui(db: Session, tenant, messages: list, final_text: str, prochat
         resolved_model = prochat_model or config.model_name or "genui-mars-0.1"
 
         rates = get_model_rates(db, tenant.id, resolved_model)
+        if rates == (0.0, 0.0, 0.0, 0.0) and config:
+            rates = (
+                getattr(config, "input_rate", 0.0) or 0.0,
+                getattr(config, "output_rate", 0.0) or 0.0,
+                getattr(config, "audio_input_rate", 0.0) or 0.0,
+                getattr(config, "audio_output_rate", 0.0) or 0.0
+            )
 
         prochat_messages = [
             {"role": "system", "content": PROCHAT_SYSTEM_INSTRUCTION},
@@ -75,7 +82,7 @@ def stream_prochat_ui(db: Session, tenant, full_text: str, prochat_model: str,
     last_extracted_json = None
     last_extracted_code = None
     last_usage_data = None
-    rates = (1.0, 2.0, 10.0, 20.0)
+    rates = (0.0, 0.0, 0.0, 0.0)
 
     if not config:
         warning = {
@@ -93,6 +100,13 @@ def stream_prochat_ui(db: Session, tenant, full_text: str, prochat_model: str,
         base_url = config.base_url or "https://www.prochat.dev/apps/api/v1"
         resolved_model = prochat_model or config.model_name or "genui-mars-0.1"
         rates = get_model_rates(db, tenant.id, resolved_model)
+        if rates == (0.0, 0.0, 0.0, 0.0) and config:
+            rates = (
+                getattr(config, "input_rate", 0.0) or 0.0,
+                getattr(config, "output_rate", 0.0) or 0.0,
+                getattr(config, "audio_input_rate", 0.0) or 0.0,
+                getattr(config, "audio_output_rate", 0.0) or 0.0
+            )
 
         loading = {
             "id": f"chatcmpl-{session_id}", "object": "chat.completion.chunk",
@@ -157,5 +171,14 @@ def stream_prochat_ui(db: Session, tenant, full_text: str, prochat_model: str,
                 print(f"Error parsing ProChat chunk: {e}")
     except Exception as e:
         print(f"Error calling ProChat completions stream: {e}")
+
+    if not last_usage_data and (last_extracted_json or last_extracted_code):
+        # Fallback estimation if usage event chunk wasn't present
+        in_len = len(full_text)
+        out_len = len(str(last_extracted_json or "")) + len(str(last_extracted_code or ""))
+        last_usage_data = {
+            "prompt_tokens": max(1, in_len // 4),
+            "completion_tokens": max(1, out_len // 4)
+        }
 
     return last_extracted_json, last_extracted_code, last_usage_data, rates

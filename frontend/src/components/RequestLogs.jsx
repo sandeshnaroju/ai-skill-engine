@@ -113,12 +113,9 @@ function RequestDrawer({ requestId, onClose }) {
               ['Status', <StatusBadge status={data.status} />],
               ['Source', <SourceBadge source={data.request_source} />],
               ['Tenant', data.tenant_name],
-              ['Model', data.model_name || '—'],
               ['Tools Called', data.tools_called],
-              ['Duration', data.total_duration_ms ? `${data.total_duration_ms}ms` : '—'],
-              ['Prompt Tokens', data.prompt_tokens || 0],
-              ['Completion Tokens', data.completion_tokens || 0],
-              ['USD Cost', data.cost_usd != null && data.cost_usd > 0 ? `$${data.cost_usd.toFixed(6)}` : '$0.000000'],
+              ['Total Duration', data.total_duration_ms ? `${data.total_duration_ms}ms` : '—'],
+              ['Total USD Cost', data.cost_usd != null && data.cost_usd > 0 ? `$${data.cost_usd.toFixed(6)}` : '$0.000000'],
               ['Session ID', <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.74rem' }}>{data.session_id || '—'}</span>],
               ['App ID', <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.74rem' }}>{data.app_id || '—'}</span>],
             ].map(([label, val]) => (
@@ -127,6 +124,43 @@ function RequestDrawer({ requestId, onClose }) {
                 <div style={{ fontSize: '0.82rem', color: 'var(--text-main)', fontWeight: '500' }}>{val}</div>
               </div>
             ))}
+          </div>
+
+          {/* Primary & Secondary LLM Cost Breakdown */}
+          <div style={{ display: 'grid', gridTemplateColumns: data.secondary_model_name ? '1fr 1fr' : '1fr', gap: '10px' }}>
+            <div style={{ background: 'rgba(6, 182, 212, 0.05)', border: '1px solid rgba(6, 182, 212, 0.2)', borderRadius: '8px', padding: '12px' }}>
+              <div style={{ fontSize: '0.74rem', color: 'var(--primary-cyan)', fontWeight: '700', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                🤖 Primary LLM ({data.primary_model_name || data.model_name || 'Standard'})
+              </div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-sub)', display: 'flex', justifyContent: 'space-between', marginTop: '4px' }}>
+                <span>Input / Output Tokens:</span>
+                <strong>{(data.primary_prompt_tokens || 0).toLocaleString()} / {(data.primary_completion_tokens || 0).toLocaleString()}</strong>
+              </div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-sub)', display: 'flex', justifyContent: 'space-between', marginTop: '4px' }}>
+                <span>Cost:</span>
+                <strong style={{ color: 'var(--primary-emerald)' }}>
+                  {data.primary_cost_usd != null && data.primary_cost_usd > 0 ? `$${data.primary_cost_usd.toFixed(6)}` : '$0.000000'}
+                </strong>
+              </div>
+            </div>
+
+            {data.secondary_model_name && (
+              <div style={{ background: 'rgba(139, 92, 246, 0.05)', border: '1px solid rgba(139, 92, 246, 0.2)', borderRadius: '8px', padding: '12px' }}>
+                <div style={{ fontSize: '0.74rem', color: 'var(--primary-violet)', fontWeight: '700', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                  ✨ Secondary LLM ({data.secondary_model_name})
+                </div>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-sub)', display: 'flex', justifyContent: 'space-between', marginTop: '4px' }}>
+                  <span>Input / Output Tokens:</span>
+                  <strong>{(data.secondary_prompt_tokens || 0).toLocaleString()} / {(data.secondary_completion_tokens || 0).toLocaleString()}</strong>
+                </div>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-sub)', display: 'flex', justifyContent: 'space-between', marginTop: '4px' }}>
+                  <span>Cost:</span>
+                  <strong style={{ color: 'var(--primary-emerald)' }}>
+                    {data.secondary_cost_usd != null && data.secondary_cost_usd > 0 ? `$${data.secondary_cost_usd.toFixed(6)}` : '$0.000000'}
+                  </strong>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* User message */}
@@ -189,57 +223,97 @@ export default function RequestLogs() {
   const searchMsg = searchParams.get('search') || '';
   const selectedTenant = searchParams.get('tenant') || '';
   const selectedId = searchParams.get('selected_id') || null;
+  const [searchInput, setSearchInput] = useState(searchMsg);
+
+  // Keep local search input synced if searchMsg changes externally
+  useEffect(() => {
+    setSearchInput(searchMsg);
+  }, [searchMsg]);
+
+  // Debounce search input into URL param
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setSearchParams(prev => {
+        const currentSearch = prev.get('search') || '';
+        if (searchInput !== currentSearch) {
+          const next = new URLSearchParams(prev);
+          if (searchInput) next.set('search', searchInput);
+          else next.delete('search');
+          next.set('page', '1');
+          return next;
+        }
+        return prev;
+      });
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [searchInput, setSearchParams]);
 
   const setPage = (val) => {
-    const nextParams = new URLSearchParams(searchParams);
-    nextParams.set('page', typeof val === 'function' ? val(page).toString() : val.toString());
-    setSearchParams(nextParams);
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      const currentPage = parseInt(prev.get('page') || '1', 10);
+      next.set('page', typeof val === 'function' ? val(currentPage).toString() : val.toString());
+      return next;
+    });
   };
 
   const setPageSize = (val) => {
-    const nextParams = new URLSearchParams(searchParams);
-    nextParams.set('page_size', typeof val === 'function' ? val(pageSize).toString() : val.toString());
-    nextParams.set('page', '1');
-    setSearchParams(nextParams);
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      const currentPageSize = parseInt(prev.get('page_size') || '20', 10);
+      next.set('page_size', typeof val === 'function' ? val(currentPageSize).toString() : val.toString());
+      next.set('page', '1');
+      return next;
+    });
   };
 
   const setFilterSource = (val) => {
-    const nextParams = new URLSearchParams(searchParams);
-    if (val) nextParams.set('source', val);
-    else nextParams.delete('source');
-    nextParams.set('page', '1');
-    setSearchParams(nextParams);
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      if (val) next.set('source', val);
+      else next.delete('source');
+      next.set('page', '1');
+      return next;
+    });
   };
 
   const setFilterStatus = (val) => {
-    const nextParams = new URLSearchParams(searchParams);
-    if (val) nextParams.set('status', val);
-    else nextParams.delete('status');
-    nextParams.set('page', '1');
-    setSearchParams(nextParams);
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      if (val) next.set('status', val);
+      else next.delete('status');
+      next.set('page', '1');
+      return next;
+    });
   };
 
   const setSearchMsg = (val) => {
-    const nextParams = new URLSearchParams(searchParams);
-    if (val) nextParams.set('search', val);
-    else nextParams.delete('search');
-    nextParams.set('page', '1');
-    setSearchParams(nextParams);
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      if (val) next.set('search', val);
+      else next.delete('search');
+      next.set('page', '1');
+      return next;
+    });
   };
 
   const setSelectedTenant = (val) => {
-    const nextParams = new URLSearchParams(searchParams);
-    if (val) nextParams.set('tenant', val);
-    else nextParams.delete('tenant');
-    nextParams.set('page', '1');
-    setSearchParams(nextParams);
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      if (val && val !== 'ALL') next.set('tenant', val);
+      else next.delete('tenant');
+      next.set('page', '1');
+      return next;
+    });
   };
 
   const setSelectedId = (val) => {
-    const nextParams = new URLSearchParams(searchParams);
-    if (val) nextParams.set('selected_id', val);
-    else nextParams.delete('selected_id');
-    setSearchParams(nextParams);
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      if (val) next.set('selected_id', val);
+      else next.delete('selected_id');
+      return next;
+    });
   };
 
   const [totalPages, setTotalPages] = useState(1);
@@ -308,8 +382,8 @@ export default function RequestLogs() {
           <input
             type="text"
             placeholder="Search user messages..."
-            value={searchMsg}
-            onChange={e => { setSearchMsg(e.target.value); setPage(1); }}
+            value={searchInput}
+            onChange={e => setSearchInput(e.target.value)}
             style={{ paddingLeft: '32px', fontSize: '0.84rem', width: '100%' }}
           />
         </div>
@@ -318,7 +392,7 @@ export default function RequestLogs() {
         <div style={{ width: '170px' }}>
           <AsyncSearchableDropdown
             value={selectedTenant}
-            onChange={val => { setSelectedTenant(val); setPage(1); }}
+            onChange={val => setSelectedTenant(val)}
             fetchOptions={async (searchTerm) => {
               const data = await tenantsApi.list({ search: searchTerm || '', page_size: 10, page: 1 });
               const items = data.items || Array.isArray(data) ? (data.items || data) : [];
@@ -332,14 +406,14 @@ export default function RequestLogs() {
         </div>
 
         {/* Source filter */}
-        <select value={filterSource} onChange={e => { setFilterSource(e.target.value); setPage(1); }} style={{ width: '130px', fontSize: '0.84rem' }}>
+        <select value={filterSource} onChange={e => setFilterSource(e.target.value)} style={{ width: '130px', fontSize: '0.84rem' }}>
           <option value="">All Sources</option>
           <option value="api">API</option>
           <option value="dashboard">Dashboard</option>
         </select>
 
         {/* Status filter */}
-        <select value={filterStatus} onChange={e => { setFilterStatus(e.target.value); setPage(1); }} style={{ width: '130px', fontSize: '0.84rem' }}>
+        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} style={{ width: '130px', fontSize: '0.84rem' }}>
           <option value="">All Statuses</option>
           <option value="completed">Completed</option>
           <option value="error">Error</option>
@@ -353,16 +427,16 @@ export default function RequestLogs() {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.83rem' }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border-subtle)', background: 'rgba(255,255,255,0.02)' }}>
-                {['Time', 'Status', 'Source', 'Tenant', 'Model', 'User Message', 'Tools', 'Duration', 'Est. Cost', ''].map(h => (
+                {['Time', 'Status', 'Source', 'Tenant', 'Primary Model', 'Secondary Model', 'User Message', 'Tools', 'Duration', 'Est. Cost', ''].map(h => (
                   <th key={h} style={{ padding: '12px 16px', textAlign: h === 'Tools' ? 'center' : 'left', fontSize: '0.72rem', fontWeight: '700', color: 'var(--text-muted)', whiteSpace: 'nowrap', letterSpacing: '0.05em' }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={10} style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}><Loader size={18} className="spin" style={{ margin: 'auto' }} /></td></tr>
+                <tr><td colSpan={11} style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}><Loader size={18} className="spin" style={{ margin: 'auto' }} /></td></tr>
               ) : requests.length === 0 ? (
-                <tr><td colSpan={10} style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>No requests found matching filters.</td></tr>
+                <tr><td colSpan={11} style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>No requests found matching filters.</td></tr>
               ) : requests.map(r => (
                 <tr
                   key={r.id}
@@ -378,7 +452,20 @@ export default function RequestLogs() {
                   <td style={{ padding: '12px 16px' }}><StatusBadge status={r.status} /></td>
                   <td style={{ padding: '12px 16px' }}><SourceBadge source={r.request_source} /></td>
                   <td style={{ padding: '12px 16px', color: 'var(--text-sub)', whiteSpace: 'nowrap' }}>{r.tenant_name}</td>
-                  <td style={{ padding: '12px 16px', color: 'var(--text-muted)', fontSize: '0.78rem', whiteSpace: 'nowrap' }}>{r.model_name || '—'}</td>
+                  <td style={{ padding: '12px 16px', color: 'var(--text-main)', fontSize: '0.78rem', whiteSpace: 'nowrap', fontWeight: '600' }}>
+                    <span className="badge-tag tag-docker" style={{ fontSize: '0.74rem' }}>
+                      🤖 {r.primary_model_name || r.model_name || '—'}
+                    </span>
+                  </td>
+                  <td style={{ padding: '12px 16px', color: 'var(--text-sub)', fontSize: '0.78rem', whiteSpace: 'nowrap' }}>
+                    {r.secondary_model_name ? (
+                      <span className="badge-tag" style={{ fontSize: '0.74rem', background: 'rgba(139, 92, 246, 0.12)', color: 'var(--primary-violet)', border: '1px solid rgba(139, 92, 246, 0.2)' }}>
+                        ✨ {r.secondary_model_name}
+                      </span>
+                    ) : (
+                      <span style={{ color: 'var(--text-muted)' }}>—</span>
+                    )}
+                  </td>
                   <td style={{ padding: '12px 16px', maxWidth: '220px' }}>
                     <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text-sub)' }} title={r.user_message}>
                       {r.user_message}
@@ -386,7 +473,7 @@ export default function RequestLogs() {
                   </td>
                   <td style={{ padding: '12px 16px', textAlign: 'center', color: r.tools_called > 0 ? 'var(--primary-cyan)' : 'var(--text-muted)', fontWeight: '600' }}>{r.tools_called}</td>
                   <td style={{ padding: '12px 16px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{r.total_duration_ms != null ? `${r.total_duration_ms}ms` : '—'}</td>
-                  <td style={{ padding: '12px 16px', color: 'var(--text-sub)', whiteSpace: 'nowrap', fontWeight: '500' }}>
+                  <td style={{ padding: '12px 16px', color: 'var(--primary-emerald)', whiteSpace: 'nowrap', fontWeight: '600' }}>
                     {r.cost_usd != null && r.cost_usd > 0 ? `$${r.cost_usd.toFixed(6)}` : '$0.000000'}
                   </td>
                   <td style={{ padding: '12px 16px' }}>

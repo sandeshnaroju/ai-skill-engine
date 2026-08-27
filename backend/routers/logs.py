@@ -117,6 +117,14 @@ def get_chat_requests(
             "prompt_tokens": r.prompt_tokens or 0,
             "completion_tokens": r.completion_tokens or 0,
             "cost_usd": getattr(r, "cost_usd", 0.0) or 0.0,
+            "primary_model_name": r.primary_model_name or r.model_name,
+            "primary_prompt_tokens": r.primary_prompt_tokens or 0,
+            "primary_completion_tokens": r.primary_completion_tokens or 0,
+            "primary_cost_usd": getattr(r, "primary_cost_usd", 0.0) or 0.0,
+            "secondary_model_name": r.secondary_model_name,
+            "secondary_prompt_tokens": r.secondary_prompt_tokens or 0,
+            "secondary_completion_tokens": r.secondary_completion_tokens or 0,
+            "secondary_cost_usd": getattr(r, "secondary_cost_usd", 0.0) or 0.0,
             "status": r.status,
             "error_detail": r.error_detail,
             "created_at": r.created_at.isoformat() if r.created_at else None,
@@ -150,6 +158,14 @@ def get_chat_request_detail(
         "prompt_tokens": r.prompt_tokens or 0,
         "completion_tokens": r.completion_tokens or 0,
         "cost_usd": getattr(r, "cost_usd", 0.0) or 0.0,
+        "primary_model_name": r.primary_model_name or r.model_name,
+        "primary_prompt_tokens": r.primary_prompt_tokens or 0,
+        "primary_completion_tokens": r.primary_completion_tokens or 0,
+        "primary_cost_usd": getattr(r, "primary_cost_usd", 0.0) or 0.0,
+        "secondary_model_name": r.secondary_model_name,
+        "secondary_prompt_tokens": r.secondary_prompt_tokens or 0,
+        "secondary_completion_tokens": r.secondary_completion_tokens or 0,
+        "secondary_cost_usd": getattr(r, "secondary_cost_usd", 0.0) or 0.0,
         "status": r.status,
         "error_detail": r.error_detail,
         "created_at": r.created_at.isoformat() if r.created_at else None,
@@ -178,38 +194,69 @@ def get_usage_summary(
     tenant_name: Optional[str] = None,
     model_name: Optional[str] = None,
     request_source: Optional[str] = None,
-    page: Optional[int] = None,
+    page: Optional[int] = 1,
     page_size: int = 10,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    query = db.query(
+    target_page = page or 1
+    # Primary models aggregation
+    primary_query = db.query(
         ChatRequest.tenant_id,
-        ChatRequest.model_name,
+        func.coalesce(ChatRequest.primary_model_name, ChatRequest.model_name).label("model_name"),
         ChatRequest.request_source,
         func.count(ChatRequest.id).label("request_count"),
-        func.sum(ChatRequest.prompt_tokens).label("total_prompt_tokens"),
-        func.sum(ChatRequest.completion_tokens).label("total_completion_tokens"),
-        func.sum(ChatRequest.cost_usd).label("total_cost_usd")
+        func.sum(ChatRequest.primary_prompt_tokens).label("total_prompt_tokens"),
+        func.sum(ChatRequest.primary_completion_tokens).label("total_completion_tokens"),
+        func.sum(ChatRequest.primary_cost_usd).label("total_cost_usd")
     ).filter(ChatRequest.status == "completed")
 
     if model_name:
-        query = query.filter(ChatRequest.model_name.ilike(f"%{model_name}%"))
+        primary_query = primary_query.filter(func.coalesce(ChatRequest.primary_model_name, ChatRequest.model_name).ilike(f"%{model_name}%"))
     if tenant_name and tenant_name != "ALL":
-        query = query.join(Tenant).filter(Tenant.name == tenant_name)
+        primary_query = primary_query.join(Tenant).filter(Tenant.name == tenant_name)
     if request_source and request_source != "ALL":
-        query = query.filter(ChatRequest.request_source == request_source)
+        primary_query = primary_query.filter(ChatRequest.request_source == request_source)
 
-    results = query.group_by(
+    primary_results = primary_query.group_by(
         ChatRequest.tenant_id,
-        ChatRequest.model_name,
+        func.coalesce(ChatRequest.primary_model_name, ChatRequest.model_name),
+        ChatRequest.request_source
+    ).all()
+
+    # Secondary models aggregation
+    secondary_query = db.query(
+        ChatRequest.tenant_id,
+        ChatRequest.secondary_model_name.label("model_name"),
+        ChatRequest.request_source,
+        func.count(ChatRequest.id).label("request_count"),
+        func.sum(ChatRequest.secondary_prompt_tokens).label("total_prompt_tokens"),
+        func.sum(ChatRequest.secondary_completion_tokens).label("total_completion_tokens"),
+        func.sum(ChatRequest.secondary_cost_usd).label("total_cost_usd")
+    ).filter(
+        ChatRequest.status == "completed",
+        ChatRequest.secondary_model_name != None
+    )
+
+    if model_name:
+        secondary_query = secondary_query.filter(ChatRequest.secondary_model_name.ilike(f"%{model_name}%"))
+    if tenant_name and tenant_name != "ALL":
+        secondary_query = secondary_query.join(Tenant).filter(Tenant.name == tenant_name)
+    if request_source and request_source != "ALL":
+        secondary_query = secondary_query.filter(ChatRequest.request_source == request_source)
+
+    secondary_results = secondary_query.group_by(
+        ChatRequest.tenant_id,
+        ChatRequest.secondary_model_name,
         ChatRequest.request_source
     ).all()
 
     tenant_cache = {}
     summary = []
 
-    for r in results:
+    for r in list(primary_results) + list(secondary_results):
+        if not r.model_name:
+            continue
         tenant_id = r.tenant_id
         if tenant_id not in tenant_cache:
             t = db.query(Tenant).filter(Tenant.id == tenant_id).first() if tenant_id else None
@@ -217,7 +264,7 @@ def get_usage_summary(
 
         summary.append({
             "tenant_name": tenant_cache[tenant_id],
-            "model_name": r.model_name or "Unknown",
+            "model_name": r.model_name,
             "request_source": r.request_source or "api",
             "request_count": r.request_count,
             "prompt_tokens": r.total_prompt_tokens or 0,
@@ -233,7 +280,11 @@ def get_usage_summary(
     ).filter(ChatRequest.status == "completed")
 
     if model_name:
-        totals_query = totals_query.filter(ChatRequest.model_name.ilike(f"%{model_name}%"))
+        totals_query = totals_query.filter(
+            (ChatRequest.model_name.ilike(f"%{model_name}%")) |
+            (ChatRequest.primary_model_name.ilike(f"%{model_name}%")) |
+            (ChatRequest.secondary_model_name.ilike(f"%{model_name}%"))
+        )
     if tenant_name and tenant_name != "ALL":
         totals_query = totals_query.join(Tenant).filter(Tenant.name == tenant_name)
     if request_source and request_source != "ALL":
@@ -245,7 +296,7 @@ def get_usage_summary(
     sum_prompt = totals_res.prompt_tokens if totals_res else 0
     sum_completion = totals_res.completion_tokens if totals_res else 0
 
-    paginated_res = get_paginated_response(summary, page, page_size, lambda x: x, is_query=False)
+    paginated_res = get_paginated_response(summary, target_page, page_size, lambda x: x, is_query=False)
     paginated_res["totals"] = {
         "request_count": sum_req,
         "prompt_tokens": sum_prompt,
