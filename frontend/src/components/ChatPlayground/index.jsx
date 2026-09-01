@@ -12,7 +12,7 @@ export default function ChatPlayground() {
   const [initialSessionId] = useState(() => `session_${Math.floor(1000 + Math.random() * 9000)}`);
   const [sessions, setSessions] = useState([]);
 
-  const activeSessionId = searchParams.get('session_id') || '';
+  const activeSessionId = searchParams.get('session_id') || initialSessionId;
 
   const setActiveSessionId = (id) => {
     const nextParams = new URLSearchParams(searchParams);
@@ -28,19 +28,8 @@ export default function ChatPlayground() {
 
   useEffect(() => {
     const urlSessionId = searchParams.get('session_id');
-    if (urlSessionId) {
-      setSessions([{ id: urlSessionId, name: `Session ${urlSessionId}`, lastTime: 'Just now' }]);
-    } else if (initialSessionId) {
-      setSessions([{ id: initialSessionId, name: 'New Chat Session #1', lastTime: 'Just now' }]);
+    if (!urlSessionId) {
       setActiveSessionId(initialSessionId);
-      setMessages([
-        {
-          role: 'assistant',
-          content: 'Welcome to `AI Skill Engine` Enterprise Simulator! Select an App scope or API key, then ask any question requiring system diagnostics, sandboxed Python code execution, or MCP tool calls.',
-          timestamp: new Date().toLocaleTimeString(),
-          reasoning: 'Gateway initialized with active skills & MCP drivers.',
-        }
-      ]);
     }
   }, [initialSessionId]);
   const [input, setInput] = useState('');
@@ -389,8 +378,9 @@ export default function ChatPlayground() {
         setMessages([
           {
             role: 'assistant',
-            content: `Switched to chat session (${sessionId}). How can I assist you?`,
+            content: 'Welcome to `AI Skill Engine` Enterprise Simulator! Select an App scope or API key, then ask any question requiring system diagnostics, sandboxed Python code execution, or MCP tool calls.',
             timestamp: new Date().toLocaleTimeString(),
+            reasoning: 'Gateway initialized with active skills & MCP drivers.',
           },
         ]);
       }
@@ -533,15 +523,14 @@ export default function ChatPlayground() {
   };
 
   const handleNewSession = () => {
-    const newId = `session_${Date.now().toString().slice(-4)}`;
-    const newName = `New Chat Session #${sessions.length + 1}`;
-    setSessions([{ id: newId, name: newName, lastTime: 'Just now' }, ...sessions]);
+    const newId = `session_${Math.floor(1000 + Math.random() * 9000)}`;
     setActiveSessionId(newId);
     setMessages([
       {
         role: 'assistant',
-        content: `New session initialized (${newId}). Ask a query to trigger sandboxed skills and tools!`,
+        content: 'Welcome to `AI Skill Engine` Enterprise Simulator! Select an App scope or API key, then ask any question requiring system diagnostics, sandboxed Python code execution, or MCP tool calls.',
         timestamp: new Date().toLocaleTimeString(),
+        reasoning: 'Gateway initialized with active skills & MCP drivers.',
       },
     ]);
     setExecutedTools([]);
@@ -565,11 +554,15 @@ export default function ChatPlayground() {
       const generatedTitle = data.choices && data.choices[0] && data.choices[0].message ? data.choices[0].message.content.trim() : null;
 
       if (generatedTitle) {
-        setSessions((prev) =>
-          prev.map((s) =>
-            s.id === activeSessionId ? { ...s, name: generatedTitle.replace(/^["']|["']$/g, '') } : s
-          )
-        );
+        const cleanTitle = generatedTitle.replace(/^["']|["']$/g, '');
+        setSessions((prev) => {
+          const exists = prev.some((s) => s.id === activeSessionId);
+          if (exists) {
+            return prev.map((s) => s.id === activeSessionId ? { ...s, name: cleanTitle } : s);
+          } else {
+            return [{ id: activeSessionId, name: cleanTitle, lastTime: 'Just now' }, ...prev];
+          }
+        });
       }
     } catch (e) {
       console.error('Failed to generate LLM thread title:', e);
@@ -851,7 +844,8 @@ export default function ChatPlayground() {
     downloadAnchor.remove();
   };
 
-  const activeSessionObj = sessions.find((s) => s.id === activeSessionId) || sessions[0];
+  const activeSessionObj = sessions.find((s) => s.id === activeSessionId);
+  const activeSessionTitle = activeSessionObj ? activeSessionObj.name : 'New Chat Session';
 
   return (
     <div style={{
@@ -872,7 +866,7 @@ export default function ChatPlayground() {
             </div>
             <div>
               <div style={{ fontWeight: '700', fontSize: '0.96rem', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                {activeSessionObj ? activeSessionObj.name : 'Chatbot Simulator'}
+                {activeSessionTitle}
               </div>
               <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Session ID: {activeSessionId}</div>
             </div>
