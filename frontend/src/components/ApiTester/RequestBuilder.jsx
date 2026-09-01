@@ -302,7 +302,7 @@ export default function RequestBuilder({
               onChange={handleTemplateChange}
               initialLabel={selectedTemplateId ? `📋 ${templates.find(t => t.id === selectedTemplateId)?.name || 'Loading Profile...'}` : ''}
               fetchOptions={async (searchTerm) => {
-                const data = await userDataApi.list({ search: searchTerm || '', page_size: 20, page: 1 });
+                const data = await userDataApi.list({ search: searchTerm || '', page_size: 20, page: 1, tenant_id: selectedTenantId || undefined });
                 const items = data.items || Array.isArray(data) ? (data.items || data) : [];
                 setTemplates(prev => {
                   const newTs = [...prev];
