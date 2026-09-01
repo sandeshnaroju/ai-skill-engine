@@ -1,3 +1,4 @@
+from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -11,11 +12,15 @@ router = APIRouter()
 
 @router.get("/models")
 def get_generator_models(
+    tenant_id: Optional[str] = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     from models import Tenant, TenantLLM
-    tenants = db.query(Tenant).filter(Tenant.user_id == current_user.id).all()
+    query = db.query(Tenant).filter(Tenant.user_id == current_user.id)
+    if tenant_id:
+        query = query.filter(Tenant.id == tenant_id)
+    tenants = query.all()
     res = []
     for t in tenants:
         models = db.query(TenantLLM).filter(

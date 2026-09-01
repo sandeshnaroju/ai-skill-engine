@@ -16,15 +16,19 @@ router = APIRouter()
 def list_user_data_templates(
     db: Session = Depends(get_db),
     current_tenant: Tenant = Depends(get_current_tenant),
+    tenant_id: Optional[str] = None,
     page: Optional[int] = None,
     page_size: int = 10,
     search: Optional[str] = None
 ):
     from models import UserDataTemplate
     from sqlalchemy.orm import joinedload
-    query = db.query(UserDataTemplate).options(joinedload(UserDataTemplate.tenant)).filter(
-        (UserDataTemplate.tenant_id == current_tenant.id) | (UserDataTemplate.tenant_id == None)
-    )
+    target_tenant_id = tenant_id if tenant_id is not None else current_tenant.id
+    query = db.query(UserDataTemplate).options(joinedload(UserDataTemplate.tenant))
+    if target_tenant_id:
+        query = query.filter(
+            (UserDataTemplate.tenant_id == target_tenant_id) | (UserDataTemplate.tenant_id == None)
+        )
     if search:
         query = query.filter(
             UserDataTemplate.name.ilike(f"%{search}%") | UserDataTemplate.description.ilike(f"%{search}%")
@@ -47,6 +51,32 @@ def list_user_data_templates(
             "updated_at": t.updated_at.isoformat() if t.updated_at else None
         }
     return get_paginated_response(query, page, page_size, serialize)
+
+
+@router.get("/{template_id}")
+def get_user_data_template(
+    template_id: str,
+    db: Session = Depends(get_db),
+    current_tenant: Tenant = Depends(get_current_tenant)
+):
+    from models import UserDataTemplate
+    tpl = db.query(UserDataTemplate).filter(UserDataTemplate.id == template_id).first()
+    if not tpl:
+        raise HTTPException(status_code=404, detail="User Data profile not found")
+    try:
+        parsed_data = json.loads(tpl.data)
+    except Exception:
+        parsed_data = {}
+    return {
+        "id": tpl.id,
+        "name": tpl.name,
+        "description": tpl.description,
+        "data": parsed_data,
+        "tenant_id": tpl.tenant_id,
+        "tenant_name": tpl.tenant.name if tpl.tenant else "Global",
+        "created_at": tpl.created_at.isoformat() if tpl.created_at else None,
+        "updated_at": tpl.updated_at.isoformat() if tpl.updated_at else None
+    }
 
 
 @router.post("")

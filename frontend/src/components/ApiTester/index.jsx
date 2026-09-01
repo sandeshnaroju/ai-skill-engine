@@ -66,7 +66,7 @@ export default function ApiTester() {
 
   const fetchTemplates = async () => {
     try {
-      const data = await userDataApi.list({ page_size: 100, page: 1 });
+      const data = await userDataApi.list({ page_size: 100, page: 1, tenant_id: selectedTenantId || undefined });
       const items = Array.isArray(data.items) ? data.items : (Array.isArray(data) ? data : []);
       setTemplates(items);
     } catch (e) {
@@ -76,7 +76,7 @@ export default function ApiTester() {
 
   useEffect(() => {
     fetchTemplates();
-  }, []);
+  }, [selectedTenantId]);
 
   const applyTemplate = (tpl) => {
     if (!tpl) return;
@@ -104,7 +104,7 @@ export default function ApiTester() {
     }
     // If not in list (e.g. search result not in initial fetch), fetch by ID directly
     try {
-      const data = await userDataApi.list({ search: '', page: 1, page_size: 100 });
+      const data = await userDataApi.list({ search: '', page: 1, page_size: 100, tenant_id: selectedTenantId || undefined });
       const items = Array.isArray(data.items) ? data.items : (Array.isArray(data) ? data : []);
       setTemplates(items);
       const found = items.find(t => String(t.id) === String(tplId));
