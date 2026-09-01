@@ -26,7 +26,8 @@ export default function SkillGeneratorModal({
   genBehavior,
   setGenBehavior,
   generating,
-  handleGenerateSkill
+  handleGenerateSkill,
+  tenantName
 }) {
   if (!showGenModal) return null;
 
@@ -62,10 +63,12 @@ export default function SkillGeneratorModal({
         {genStep === 1 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <label style={{ fontSize: '0.78rem', color: 'var(--text-sub)', fontWeight: '600' }}>Select Tenant & Model</label>
+              <label style={{ fontSize: '0.78rem', color: 'var(--text-sub)', fontWeight: '600' }}>
+                Select AI Model {tenantName ? `(${tenantName})` : ''}
+              </label>
               {genModels.length === 0 ? (
                 <div style={{ padding: '12px', background: 'rgba(239, 68, 68, 0.06)', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: '8px', fontSize: '0.86rem', color: 'var(--accent-rose)' }}>
-                  No active models found. Please configure a Model under **Tenants & Keys** first.
+                  No active models found for {tenantName ? `workspace "${tenantName}"` : 'this workspace'}. Please configure an AI Model under **Tenants & Keys** for this workspace first.
                 </div>
               ) : (
                 <select
@@ -75,7 +78,7 @@ export default function SkillGeneratorModal({
                 >
                   {genModels.map((m, idx) => (
                     <option key={idx} value={idx}>
-                      🔑 {m.tenant_name} — {m.model_name} ({m.provider})
+                      🤖 {m.model_name} ({m.provider})
                     </option>
                   ))}
                 </select>

@@ -123,8 +123,9 @@ export default function UserDataTemplates() {
     setInputMode('pairs');
   };
 
-  const handleToggleInputMode = () => {
-    if (inputMode === 'pairs') {
+  const handleToggleMode = (targetMode) => {
+    if (targetMode === inputMode) return;
+    if (targetMode === 'json') {
       const obj = {};
       pairs.forEach(p => {
         if (p.key.trim()) {

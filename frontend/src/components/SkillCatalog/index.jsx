@@ -179,7 +179,9 @@ Provide instructions for the LLM on how to resolve queries using this skill.
     setShowGenModal(true);
 
     try {
-      const data = await apiClient.get('/api/v1/generator/models');
+      const data = await apiClient.get('/api/v1/generator/models', {
+        params: { tenant_id: selectedTenantId || undefined }
+      });
       setGenModels(data || []);
       if (data && data.length > 0) {
         setGenModelIndex('0');
@@ -531,6 +533,7 @@ Provide instructions for the LLM on how to resolve queries using this skill.
         setGenBehavior={setGenBehavior}
         generating={generating}
         handleGenerateSkill={handleGenerateSkill}
+        tenantName={tenants.find(t => t.id === selectedTenantId)?.name || ''}
       />
 
       {/* Cross-Tenant Skill Duplication Modal */}
