@@ -79,7 +79,7 @@ PROCHAT_SYSTEM_INSTRUCTION = (
     "Rules:\n"
     "1. Ensure that all data and information provided in the assistant's response is fully included in the generated UI.\n"
     "2. Do not leave out, omit, or truncate any data points, figures, or information from the response.\n"
-    "3. Add anchor links wherever you find URLs or file links, ensuring users can download or navigate to them."
+    "3. Do not add anything that is not present in the response."
 )
 
 
