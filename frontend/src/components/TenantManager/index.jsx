@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Key, Plus, Trash2, Cpu, Check, Copy, ChevronLeft, ChevronRight } from 'lucide-react';
-import { useSearchParams } from 'react-router-dom';
-import TenantModal from './TenantModal';
+import { useSearchParams, useParams, useNavigate } from 'react-router-dom';
+import TenantDetailAdmin from './TenantDetailAdmin';
 import DeleteTenantModal from './DeleteTenantModal';
 import { tenantsApi } from '../../api';
 import { useToast } from '../../context/ToastContext';
@@ -9,12 +9,14 @@ import { useToast } from '../../context/ToastContext';
 export default function TenantManager() {
   const { showSuccess, confirmAction } = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
+  const { tenantId } = useParams();
+  const navigate = useNavigate();
+
   const [tenants, setTenants] = useState([]);
   const [newTenantName, setNewTenantName] = useState('');
   const [loading, setLoading] = useState(false);
   const [copiedKey, setCopiedKey] = useState(null);
   const [selectedTenant, setSelectedTenant] = useState(null);
-  const [showManageModal, setShowManageModal] = useState(false);
   const [tenantToDelete, setTenantToDelete] = useState(null);
 
   const page = parseInt(searchParams.get('page') || '1', 10);
@@ -47,6 +49,23 @@ export default function TenantManager() {
     fetchTenants();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, pageSize]);
+
+  // If URL has tenantId, resolve and select that tenant
+  useEffect(() => {
+    if (tenantId) {
+      const found = tenants.find((t) => t.id === tenantId);
+      if (found) {
+        setSelectedTenant(found);
+      } else {
+        tenantsApi.list({ page: 1, page_size: 100 }).then((data) => {
+          const matched = (data.items || []).find((t) => t.id === tenantId);
+          if (matched) setSelectedTenant(matched);
+        }).catch(err => console.error('Error fetching tenant details:', err));
+      }
+    } else {
+      setSelectedTenant(null);
+    }
+  }, [tenantId, tenants]);
 
   useEffect(() => {
     if (selectedTenant) {
@@ -98,12 +117,17 @@ export default function TenantManager() {
     confirmAction({
       title: 'Delete Tenant Workspace',
       message: `Are you sure you want to delete tenant "${name}"? This deletes all their model configs.`,
-      confirmText: 'Delete Tenant',
+      confirmText: 'Delete Workspace',
+      type: 'danger',
       onConfirm: async () => {
         try {
           await tenantsApi.delete(id, name);
+          showSuccess(`Tenant "${name}" was permanently removed`);
+          if (selectedTenant?.id === id) {
+            setSelectedTenant(null);
+            navigate('/tenants');
+          }
           fetchTenants();
-          showSuccess(`Tenant "${name}" deleted successfully`);
         } catch (err) {
           console.error('Delete tenant error:', err);
         }
@@ -117,6 +141,28 @@ export default function TenantManager() {
     setTimeout(() => setCopiedKey(null), 2000);
   };
 
+  // ── DEDICATED FULL-PAGE ADMIN VIEW ──────────────────────────────────────────
+  if (selectedTenant || tenantId) {
+    const activeTenantObj = selectedTenant || tenants.find(t => t.id === tenantId) || { id: tenantId, name: 'Tenant Settings' };
+    return (
+      <TenantDetailAdmin
+        selectedTenant={activeTenantObj}
+        onBack={() => {
+          setSelectedTenant(null);
+          navigate('/tenants');
+        }}
+        tenantLlms={tenantLlms}
+        modelTotalItems={modelTotalItems}
+        modelTotalPages={modelTotalPages}
+        modelPage={modelPage}
+        setModelPage={setModelPage}
+        fetchTenantLlms={fetchTenantLlms}
+        fetchTenants={fetchTenants}
+      />
+    );
+  }
+
+  // ── TENANTS DIRECTORY VIEW ──────────────────────────────────────────────────
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       <div className="glass-box" style={{ padding: '24px' }}>
@@ -180,10 +226,10 @@ export default function TenantManager() {
                         onClick={() => {
                           setSelectedTenant(t);
                           setModelPage(1);
-                          setShowManageModal(true);
+                          navigate(`/tenants/${t.id}`);
                         }}
                         style={{ padding: '4px 10px', fontSize: '0.74rem' }}
-                        title="Manage Models & Integration"
+                        title="Configure Models, Quotas & Integration"
                       >
                         <Cpu size={12} /> Manage
                       </button>
@@ -230,21 +276,6 @@ export default function TenantManager() {
           </div>
         )}
       </div>
-
-      {showManageModal && selectedTenant && (
-        <TenantModal 
-          selectedTenant={selectedTenant}
-          setShowManageModal={setShowManageModal}
-          setSelectedTenant={setSelectedTenant}
-          tenantLlms={tenantLlms}
-          modelTotalItems={modelTotalItems}
-          modelTotalPages={modelTotalPages}
-          modelPage={modelPage}
-          setModelPage={setModelPage}
-          fetchTenantLlms={fetchTenantLlms}
-          fetchTenants={fetchTenants}
-        />
-      )}
 
       {tenantToDelete && (
         <DeleteTenantModal
