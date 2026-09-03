@@ -21,4 +21,11 @@ export const tenantsApi = {
 
   deleteLlm: (llmId, tenantKeyOrId = null) =>
     apiClient.delete(`/api/v1/tenant/llms/${llmId}`, { tenantKey: tenantKeyOrId, tenantId: tenantKeyOrId }),
+
+  getLimits: (tenantId) =>
+    apiClient.get(`/api/v1/tenants/${tenantId}/limits`),
+
+  updateLimits: (tenantId, limitsData) =>
+    apiClient.put(`/api/v1/tenants/${tenantId}/limits`, limitsData),
 };
+

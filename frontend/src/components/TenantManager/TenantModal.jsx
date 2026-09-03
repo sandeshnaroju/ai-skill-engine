@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Cpu, X, Code } from 'lucide-react';
+import { Cpu, X, Code, Gauge } from 'lucide-react';
 import LlmConfigManager from './LlmConfigManager';
+import TenantLimitsManager from './TenantLimitsManager';
 
 export default function TenantModal({
   selectedTenant,
@@ -14,6 +15,7 @@ export default function TenantModal({
   fetchTenantLlms,
   fetchTenants
 }) {
+  const [activeTab, setActiveTab] = useState('llms'); // 'llms' | 'quotas'
   const [copiedKey, setCopiedKey] = useState(null);
 
   const copyToClipboard = (key) => {
@@ -42,7 +44,7 @@ export default function TenantModal({
               <Cpu size={22} color="var(--primary-cyan)" /> Tenant Settings: {selectedTenant.name}
             </h3>
             <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginTop: '2px' }}>
-              Manage dynamic LLM configurations and integrate API connections for this tenant.
+              Manage dynamic LLM configurations, usage quotas, and integrate API connections for this workspace.
             </p>
           </div>
           <button className="btn-outline" onClick={() => { setShowManageModal(false); setSelectedTenant(null); }} style={{ padding: '6px', borderRadius: '8px' }}>
@@ -50,44 +52,95 @@ export default function TenantModal({
           </button>
         </div>
 
-        {/* Modal Content Grid */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '24px' }}>
-          
-          {/* Left Column: LLM Configurations Manager */}
-          <LlmConfigManager 
-            selectedTenant={selectedTenant}
-            tenantLlms={tenantLlms}
-            modelTotalItems={modelTotalItems}
-            modelTotalPages={modelTotalPages}
-            modelPage={modelPage}
-            setModelPage={setModelPage}
-            fetchTenantLlms={fetchTenantLlms}
-            fetchTenants={fetchTenants}
-          />
+        {/* Tab Navigation */}
+        <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '12px', marginBottom: '20px' }}>
+          <button
+            type="button"
+            className={`btn-outline ${activeTab === 'llms' ? 'active' : ''}`}
+            onClick={() => setActiveTab('llms')}
+            style={{
+              padding: '7px 15px',
+              fontSize: '0.82rem',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '7px',
+              borderRadius: '8px',
+              background: activeTab === 'llms' ? 'rgba(6, 182, 212, 0.12)' : 'transparent',
+              borderColor: activeTab === 'llms' ? 'var(--primary-cyan)' : 'var(--border-subtle)',
+              color: activeTab === 'llms' ? 'var(--primary-cyan)' : 'var(--text-sub)',
+              fontWeight: activeTab === 'llms' ? '700' : '500'
+            }}
+          >
+            <Cpu size={16} /> AI Models & Keys
+          </button>
+          <button
+            type="button"
+            className={`btn-outline ${activeTab === 'quotas' ? 'active' : ''}`}
+            onClick={() => setActiveTab('quotas')}
+            style={{
+              padding: '7px 15px',
+              fontSize: '0.82rem',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '7px',
+              borderRadius: '8px',
+              background: activeTab === 'quotas' ? 'rgba(6, 182, 212, 0.12)' : 'transparent',
+              borderColor: activeTab === 'quotas' ? 'var(--primary-cyan)' : 'var(--border-subtle)',
+              color: activeTab === 'quotas' ? 'var(--primary-cyan)' : 'var(--text-sub)',
+              fontWeight: activeTab === 'quotas' ? '700' : '500'
+            }}
+          >
+            <Gauge size={16} /> Quotas & Limits
+          </button>
+        </div>
 
-          {/* Right Column: API Integration Snippet & Live Tester */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-            <div style={{ background: 'var(--bg-input)', padding: '20px', borderRadius: '12px', border: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <h4 style={{ fontSize: '0.9rem', fontWeight: '700', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <Code size={15} color="var(--primary-cyan)" /> Integration Snippet
-              </h4>
-              <p style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>
-                Use the following cURL connection to send requests directly from your customer application using this tenant key:
-              </p>
-              <pre className="code-display" style={{ fontSize: '0.76rem', margin: '4px 0', whiteSpace: 'pre-wrap' }}>
-                {snippetCurl}
-              </pre>
-              <button
-                className="btn-outline"
-                onClick={() => copyToClipboard(snippetCurl)}
-                style={{ alignSelf: 'flex-start', padding: '6px 12px', fontSize: '0.78rem' }}
-              >
-                {copiedKey === snippetCurl ? 'Copied Snippet!' : 'Copy Integration cURL'}
-              </button>
+        {/* Tab 1: AI Models & Keys */}
+        {activeTab === 'llms' && (
+          <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '24px' }}>
+            {/* Left Column: LLM Configurations Manager */}
+            <LlmConfigManager 
+              selectedTenant={selectedTenant}
+              tenantLlms={tenantLlms}
+              modelTotalItems={modelTotalItems}
+              modelTotalPages={modelTotalPages}
+              modelPage={modelPage}
+              setModelPage={setModelPage}
+              fetchTenantLlms={fetchTenantLlms}
+              fetchTenants={fetchTenants}
+            />
+
+            {/* Right Column: API Integration Snippet & Live Tester */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              <div style={{ background: 'var(--bg-input)', padding: '20px', borderRadius: '12px', border: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <h4 style={{ fontSize: '0.9rem', fontWeight: '700', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Code size={15} color="var(--primary-cyan)" /> Integration Snippet
+                </h4>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>
+                  Use the following cURL connection to send requests directly from your customer application using this tenant key:
+                </p>
+                <pre className="code-display" style={{ fontSize: '0.76rem', margin: '4px 0', whiteSpace: 'pre-wrap' }}>
+                  {snippetCurl}
+                </pre>
+                <button
+                  className="btn-outline"
+                  onClick={() => copyToClipboard(snippetCurl)}
+                  style={{ alignSelf: 'flex-start', padding: '6px 12px', fontSize: '0.78rem' }}
+                >
+                  {copiedKey === snippetCurl ? 'Copied Snippet!' : 'Copy Integration cURL'}
+                </button>
+              </div>
             </div>
           </div>
+        )}
 
-        </div>
+        {/* Tab 2: Quotas & Limits */}
+        {activeTab === 'quotas' && (
+          <TenantLimitsManager
+            selectedTenant={selectedTenant}
+            tenantLlms={tenantLlms}
+            fetchTenants={fetchTenants}
+          />
+        )}
 
       </div>
     </div>

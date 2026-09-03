@@ -1,16 +1,33 @@
 # ⚡ AI Skill Engine
 
-> **Readymade self-hostable backend server for chatbots — with a built-in admin dashboard.**
+> **Self-hosted AI gateway and execution engine for businesses — add AI tool execution to your product, or offer AI-powered services to your own clients.**
 
-Connect your chatbot with a single Chat Completion API call. AI Skill Engine handles the rest — multi-turn tool execution, sandboxed code runs, MCP integrations, generative UI rendering via ProChat, audit logs, and a full visual admin dashboard — all in one self-hosted package. Drop-in compatible with the OpenAI API.
+Connect your chatbot with a single Chat Completion API call. AI Skill Engine acts as a gateway between your clients and any LLM — handling multi-turn tool execution, sandboxed code runs, MCP integrations, generative UI rendering via ProChat, per-tenant isolation, cost tracking, and a full visual admin dashboard — all in one self-hosted package. Drop-in compatible with the OpenAI API.
 
-![Dashboard](https://img.shields.io/badge/dashboard-React-blueviolet) ![API](https://img.shields.io/badge/API-OpenAI%20Compatible-green) ![License](https://img.shields.io/badge/license-Apache%202.0-blue)
+![Dashboard](https://img.shields.io/badge/dashboard-React-blueviolet) ![API](https://img.shields.io/badge/API-OpenAI%20Compatible-green) ![License](https://img.shields.io/badge/license-Apache%202.0-blue) ![Docker](https://img.shields.io/badge/docker-sandeshnaroju%2Fai--skill--engine-blue)
 
 ---
 
 > [!NOTE]
 > **Cloud-Hosted Setup Coming Soon!** ☁️
 > We are building a fully managed cloud version of AI Skill Engine. If you want to skip self-hosting and deployment maintenance, stay tuned!
+
+---
+
+## 👥 Who Is This For?
+
+**🏢 Businesses adding AI to their product**
+Point your existing app at this server's single `/chat/completions` endpoint. Your LLM instantly gains tool execution, sandboxed code runs, file handling, API integrations, and more — without building any of that infrastructure yourself.
+
+**🏗️ Businesses selling AI services to their clients**
+Run one AI Skill Engine instance as a shared gateway and give each of your clients their own **tenant** — a fully isolated workspace with:
+- Their own API key and model configuration
+- Their own custom skill set and app groups
+- Per-client token and cost tracking (so you know exactly what to charge them)
+- Fully separated conversation history and execution logs
+
+> **What is a Tenant?**
+> A tenant is an isolated API consumer — a client, workspace, or environment. Each tenant has its own API key, registered LLM models, skills, apps, and usage history. A single AI Skill Engine server can serve many tenants independently.
 
 ---
 
@@ -26,11 +43,82 @@ Point your chatbot at this server's single `/api/v1/chat/completions` endpoint a
 4. **Compute Math & Chart Data Visually**: Parse spreadsheets (Excel/CSV), run complex calculations, and plot charts for presentations.
 5. **Deep Problem Solving (Up to 25 turns)**: Execute long-running multi-turn logical steps and diagnostics without getting interrupted.
 6. **No-Code Tool Customization**: Extend your chatbot's abilities by adding, editing, or enabling new capabilities (Skills) directly from a visual dashboard catalog.
-7. **Secure, Sandboxed Execution**: Run calculations and custom scripts inside safe, isolated containers to keep your servers and business data protected.
-8. **Universal Remote (MCP Hub)**: Connect your chatbot directly to databases, GitHub, or filesystems using standard Model Context Protocol.
-9. **Generative UI with ProChat**: Return dynamic, interactive UI components (charts, forms, dashboards) directly inside the chat response — no extra frontend code needed.
-10. **OpenAI Drop-in Upgrade**: Supercharge your existing AI application instantly by pointing its API URL to this engine.
-11. **Built-in Admin Dashboard**: View chatbot thoughts, tool triggers, sandbox logs, token usage, and costs in a beautiful visual turn-by-turn timeline.
+7. **AI Skill Generator**: Describe what you want a skill to do and let the AI generate the full SKILL.md definition — including tool schemas and instructions — automatically.
+8. **Secure, Sandboxed Execution**: Run calculations and custom scripts inside safe, isolated containers to keep your servers and business data protected.
+9. **Universal Remote (MCP Hub)**: Connect your chatbot directly to databases, GitHub, or filesystems using standard Model Context Protocol.
+10. **Generative UI with ProChat**: Return dynamic, interactive UI components (charts, forms, dashboards) directly inside the chat response — no extra frontend code needed.
+11. **OpenAI-Compatible Gateway**: Point any existing OpenAI client at this server and it works immediately — no SDK changes, no prompt rewrites. Swap models, add tools, enforce tenant isolation, all transparently.
+12. **Built-in Admin Dashboard**: View chatbot thoughts, tool triggers, sandbox logs, token usage, and costs — per tenant — in a beautiful visual turn-by-turn timeline.
+
+---
+
+## 🛠️ Configure Everything From The Dashboard
+
+One of the core ideas behind AI Skill Engine is that **infrastructure decisions belong in the dashboard, not in code or config files**. You can switch your LLM provider, move code execution to a cloud sandbox, change where files are stored, or update your email server — all from the UI, without touching a single environment variable or redeploying.
+
+Every setting below is **per-tenant** — so different clients or environments on the same server can use entirely different infrastructure.
+
+---
+
+### 🤖 LLM Providers — *Which AI model powers your chatbot*
+
+Register any number of models per tenant. The engine uses the OpenAI protocol universally, so any OpenAI-compatible API works out of the box.
+
+| Provider | How to use |
+|---|---|
+| **OpenAI** | GPT-4o, GPT-4-turbo, GPT-4o-mini, o1, o3, etc. |
+| **Google Gemini** | gemini-2.5-flash, gemini-2.5-pro, gemini-2.0-flash, etc. |
+| **OpenRouter** | Access 200+ models (Claude, Llama, Mistral, Qwen, DeepSeek, etc.) through a single key |
+| **Custom / Self-hosted** | Any OpenAI-compatible endpoint — Ollama, LM Studio, vLLM, Azure OpenAI, AWS Bedrock, etc. |
+
+You can also set **per-token pricing rates** (input / output / audio) on each model config so usage costs are tracked accurately per tenant — essential if you're billing your clients.
+
+---
+
+### 💻 Code Execution — *Where sandboxed code runs*
+
+When the LLM calls a skill that runs code, you choose where that execution happens. Switch between environments from the **Sandbox Settings** page — no code changes needed.
+
+| Sandbox | Description |
+|---|---|
+| **Docker** *(default)* | Ephemeral local container (`ai-sandbox-python:latest`). Isolated from the host. Great for development and on-prem deployments. |
+| **Process** | Runs directly on the host server. Fast, but only recommended for fully trusted, private setups. |
+| **Azure Container Apps** | Hyper-V isolated cloud containers via Azure Dynamic Sessions. Requires Entra ID credentials and a Session Pool Endpoint. |
+| **E2B** | Stateful agentic micro-VMs with persistent filesystems. Ideal for long-running, stateful code tasks. Requires an E2B API key. |
+| **Fly.io** | Serverless Fly Machines. Requires a Fly API token and app name. |
+| **AWS Lambda** | Serverless Lambda functions. Requires AWS access/secret keys, region, and function name. |
+
+> 🔒 If a remote sandbox is configured, execution always targets that cloud environment. It will **never** silently fall back to local execution on failure.
+
+---
+
+### 💾 File Storage — *Where generated files and uploads are kept*
+
+Choose where the engine stores files created by skills (reports, charts, CSVs, PDFs). Configure from the **Storage Settings** page.
+
+| Storage Backend | Description |
+|---|---|
+| **Local filesystem** *(default)* | Files saved to the server's local `sandbox/` directory. Simple and zero-config. |
+| **AWS S3** | Upload to any S3 bucket. Supports custom endpoint URLs for S3-compatible services (MinIO, Cloudflare R2, DigitalOcean Spaces, etc.). |
+| **Azure Blob Storage** | Upload to any Azure Blob container using account name and key. |
+
+All cloud storage options support **pre-signed URLs** (configurable expiry) so generated file links can be securely shared directly with end users.
+
+---
+
+### 📧 Email (SMTP) — *From where emails are sent*
+
+The `email` skill lets the LLM send emails on behalf of a user or system. Configure the SMTP server per tenant from the **Email Settings** page.
+
+| SMTP Option | Examples |
+|---|---|
+| **Gmail** | smtp.gmail.com with an App Password |
+| **SendGrid** | smtp.sendgrid.net with an API key as password |
+| **Mailgun** | smtp.mailgun.org |
+| **Amazon SES** | email-smtp.&lt;region&gt;.amazonaws.com |
+| **Custom / corporate SMTP** | Any SMTP server with TLS or SSL support |
+
+Supports TLS (STARTTLS) and SSL, configurable username, sender address, and encrypted password storage.
 
 ---
 
@@ -90,7 +178,7 @@ You can run the pre-built image directly from Docker Hub without cloning the sou
      --restart unless-stopped \
      sandeshnaroju/ai-skill-engine:latest
    ```
-   *(Note: Set `DATABASE_URL` environment variable if you want to use an external PostgreSQL database instead of the default local SQLite db)*
+   *(Note: Set `DATABASE_URL` to a PostgreSQL URI if you want an external database instead of the default local SQLite db)*
 
 2. **Access the application**:
    Open **http://localhost:2704** in your browser.
@@ -157,13 +245,9 @@ Running with Docker compiles the React frontend and packages the FastAPI server 
 
 ## ⚙️ Environment Variables
 
-You can configure several features of the AI Skill Engine (like SMTP for email OTP verification) by setting environment variables.
-
-### Key Configuration Variables
-
 | Variable | Description | Example |
 | --- | --- | --- |
-| `ENCRYPTION_SECRET_KEY` | **Required** 32-byte base64 Fernet key to encrypt stored API keys & credentials | `j-A2fHiav45IjlHFpEIJkhYGcEEni9bd5KExyEeoovY=` |
+| `ENCRYPTION_SECRET_KEY` | **Required** — 32-byte base64 Fernet key to encrypt stored API keys & credentials | `j-A2fHiav45IjlHFpEIJkhYGcEEni9bd5KExyEeoovY=` |
 | `DATABASE_URL` | Connection URI of your database (defaults to local SQLite `skill_manager.db`) | `postgresql://postgres:password@localhost:5432/dbname` |
 | `SMTP_HOST` | Hostname of the SMTP server to send OTP codes | `smtp.gmail.com` |
 | `SMTP_PORT` | Port of the SMTP server (default: 587) | `587` |
@@ -180,8 +264,6 @@ You can configure several features of the AI Skill Engine (like SMTP for email O
 ---
 
 ### Passing Environment Variables to Docker
-
-There are two primary ways to supply these environment variables to the container:
 
 #### Method A: Using a `.env` file (Recommended)
 1. Create a `.env` file in your root workspace:
@@ -209,7 +291,6 @@ There are two primary ways to supply these environment variables to the containe
      ```
 
 #### Method B: Using `-e` CLI flags
-Pass environment variables directly into the command line when running the container:
 ```bash
 docker run -d \
   --name ai_skill_engine \
@@ -231,18 +312,18 @@ docker run -d \
 
 ## 🔑 Configuring Models
 
-AI Skill Engine does **not** use environment API keys. Models are registered per-tenant via the dashboard:
+AI Skill Engine does **not** use environment API keys for LLMs. Models are registered **per-tenant** via the dashboard, so each tenant (client) can use entirely different providers and models independently.
 
 1. Go to **Tenants & Keys** → click **Manage** on a tenant
-2. Add a provider (OpenAI, Gemini, OpenRouter, or Custom)
-3. Enter the model name and its API key
+2. Click **Register Model** and choose a provider (OpenAI, Gemini, OpenRouter, or Custom)
+3. Enter the model name, API key, and optional per-token pricing rates
 4. Use that tenant's API key when calling the chat endpoint
 
-This lets you register different models for different tenants independently.
+> 💡 **For resellers:** You can set your own cost rates (input/output tokens per $1M) on each model config, giving you full visibility into what each tenant costs — so you can bill your clients accordingly.
 
 ---
 
-### 🎨 Enabling Generative UI with ProChat
+## 🎨 Enabling Generative UI with ProChat
 
 AI Skill Engine supports **ProChat** — a generative UI protocol that lets your chatbot respond with rich, interactive UI components (data tables, forms, charts) rendered directly inside the chat interface.
 
@@ -254,30 +335,28 @@ To enable ProChat, each tenant needs a ProChat model registered alongside their 
    - **Provider**: `prochat`
    - **Model Name**: the model identifier from your prochat.dev dashboard (e.g. `genui-mars-0.1`)
    - **API Key**: your ProChat API key from prochat.dev
-4. Save the model.
+4. Save the model, then pass `"prochat_model": "genui-mars-0.1"` in your API request (see [API Usage](#-api-usage) below).
 
-Once registered, pass the `prochat_model` field in your API request (see [API Usage](#-api-usage) below) to activate generative UI for that call.
+> 💡 **How it works**: When you include `prochat_model` in your request, AI Skill Engine runs your regular LLM as usual. Once the final answer is ready, it forwards the response to the ProChat API, which returns a rendered UI component — streamed back and displayed inline in the chat.
 
-> 💡 **How it works**: When you include `"prochat_model": "genui-mars-0.1"` in your chat completion request, AI Skill Engine runs your regular LLM as usual. Once the final answer is ready, it forwards the full conversation (including the LLM's response) to the ProChat API. ProChat returns a rendered UI component — such as a data table, chart, or form — which is streamed back alongside the text response and displayed inline in the chat. Your tenant must have a model registered with `provider: prochat` for this to work.
+---
 
 ## 📦 Sandbox Environments
 
-AI Skill Engine runs python code and bash scripts inside secure, isolated sandboxes. You can select and configure the active sandbox environment directly from the **Sandbox Settings** page in the dashboard:
+AI Skill Engine runs Python code and bash scripts inside secure, isolated sandboxes. You can select and configure the active sandbox from the **Sandbox Settings** page in the dashboard:
 
 1. **Docker Sandbox (Default)**: Runs scripts inside a local ephemeral Docker container (`ai-sandbox-python:latest`). Keeps your host environment safe.
 2. **Process Sandbox**: Executes commands directly on the host server process. Recommended only for trusted private local setups.
-3. **Azure Container Apps (ACA) Sandboxes**: Offloads executions to secure, Hyper-V isolated container pools. Requires Entra ID App credentials (`Client ID`, `Client Secret`, `Tenant ID`) and a `Session Pool Endpoint` (obtainable from the [Azure portal](https://portal.azure.com) or [sandboxes.azure.com](https://sandboxes.azure.com)).
+3. **Azure Container Apps (ACA) Sandboxes**: Offloads executions to secure, Hyper-V isolated container pools. Requires Entra ID App credentials and a Session Pool Endpoint.
 4. **E2B Sandboxes**: Runs scripts inside specialized, stateful agentic micro-VMs. Requires an `E2B API Key`.
 5. **Fly.io Sandboxes**: Routes execution to Fly.io Machines. Requires a `Fly API Token` and `App Name`.
-6. **AWS Lambda**: Routes calculations to serverless Lambdas. Requires AWS keys (`Access Key`, `Secret Key`), `Region`, and `Function Name`.
+6. **AWS Lambda**: Routes calculations to serverless Lambdas. Requires AWS keys, `Region`, and `Function Name`.
 
 > 🔒 **Security Notice:** If any remote sandbox (Azure, E2B, Fly.io, or Lambda) is active, execution strictly targets that cloud environment. If the sandbox call fails or credentials are incomplete, it returns the error immediately and **never** silently falls back to local host processes.
 
 ---
 
 ## 💾 Sandbox File Operations & Storage
-
-Managing files between your chatbot and remote execution sandboxes is handled in two ways:
 
 ### 1. Auto-Download Pipeline
 When running code inside the Azure ACA Sandbox, the system automatically:
@@ -286,20 +365,20 @@ When running code inside the Azure ACA Sandbox, the system automatically:
 - Generates click-to-download links and surfaces them directly in the Chat Playground.
 
 ### 2. Sandbox File Manager Skill
-To give the chatbot explicit control over its environment, enable the `sandbox_file_manager` skill. This grants the LLM access to three tools:
+Enable the `sandbox_file_manager` skill to give the chatbot explicit control over its environment. This grants the LLM access to three tools:
 - `list_sandbox_files`: Lists all files present in the active sandbox workspace.
 - `download_sandbox_file`: Pulls a specific file from the remote sandbox to the local backend server.
 - `upload_sandbox_file`: Uploads local server inputs into the remote sandbox workspace for processing.
 
 ### 3. Cloud Storage Skill
-For production environments where local files shouldn't be shared directly, use the `cloud_storage` skill to upload generated outputs directly to cloud buckets (AWS S3 or Azure Blob Storage) and retrieve secure cloud URLs.
+For production environments, use the `cloud_storage` skill to upload generated outputs directly to cloud buckets (AWS S3 or Azure Blob Storage) and retrieve secure URLs.
 
 ---
 
 
 ## 🌐 API Usage
 
-You can authenticate HTTP requests using standard HTTP Bearer token headers (supported natively by standard OpenAI SDKs):
+Authenticate requests using a standard Bearer token header (works natively with OpenAI SDKs):
 
 ```http
 POST /api/v1/chat/completions
@@ -323,13 +402,13 @@ Content-Type: application/json
 | `messages` | array | required | OpenAI-style message array |
 | `model` | string | tenant default | Model name (must be registered for the tenant) |
 | `stream` | bool | `false` | Stream response as SSE events |
-| `session_id` | string | `"default_session"` | Arbitrary ID to label this conversation in execution logs |
+| `session_id` | string | `"default_session"` | Conversation thread identifier. Used to maintain persistent memory across turns — the same `session_id` will resume a stored conversation in Dashboard Playground sessions. |
 | `app_id` | string | `null` | UUID of an App group — scopes available tools to that App's skills only |
-| `skill_names` | array of strings | `null` | Direct filter of skill names to load in this request context. If combined with `app_id`, it intersects (only matching skills in both list and App are used). |
-| `user_data` | object | `null` | Key-value pairs (credentials, API keys, tokens) dynamically resolved inside skill tools (e.g. URLs, headers, arguments) during action runs. Keep secrets hidden from the LLM. |
-| `prochat_model` | string | `null` | ProChat model name (e.g. `genui-mars-0.1`) — when set, AI Skill Engine forwards the conversation to ProChat after the LLM responds, generating a rich UI component rendered inline in the chat. Requires a `prochat` provider model registered for the tenant. |
+| `skill_names` | array of strings | `null` | Directly filter which skills are active for this request. If combined with `app_id`, only skills present in both the list and the App are used. |
+| `user_data` | object | `null` | Key-value pairs (credentials, API keys, tokens) injected into skill tool parameters at runtime. These values are resolved server-side and **never exposed to the LLM** — ideal for passing per-user secrets. |
+| `prochat_model` | string | `null` | ProChat model name (e.g. `genui-mars-0.1`) — enables generative UI rendering after the LLM responds. Requires a `prochat` provider model registered for the tenant. |
 
-> **Note:** API client conversations are **not** stored in the chat history. Only Dashboard Chat Playground sessions are persisted. Tool execution results are always logged in the API Execution Logs.
+> **Note:** API client conversations are **not** stored in chat history by default. Only Dashboard Chat Playground sessions persist conversation messages. Tool execution results are always logged in the API Execution Logs regardless of source.
 
 ### From Python (OpenAI SDK)
 
@@ -348,12 +427,12 @@ stream = client.chat.completions.create(
     messages=[{"role": "user", "content": "Fetch weather in London"}],
     stream=True,
     extra_body={
-        "session_id": "user_123_thread_1",    # labels this call in execution logs
+        "session_id": "user_123_thread_1",    # resumes or starts a conversation thread
         "app_id": "your-app-group-uuid",       # scopes tools to this App's skills only
-        "skill_names": ["weather_fetcher"],    # optional: limit execution to specific skills
+        "skill_names": ["weather_fetcher"],    # optional: limit to specific skills
         "prochat_model": "genui-mars-0.1",     # optional: enable ProChat generative UI
         "user_data": {
-            "openweathermap_api_key": "YOUR_SECRET_KEY"  # resolved in weather skill parameters
+            "openweathermap_api_key": "YOUR_SECRET_KEY"  # injected into skill parameters server-side
         }
     }
 )
@@ -375,21 +454,18 @@ curl -X POST http://localhost:2704/api/v1/chat/completions \
     "session_id": "user_123_thread_1",
     "app_id": "your-app-group-uuid",
     "skill_names": ["weather_fetcher"],
-    "prochat_model": "genui-mars-0.1",
     "user_data": {
       "openweathermap_api_key": "YOUR_SECRET_KEY"
     }
   }'
 ```
 
-> 📝 **`prochat_model`** (optional): Pass the ProChat model name (e.g. `genui-mars-0.1`) to enable generative UI on this request. Requires a model with `provider: prochat` registered for your tenant on prochat.dev.
-
 ---
 
 
 ## 📝 Creating Skills
 
-Create a `skills/<skill_name>/SKILL.md` file:
+Skills are Markdown files with YAML frontmatter that define both the LLM instructions and the tools it can call. Create a `skills/<skill_name>/SKILL.md` file:
 
 ```yaml
 ---
@@ -398,20 +474,56 @@ description: What this skill does and when the LLM should use it.
 tools:
   - name: run_shell
     description: Runs a shell command.
+    type: shell
     command: echo "Hello from AI Skill Engine!"
+
   - name: run_python
-    description: Executes Python in sandbox.
-    type: python
-    code: |
-      result = sum(range(1, 101))
-      print(f"Sum = {result}")
+    description: Executes Python code in the sandbox.
+    type: code
+    command: python3 -c "{{code}}"
+    parameters:
+      type: object
+      properties:
+        code:
+          type: string
+          description: The Python code to execute.
+      required: [code]
+
+  - name: call_api
+    description: Calls an external REST API.
+    type: http
+    method: GET
+    url: https://api.example.com/data
 ---
 
 # Instructions
 Tell the LLM when and how to use these tools.
 ```
 
-Skills can also be **created and edited directly in the dashboard** — they're stored in the database and hot-reloaded.
+**Supported tool types:**
+
+| Type | What it does |
+|---|---|
+| `shell` | Runs a bash/shell command in the sandbox |
+| `code` | Executes dynamic code passed as a parameter (Python, etc.) |
+| `http` / `rest_api` / `api` | Makes an HTTP request to an external endpoint |
+| `mcp` / `mcp_stdio` | Calls an MCP server tool |
+
+Skills can also be **created, edited, and AI-generated directly in the dashboard** — they're stored in the database and hot-reloaded without a server restart.
+
+---
+
+## 🤖 AI Skill Generator
+
+Don't want to write SKILL.md files by hand? The built-in **AI Skill Generator** can build one for you.
+
+From the **Skills** page in the dashboard, click **Generate Skill** and provide:
+- A **skill name** and **description** of what it should do
+- Any **API endpoints** it should call (method, URL, headers, query params, body)
+- Any **secrets or inputs** it needs
+- Any **behavioral notes** for the LLM
+
+The generator uses your configured LLM to produce a complete, ready-to-use SKILL.md — including tool schemas, parameter definitions, and system instructions.
 
 ---
 
@@ -426,6 +538,8 @@ npx -y @modelcontextprotocol/server-github
 npx -y @modelcontextprotocol/server-memory
 ```
 
+Once registered, the MCP server's tools are automatically discovered and made available to the LLM — no skill file needed.
+
 ---
 
 ## 📊 Dashboard Pages
@@ -434,16 +548,15 @@ npx -y @modelcontextprotocol/server-memory
 |---|---|---|
 | Chat Playground | `/playground` | Live chatbot simulator with streaming, session history & audit traces |
 | Apps & Groups | `/apps` | Group skills into scoped App containers |
-| Skills Catalog | `/skills` | Browse, filter, create, and edit skills |
+| Skills Catalog | `/skills` | Browse, filter, create, edit, and AI-generate skills |
 | MCP Servers | `/mcp` | Connect external MCP protocol servers |
-| Tenants & Keys | `/tenants` | Manage tenant API keys and model configs |
+| Tenants & Keys | `/tenants` | Manage tenant API keys, model configs, and cost rates |
 | Sandbox Audit Logs | `/logs` | Dashboard execution audit trail |
 | API Execution Logs | `/api-logs` | External API client execution logs |
 | API Tester | `/api-tester` | Built-in HTTP client to test the chat endpoint |
 | API Documentation | `/docs` | Interactive API reference |
 
-
-
+---
 
 ## 📄 License
 

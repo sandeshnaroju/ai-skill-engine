@@ -256,6 +256,207 @@ input:focus, select:focus, textarea:focus {
   color: #6d28d9;
 }
 
+/* Input Dark & Form Elements */
+.input-dark {
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-main);
+  border-radius: 8px;
+  padding: 8px 12px;
+  outline: none;
+  font-family: inherit;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.input-dark:focus {
+  border-color: var(--primary-cyan);
+  box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.2);
+}
+
+[data-theme="light"] .input-dark {
+  background: #ffffff;
+  border-color: rgba(0, 0, 0, 0.15);
+  color: #0f172a;
+}
+
+/* Date & Time Picker color-scheme support for Day and Night modes */
+.input-dark[type="date"],
+.input-dark[type="time"] {
+  color-scheme: dark;
+}
+
+[data-theme="light"] .input-dark[type="date"],
+[data-theme="light"] .input-dark[type="time"] {
+  color-scheme: light;
+}
+
+/* WebKit native calendar/clock picker indicator styling */
+.input-dark[type="date"]::-webkit-calendar-picker-indicator,
+.input-dark[type="time"]::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  filter: invert(0.9);
+  opacity: 0.85;
+  transition: opacity 0.2s ease;
+}
+
+.input-dark[type="date"]::-webkit-calendar-picker-indicator:hover,
+.input-dark[type="time"]::-webkit-calendar-picker-indicator:hover {
+  opacity: 1;
+}
+
+[data-theme="light"] .input-dark[type="date"]::-webkit-calendar-picker-indicator,
+[data-theme="light"] .input-dark[type="time"]::-webkit-calendar-picker-indicator {
+  filter: none;
+  opacity: 0.75;
+}
+
+/* Searchable Timezone Dropdown (Day & Night Mode Adaptive) */
+.timezone-select-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  font-size: 0.84rem;
+  cursor: pointer;
+  text-align: left;
+  gap: 8px;
+  background: var(--bg-card);
+  color: var(--text-main);
+  border-radius: 8px;
+  border: 1px solid var(--border-subtle);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+  transition: all 0.2s ease;
+}
+
+[data-theme="light"] .timezone-select-toggle {
+  background: #ffffff;
+  border-color: rgba(0, 0, 0, 0.16);
+  color: #0f172a;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.timezone-select-toggle:hover {
+  border-color: var(--primary-violet);
+}
+
+.timezone-select-toggle.open {
+  border-color: var(--primary-violet);
+  box-shadow: 0 0 14px rgba(139, 92, 246, 0.3);
+}
+
+[data-theme="light"] .timezone-select-toggle.open {
+  border-color: #7c3aed;
+  box-shadow: 0 0 12px rgba(124, 58, 237, 0.2);
+}
+
+.timezone-select-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  background: var(--bg-modal);
+  border: 1px solid var(--border-glow);
+  border-radius: 10px;
+  box-shadow: var(--shadow-card);
+  z-index: 1000;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+[data-theme="light"] .timezone-select-menu {
+  background: #ffffff;
+  border-color: rgba(0, 0, 0, 0.15);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(0, 0, 0, 0.05);
+}
+
+.timezone-select-search {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: rgba(139, 92, 246, 0.08);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+[data-theme="light"] .timezone-select-search {
+  background: #f8fafc;
+  border-bottom-color: rgba(0, 0, 0, 0.08);
+}
+
+.timezone-select-search input {
+  width: 100%;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-main);
+  font-size: 0.82rem;
+  font-family: inherit;
+}
+
+[data-theme="light"] .timezone-select-search input {
+  color: #0f172a;
+}
+
+.timezone-select-option {
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: transparent;
+  color: var(--text-sub);
+  font-weight: 400;
+  border-left: 3px solid transparent;
+  transition: all 0.15s ease;
+}
+
+[data-theme="light"] .timezone-select-option {
+  color: #334155;
+}
+
+.timezone-select-option:hover {
+  background: rgba(139, 92, 246, 0.14);
+  color: var(--primary-violet);
+}
+
+[data-theme="light"] .timezone-select-option:hover {
+  background: rgba(124, 58, 237, 0.08);
+  color: #7c3aed;
+}
+
+.timezone-select-option.selected {
+  background: rgba(139, 92, 246, 0.22);
+  color: var(--primary-violet);
+  font-weight: 600;
+  border-left: 3px solid var(--primary-violet);
+}
+
+[data-theme="light"] .timezone-select-option.selected {
+  background: rgba(124, 58, 237, 0.1);
+  color: #7c3aed;
+  border-left: 3px solid #7c3aed;
+}
+
+.timezone-select-footer {
+  padding: 8px 12px;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--bg-panel);
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  display: flex;
+  justify-content: space-between;
+}
+
+[data-theme="light"] .timezone-select-footer {
+  background: #f8fafc;
+  border-top-color: rgba(0, 0, 0, 0.08);
+  color: #64748b;
+}
+
 /* Badges & Tags */
 .badge-tag {
   display: inline-flex;

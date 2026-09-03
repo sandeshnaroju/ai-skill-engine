@@ -15,6 +15,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from sqlalchemy.orm import Session
 
 from engine.usage import get_model_rates, update_request_usage
+from engine.limits import check_tenant_quotas, truncate_tool_output, estimate_messages_tokens, generate_prochat_quota_ui
 from engine.messages import resolve_user_data_placeholders
 from engine.tool_executor import execute_tool, prefetch_mcp_servers
 from engine.prochat import get_prochat_ui, stream_prochat_ui
@@ -127,9 +128,10 @@ def _log_and_append_tool_results(db, tenant, session_id, model_name, request_sou
             "generated_files": exec_res.get("generated_files", [])
         })
 
-        messages.append({"role": "tool", "tool_call_id": tc_id, "content": tool_result})
+        safe_tool_result = truncate_tool_output(tool_result)
+        messages.append({"role": "tool", "tool_call_id": tc_id, "content": safe_tool_result})
         if persist and session_obj:
-            save_message(db, session_obj, "tool", content=tool_result, tool_call_id=tc_id)
+            save_message(db, session_obj, "tool", content=safe_tool_result, tool_call_id=tc_id)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -177,6 +179,23 @@ class SkillEngine:
             available_tools = skill_registry.get_openai_tools(allowed_skills=allowed_skills, tenant_id=tenant.id)
             executed_logs = []
 
+            # ── Pre-flight Quota & Limit Check ──────────────────────────────
+            is_breached, quota_msg = check_tenant_quotas(db, tenant, session_id, messages, model_name, secondary_model=prochat_model)
+            if is_breached:
+                prochat_json, prochat_code = None, None
+                if prochat_model:
+                    prochat_json, prochat_code = generate_prochat_quota_ui(quota_msg)
+
+                if persist and session_obj:
+                    save_message(db, session_obj, "assistant", content=quota_msg)
+                finalize_request(db, chat_req, quota_msg, executed_logs, start_time,
+                                 usage_obj=None, in_rate=in_r, out_rate=out_r, au_in_rate=au_in_r, au_out_rate=au_out_r, model_name=model_name)
+                return {
+                    "response": quota_msg, "json": prochat_json, "code": prochat_code,
+                    "session_id": session_id, "request_id": request_id,
+                    "tenant": tenant.name, "executed_tools": []
+                }
+
             for turn in range(max_turns):
                 kwargs = {"model": model_name, "messages": messages}
                 if available_tools and turn < max_turns - 1:
@@ -186,11 +205,27 @@ class SkillEngine:
 
                 try:
                     response = llm.chat.completions.create(**kwargs)
-                except openai.BadRequestError:
-                    if persist and session_obj:
-                        db.query(ChatMessage).filter(ChatMessage.session_id == session_obj.id).delete()
-                        db.commit()
-                        save_message(db, session_obj, "user", content=user_message)
+                except openai.BadRequestError as e:
+                    err_str = str(e).lower()
+                    if any(k in err_str for k in ["context_length", "maximum context", "token limit", "too large", "prompt is too long", "maximum allowed tokens"]):
+                        quota_msg = (
+                            "ContextLengthExceeded: Context memory limit reached for this model. "
+                            "The conversation context and tool outputs exceed the model's active physical context window. "
+                            "Please start a new conversation session to continue."
+                        )
+                        prochat_json, prochat_code = None, None
+                        if prochat_model:
+                            prochat_json, prochat_code = generate_prochat_quota_ui(quota_msg)
+
+                        if persist and session_obj:
+                            save_message(db, session_obj, "assistant", content=quota_msg)
+                        finalize_request(db, chat_req, quota_msg, executed_logs, start_time,
+                                         usage_obj=None, in_rate=in_r, out_rate=out_r, au_in_rate=au_in_r, au_out_rate=au_out_r, model_name=model_name)
+                        return {
+                            "response": quota_msg, "json": prochat_json, "code": prochat_code,
+                            "session_id": session_id, "request_id": request_id,
+                            "tenant": tenant.name, "executed_tools": executed_logs
+                        }
                     sys_content = skill_registry.get_system_instructions(tenant_id=tenant.id)
                     if user_data:
                         sys_content = resolve_user_data_placeholders(sys_content, user_data)
@@ -233,6 +268,12 @@ class SkillEngine:
 
                     _log_and_append_tool_results(db, tenant, session_id, model_name, request_source,
                                                  request_id, results, messages, executed_logs, persist, session_obj)
+
+                    # Post-tool-turn Quota / Context check before next turn
+                    is_breached, quota_msg = check_tenant_quotas(db, tenant, session_id, messages, model_name)
+                    if is_breached:
+                        messages.append({"role": "user", "content": f"[System Notice: {quota_msg}. Please provide your final answer to the user now without invoking any further tools.]"})
+                        available_tools = []
 
                 else:
                     final_answer = response_msg.content or ""
@@ -342,6 +383,27 @@ class SkillEngine:
             llm = get_llm_client(db=db, tenant_id=tenant.id, model_name=model_name)
             available_tools = skill_registry.get_openai_tools(allowed_skills=allowed_skills, tenant_id=tenant.id)
 
+            # ── Pre-flight Quota & Limit Check ──────────────────────────────
+            is_breached, quota_msg = check_tenant_quotas(db, tenant, session_id, messages, model_name, secondary_model=prochat_model)
+            if is_breached:
+                prochat_json, prochat_code = None, None
+                if prochat_model:
+                    prochat_json, prochat_code = generate_prochat_quota_ui(quota_msg)
+
+                if persist and session_obj:
+                    save_message(db, session_obj, "assistant", content=quota_msg)
+                finalize_request(db, chat_req, quota_msg, executed_logs, start_time,
+                                 usage_obj=None, in_rate=in_r, out_rate=out_r, au_in_rate=au_in_r, au_out_rate=au_out_rate if 'au_out_rate' in locals() else au_out_r, model_name=model_name)
+                delta_payload = {"content": quota_msg}
+                if prochat_model:
+                    delta_payload["json"] = prochat_json
+                    delta_payload["code"] = prochat_code
+
+                yield f"data: {json.dumps({'id': f'chatcmpl-{session_id}', 'object': 'chat.completion.chunk', 'created': 1700000000, 'model': model_name, 'choices': [{'index': 0, 'delta': delta_payload, 'finish_reason': 'stop'}]})}\n\n"
+                yield f"data: {json.dumps({'type': 'done', 'request_id': request_id, 'tools_called': 0})}\n\n"
+                yield "data: [DONE]\n\n"
+                return
+
             for turn in range(max_turns):
                 kwargs = {"model": model_name, "messages": messages, "stream": True}
                 kwargs["stream_options"] = {"include_usage": True}
@@ -358,11 +420,32 @@ class SkillEngine:
 
                 try:
                     response_stream = llm.chat.completions.create(**kwargs)
-                except openai.BadRequestError:
-                    if persist and session_obj:
-                        db.query(ChatMessage).filter(ChatMessage.session_id == session_obj.id).delete()
-                        db.commit()
-                        save_message(db, session_obj, "user", content=user_message)
+                except openai.BadRequestError as e:
+                    err_str = str(e).lower()
+                    if any(k in err_str for k in ["context_length", "maximum context", "token limit", "too large", "prompt is too long", "maximum allowed tokens"]):
+                        quota_msg = (
+                            "ContextLengthExceeded: Context memory limit reached for this model. "
+                            "The conversation context and tool data exceed the model's active physical context window. "
+                            "Please start a new conversation session to continue."
+                        )
+                        prochat_json, prochat_code = None, None
+                        if prochat_model:
+                            prochat_json, prochat_code = generate_prochat_quota_ui(quota_msg)
+
+                        if persist and session_obj:
+                            save_message(db, session_obj, "assistant", content=quota_msg)
+                        finalize_request(db, chat_req, quota_msg, executed_logs, start_time,
+                                         accumulated_usage if accumulated_usage["prompt_tokens"] else None,
+                                         in_r, out_r, au_in_r, au_out_r, model_name=model_name)
+                        delta_payload = {"content": quota_msg}
+                        if prochat_model:
+                            delta_payload["json"] = prochat_json
+                            delta_payload["code"] = prochat_code
+
+                        yield f"data: {json.dumps({'id': f'chatcmpl-{session_id}', 'object': 'chat.completion.chunk', 'created': 1700000000, 'model': model_name, 'choices': [{'index': 0, 'delta': delta_payload, 'finish_reason': 'stop'}]})}\n\n"
+                        yield f"data: {json.dumps({'type': 'done', 'request_id': request_id, 'tools_called': len(executed_logs)})}\n\n"
+                        yield "data: [DONE]\n\n"
+                        return
                     sys_content = skill_registry.get_system_instructions(tenant_id=tenant.id)
                     if user_data:
                         sys_content = resolve_user_data_placeholders(sys_content, user_data)
@@ -516,9 +599,16 @@ class SkillEngine:
                                              "generated_files": exec_res.get("generated_files", [])
                                          })
 
-                            messages.append({"role": "tool", "tool_call_id": tc["id"], "content": tool_result})
+                            safe_tool_result = truncate_tool_output(tool_result)
+                            messages.append({"role": "tool", "tool_call_id": tc["id"], "content": safe_tool_result})
                             if persist and session_obj:
-                                save_message(db, session_obj, "tool", content=tool_result, tool_call_id=tc["id"])
+                                save_message(db, session_obj, "tool", content=safe_tool_result, tool_call_id=tc["id"])
+
+                    # Post-tool-turn Quota / Context check before next turn
+                    is_breached, quota_msg = check_tenant_quotas(db, tenant, session_id, messages, model_name)
+                    if is_breached:
+                        messages.append({"role": "user", "content": f"[System Notice: {quota_msg}. Please provide your final answer to the user now without invoking any further tools.]"})
+                        available_tools = []
 
                 else:
                     # Final text response — handle ProChat UI
