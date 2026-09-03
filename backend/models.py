@@ -23,13 +23,40 @@ class User(Base):
 class Tenant(Base):
     __tablename__ = "tenants"
 
+    # Core Identifiers
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     name = Column(String, nullable=False)
     api_key = Column(String, unique=True, nullable=False, index=True)
     is_active = Column(Boolean, default=True)
     user_id = Column(String, ForeignKey("users.id"), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
 
+    # Quotas & Limits: Context Memory
+    max_context_tokens = Column(Integer, default=1_000_000, nullable=False)
+
+    # Quotas & Limits: Per-Session
+    session_token_limit = Column(Integer, nullable=True)
+    session_cost_limit = Column(Float, nullable=True)
+
+    # Quotas & Limits: Daily (resets 00:00 UTC)
+    daily_token_limit = Column(Integer, nullable=True)
+    daily_cost_limit = Column(Float, nullable=True)
+
+    # Quotas & Limits: Monthly (resets 1st of month 00:00 UTC)
+    monthly_token_limit = Column(Integer, nullable=True)
+    monthly_cost_limit = Column(Float, nullable=True)
+
+    # Quotas & Limits: Yearly
+    yearly_token_limit = Column(Integer, nullable=True)
+    yearly_cost_limit = Column(Float, nullable=True)
+
+    # Quotas & Limits: Reset Schedule & Timezone
+    timezone = Column(String, default="UTC", nullable=False)
+    daily_reset_time = Column(String, default="00:00", nullable=False)
+    monthly_reset_day = Column(Integer, default=1, nullable=False)
+    yearly_reset_month = Column(Integer, default=1, nullable=False)
+    yearly_reset_day = Column(Integer, default=1, nullable=False)
+
+    # Relationships
     user = relationship("User", back_populates="tenants")
     sessions = relationship("ConversationSession", back_populates="tenant", cascade="all, delete-orphan")
     execution_logs = relationship("ExecutionLog", back_populates="tenant", cascade="all, delete-orphan")
@@ -42,6 +69,9 @@ class Tenant(Base):
     user_data_templates = relationship("UserDataTemplate", back_populates="tenant", cascade="all, delete-orphan")
     storage_configs = relationship("StorageConfig", back_populates="tenant", cascade="all, delete-orphan")
     sandbox_configs = relationship("SandboxConfig", back_populates="tenant", cascade="all, delete-orphan")
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 class EmailConfig(Base):
     __tablename__ = "email_configs"
@@ -134,7 +164,7 @@ class ChatRequest(Base):
     secondary_cost_usd = Column(Float, default=0.0)
     status = Column(String, nullable=False, default="pending")  # pending | completed | error
     error_detail = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
     completed_at = Column(DateTime, nullable=True)
 
     tenant = relationship("Tenant", back_populates="chat_requests")

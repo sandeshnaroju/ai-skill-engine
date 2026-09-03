@@ -2,10 +2,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from typing import Optional
 from sqlalchemy.orm import Session
 from database import get_db
-from schemas import TenantCreate, TenantLlmCreate
+from schemas import TenantCreate, TenantLlmCreate, TenantLimitsUpdate
 from models import Tenant, User
 from auth import get_current_user, get_current_tenant, generate_api_key
 from utils import get_paginated_response
+from engine.limits import get_tenant_aggregated_usage
 
 router = APIRouter()
 
@@ -30,6 +31,11 @@ def get_tenants(
             "api_key": t.api_key,
             "is_active": t.is_active,
             "models_count": len(t.llms) if t.llms else 0,
+            "max_context_tokens": t.max_context_tokens or 1_000_000,
+            "daily_token_limit": t.daily_token_limit,
+            "daily_cost_limit": t.daily_cost_limit,
+            "monthly_token_limit": t.monthly_token_limit,
+            "monthly_cost_limit": t.monthly_cost_limit,
             "created_at": t.created_at.isoformat() if t.created_at else None
         }
     return get_paginated_response(query, page, page_size, serialize)
@@ -225,3 +231,98 @@ def delete_tenant_llm(
     return {"status": "deleted", "id": llm_id}
 
 
+@router.get("s/{tenant_id}/limits")
+def get_tenant_limits(
+    tenant_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+    if current_user.id != "system" and tenant.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to view this tenant's limits")
+
+    usage = get_tenant_aggregated_usage(db, tenant.id, tenant=tenant)
+    return {
+        "tenant_id": tenant.id,
+        "tenant_name": tenant.name,
+        "limits": {
+            "max_context_tokens": tenant.max_context_tokens or 1_000_000,
+            "session_token_limit": tenant.session_token_limit,
+            "session_cost_limit": tenant.session_cost_limit,
+            "daily_token_limit": tenant.daily_token_limit,
+            "daily_cost_limit": tenant.daily_cost_limit,
+            "monthly_token_limit": tenant.monthly_token_limit,
+            "monthly_cost_limit": tenant.monthly_cost_limit,
+            "yearly_token_limit": tenant.yearly_token_limit,
+            "yearly_cost_limit": tenant.yearly_cost_limit,
+            "timezone": tenant.timezone or "UTC",
+            "daily_reset_time": tenant.daily_reset_time or "00:00",
+            "monthly_reset_day": tenant.monthly_reset_day or 1,
+            "yearly_reset_month": tenant.yearly_reset_month or 1,
+            "yearly_reset_day": tenant.yearly_reset_day or 1,
+        },
+        "usage": usage
+    }
+
+
+@router.put("s/{tenant_id}/limits")
+def update_tenant_limits(
+    tenant_id: str,
+    payload: TenantLimitsUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+    if current_user.id != "system" and tenant.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to modify this tenant's limits")
+
+    tenant.max_context_tokens = payload.max_context_tokens if payload.max_context_tokens and payload.max_context_tokens > 0 else 1_000_000
+    tenant.session_token_limit = payload.session_token_limit if payload.session_token_limit and payload.session_token_limit > 0 else None
+    tenant.session_cost_limit = payload.session_cost_limit if payload.session_cost_limit and payload.session_cost_limit > 0 else None
+    tenant.daily_token_limit = payload.daily_token_limit if payload.daily_token_limit and payload.daily_token_limit > 0 else None
+    tenant.daily_cost_limit = payload.daily_cost_limit if payload.daily_cost_limit and payload.daily_cost_limit > 0 else None
+    tenant.monthly_token_limit = payload.monthly_token_limit if payload.monthly_token_limit and payload.monthly_token_limit > 0 else None
+    tenant.monthly_cost_limit = payload.monthly_cost_limit if payload.monthly_cost_limit and payload.monthly_cost_limit > 0 else None
+    tenant.yearly_token_limit = payload.yearly_token_limit if payload.yearly_token_limit and payload.yearly_token_limit > 0 else None
+    tenant.yearly_cost_limit = payload.yearly_cost_limit if payload.yearly_cost_limit and payload.yearly_cost_limit > 0 else None
+
+    if payload.timezone:
+        tenant.timezone = payload.timezone.strip()
+    if payload.daily_reset_time:
+        tenant.daily_reset_time = payload.daily_reset_time.strip()
+    if payload.monthly_reset_day:
+        tenant.monthly_reset_day = max(1, min(28, payload.monthly_reset_day))
+    if payload.yearly_reset_month:
+        tenant.yearly_reset_month = max(1, min(12, payload.yearly_reset_month))
+    if payload.yearly_reset_day:
+        tenant.yearly_reset_day = max(1, min(28, payload.yearly_reset_day))
+
+    db.commit()
+    db.refresh(tenant)
+
+    usage = get_tenant_aggregated_usage(db, tenant.id, tenant=tenant)
+    return {
+        "status": "success",
+        "message": f"Quotas & Limits for '{tenant.name}' updated successfully",
+        "limits": {
+            "max_context_tokens": tenant.max_context_tokens,
+            "session_token_limit": tenant.session_token_limit,
+            "session_cost_limit": tenant.session_cost_limit,
+            "daily_token_limit": tenant.daily_token_limit,
+            "daily_cost_limit": tenant.daily_cost_limit,
+            "monthly_token_limit": tenant.monthly_token_limit,
+            "monthly_cost_limit": tenant.monthly_cost_limit,
+            "yearly_token_limit": tenant.yearly_token_limit,
+            "yearly_cost_limit": tenant.yearly_cost_limit,
+            "timezone": tenant.timezone,
+            "daily_reset_time": tenant.daily_reset_time,
+            "monthly_reset_day": tenant.monthly_reset_day,
+            "yearly_reset_month": tenant.yearly_reset_month,
+            "yearly_reset_day": tenant.yearly_reset_day,
+        },
+        "usage": usage
+    }

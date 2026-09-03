@@ -151,10 +151,24 @@ class McpServerCreate(BaseModel):
     env: Optional[str] = None
     tenant_id: Optional[str] = None
 
+class TenantLimitsUpdate(BaseModel):
+    max_context_tokens: Optional[int] = 1_000_000
+    session_token_limit: Optional[int] = None
+    session_cost_limit: Optional[float] = None
+    daily_token_limit: Optional[int] = None
+    daily_cost_limit: Optional[float] = None
+    monthly_token_limit: Optional[int] = None
+    monthly_cost_limit: Optional[float] = None
+    yearly_token_limit: Optional[int] = None
+    yearly_cost_limit: Optional[float] = None
+    timezone: Optional[str] = "UTC"
+    daily_reset_time: Optional[str] = "00:00"
+    monthly_reset_day: Optional[int] = 1
+    yearly_reset_month: Optional[int] = 1
+    yearly_reset_day: Optional[int] = 1
+
 class UserDataTemplateCreate(BaseModel):
     name: str
     description: Optional[str] = None
     data: dict
     tenant_id: Optional[str] = None
-
-

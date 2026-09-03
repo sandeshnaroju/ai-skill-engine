@@ -238,6 +238,58 @@ def init_db():
             finally:
                 db.close()
 
+    if inspector.has_table("tenants"):
+        columns = [c["name"] for c in inspector.get_columns("tenants")]
+        db = SessionLocal()
+        try:
+            if "max_context_tokens" not in columns:
+                db.execute(text("ALTER TABLE tenants ADD COLUMN max_context_tokens INTEGER DEFAULT 1000000"))
+                print("Migration: Added 'max_context_tokens' column to tenants table")
+            if "session_token_limit" not in columns:
+                db.execute(text("ALTER TABLE tenants ADD COLUMN session_token_limit INTEGER"))
+                print("Migration: Added 'session_token_limit' column to tenants table")
+            if "session_cost_limit" not in columns:
+                db.execute(text("ALTER TABLE tenants ADD COLUMN session_cost_limit FLOAT"))
+                print("Migration: Added 'session_cost_limit' column to tenants table")
+            if "daily_token_limit" not in columns:
+                db.execute(text("ALTER TABLE tenants ADD COLUMN daily_token_limit INTEGER"))
+                print("Migration: Added 'daily_token_limit' column to tenants table")
+            if "daily_cost_limit" not in columns:
+                db.execute(text("ALTER TABLE tenants ADD COLUMN daily_cost_limit FLOAT"))
+                print("Migration: Added 'daily_cost_limit' column to tenants table")
+            if "monthly_token_limit" not in columns:
+                db.execute(text("ALTER TABLE tenants ADD COLUMN monthly_token_limit INTEGER"))
+                print("Migration: Added 'monthly_token_limit' column to tenants table")
+            if "monthly_cost_limit" not in columns:
+                db.execute(text("ALTER TABLE tenants ADD COLUMN monthly_cost_limit FLOAT"))
+                print("Migration: Added 'monthly_cost_limit' column to tenants table")
+            if "yearly_token_limit" not in columns:
+                db.execute(text("ALTER TABLE tenants ADD COLUMN yearly_token_limit INTEGER"))
+                print("Migration: Added 'yearly_token_limit' column to tenants table")
+            if "yearly_cost_limit" not in columns:
+                db.execute(text("ALTER TABLE tenants ADD COLUMN yearly_cost_limit FLOAT"))
+                print("Migration: Added 'yearly_cost_limit' column to tenants table")
+            if "timezone" not in columns:
+                db.execute(text("ALTER TABLE tenants ADD COLUMN timezone TEXT DEFAULT 'UTC'"))
+                print("Migration: Added 'timezone' column to tenants table")
+            if "daily_reset_time" not in columns:
+                db.execute(text("ALTER TABLE tenants ADD COLUMN daily_reset_time TEXT DEFAULT '00:00'"))
+                print("Migration: Added 'daily_reset_time' column to tenants table")
+            if "monthly_reset_day" not in columns:
+                db.execute(text("ALTER TABLE tenants ADD COLUMN monthly_reset_day INTEGER DEFAULT 1"))
+                print("Migration: Added 'monthly_reset_day' column to tenants table")
+            if "yearly_reset_month" not in columns:
+                db.execute(text("ALTER TABLE tenants ADD COLUMN yearly_reset_month INTEGER DEFAULT 1"))
+                print("Migration: Added 'yearly_reset_month' column to tenants table")
+            if "yearly_reset_day" not in columns:
+                db.execute(text("ALTER TABLE tenants ADD COLUMN yearly_reset_day INTEGER DEFAULT 1"))
+                print("Migration: Added 'yearly_reset_day' column to tenants table")
+            db.commit()
+        except Exception as e:
+            print(f"Migration warning: Could not update tenants table columns: {e}")
+        finally:
+            db.close()
+
     # Alter missing tenant_id columns in existing tables
     for table_name in ["custom_skills", "mcp_servers", "apps", "user_data_templates", "storage_config", "sandbox_config"]:
         if inspector.has_table(table_name):

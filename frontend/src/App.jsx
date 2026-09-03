@@ -811,8 +811,9 @@ function AppContent() {
             <Route path="/apps" element={<AppManager />} />
             <Route path="/skills" element={<SkillCatalog />} />
             <Route path="/mcp" element={<McpServerManager />} />
-            <Route path="/tenants" element={<TenantManager />} />
             <Route path="/user-data" element={<UserDataTemplates />} />
+            <Route path="/tenants" element={<TenantManager />} />
+            <Route path="/tenants/:tenantId" element={<TenantManager />} />
             <Route path="/email-config" element={<EmailSettings />} />
             <Route path="/storage" element={<StorageSettings />} />
             <Route path="/sandbox" element={<SandboxSettings />} />
