@@ -8,3 +8,5 @@ export { systemApi } from './system';
 export { userDataApi } from './userData';
 export { logsApi } from './logs';
 export { chatApi } from './chat';
+export { artifactsApi } from './artifacts';
+

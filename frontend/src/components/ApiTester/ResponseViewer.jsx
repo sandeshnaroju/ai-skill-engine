@@ -1,5 +1,8 @@
 import React from 'react';
-import { Check } from 'lucide-react';
+import {
+  Check, FileText, Sparkles, ExternalLink, ArrowRight,
+  Code, Table, Presentation, Image, Music, Video
+} from 'lucide-react';
 import ProChat from 'prochat';
 
 export default function ResponseViewer({
@@ -22,13 +25,146 @@ export default function ResponseViewer({
   prochatUiCode,
   curlCommand,
   copiedKey,
-  setCopiedKey
+  setCopiedKey,
+  streamArtifacts = [],
+  canvasArtifact,
+  isCanvasOpen,
+  setIsCanvasOpen,
+  onOpenCanvas
 }) {
+  const getArtifactIcon = (type) => {
+    switch (type) {
+      case 'presentation': return <Presentation size={14} color="#f59e0b" />;
+      case 'code': return <Code size={14} color="#06b6d4" />;
+      case 'sheet': return <Table size={14} color="#10b981" />;
+      case 'svg': return <Image size={14} color="#ec4899" />;
+      case 'audio': return <Music size={14} color="#8b5cf6" />;
+      case 'video': return <Video size={14} color="#ef4444" />;
+      default: return <FileText size={14} color="#818cf8" />;
+    }
+  };
+
+  const renderArtifactPinCard = (rawArt) => {
+    let art = rawArt;
+    if (typeof art === 'string') {
+      try { art = JSON.parse(art); } catch (e) { }
+    }
+    if (!art) return null;
+    if (!art.id && art.artifact_id) {
+      art.id = art.artifact_id;
+    }
+    if (!art.token && art.embed_url) {
+      const match = art.embed_url.match(/token=([^\s)"']+)/);
+      if (match) art.token = match[1];
+    }
+
+    const isActive = Boolean(
+      canvasArtifact && isCanvasOpen && (
+        (art.id && canvasArtifact.id === art.id) ||
+        (art.token && canvasArtifact.token === art.token)
+      )
+    );
+
+    const embedHref = art.embed_url || (art.token ? `/embed/canvas?token=${art.token}` : null);
+
+    return (
+      <div
+        className="msg-artifact-pin-card"
+        onClick={() => onOpenCanvas && onOpenCanvas(art)}
+        style={{
+          marginTop: '8px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '10px',
+          padding: '6px 12px',
+          background: isActive ? 'rgba(99, 102, 241, 0.12)' : 'rgba(99, 102, 241, 0.05)',
+          border: isActive ? '1px solid #6366f1' : '1px solid rgba(99, 102, 241, 0.2)',
+          borderRadius: '8px',
+          cursor: 'pointer',
+          transition: 'all 0.15s ease',
+          width: '100%',
+          maxWidth: '100%',
+          minWidth: 0,
+          boxSizing: 'border-box'
+        }}
+        title="Click to view in Document Canvas"
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: 1 }}>
+          <div style={{
+            color: '#818cf8',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0
+          }}>
+            {getArtifactIcon(art.artifact_type)}
+          </div>
+          <span style={{
+            fontWeight: 600,
+            fontSize: '0.82rem',
+            color: 'var(--text-main)',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis'
+          }}>
+            {art.title || art.filename || 'Document'}
+          </span>
+          {art.current_version && (
+            <span style={{
+              fontSize: '0.66rem',
+              color: 'var(--text-muted)',
+              background: 'rgba(255, 255, 255, 0.06)',
+              padding: '1px 5px',
+              borderRadius: '4px',
+              flexShrink: 0
+            }}>
+              v{art.current_version}
+            </span>
+          )}
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+          <span style={{
+            fontSize: '0.74rem',
+            fontWeight: 600,
+            color: isActive ? '#10b981' : '#818cf8',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '3px'
+          }}>
+            {isActive ? 'Active' : 'Open Canvas'}
+            <ArrowRight size={12} />
+          </span>
+
+          {embedHref && (
+            <a
+              href={embedHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                color: 'var(--text-muted)',
+                padding: '2px',
+                borderRadius: '4px',
+                transition: 'color 0.15s ease'
+              }}
+              title="Open standalone page in new tab"
+            >
+              <ExternalLink size={12} />
+            </a>
+          )}
+        </div>
+      </div>
+    );
+  };
   return (
-    <div className="glass-box" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+    <div className="glass-box" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px', minWidth: 0, width: '100%', maxWidth: '100%', boxSizing: 'border-box', overflow: 'hidden' }}>
 
       {/* Tabs header */}
-      <div style={{ display: 'flex', borderBottom: '1px solid var(--border-subtle)', gap: '16px', paddingBottom: '4px' }}>
+      <div style={{ display: 'flex', borderBottom: '1px solid var(--border-subtle)', gap: '16px', paddingBottom: '4px', alignItems: 'center' }}>
         <button
           onClick={() => setActiveTab('history')}
           style={{
@@ -102,6 +238,21 @@ export default function ResponseViewer({
                     {msg.role}
                   </div>
                   <div dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }} />
+
+                  {/* Artifact Pin Card(s) */}
+                  {Array.isArray(msg.artifacts) && msg.artifacts.length > 0 ? (
+                    msg.artifacts.map((artItem, artIdx) => (
+                      <React.Fragment key={artItem.id || artItem.token || artIdx}>
+                        {renderArtifactPinCard(artItem)}
+                      </React.Fragment>
+                    ))
+                  ) : (msg.artifact || (typeof msg.content === 'string' && msg.content.match(/\/embed\/canvas\?token=([^\s)"']+)/))) ? (
+                    renderArtifactPinCard(msg.artifact || {
+                      token: msg.content.match(/\/embed\/canvas\?token=([^\s)"']+)/)[1],
+                      title: 'Interactive Document',
+                      artifact_type: 'document'
+                    })
+                  ) : null}
                 </div>
               </div>
             ))
@@ -184,6 +335,13 @@ export default function ResponseViewer({
                 minHeight: '380px',
                 maxHeight: '480px',
                 overflowY: 'auto',
+                overflowX: 'hidden',
+                minWidth: 0,
+                width: '100%',
+                maxWidth: '100%',
+                boxSizing: 'border-box',
+                wordBreak: 'break-word',
+                overflowWrap: 'anywhere',
                 fontSize: '0.84rem',
                 color: 'var(--text-main)',
                 display: 'flex',
@@ -194,12 +352,12 @@ export default function ResponseViewer({
             >
               {/* Reasoning thoughts & tool calls */}
               {(streamReasoning.length > 0 || streamTools.length > 0) && (
-                <div style={{ background: 'rgba(139, 92, 246, 0.04)', border: '1px solid rgba(139, 92, 246, 0.2)', borderRadius: '10px', padding: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div style={{ background: 'rgba(139, 92, 246, 0.04)', border: '1px solid rgba(139, 92, 246, 0.2)', borderRadius: '10px', padding: '12px', display: 'flex', flexDirection: 'column', gap: '8px', minWidth: 0, maxWidth: '100%', boxSizing: 'border-box' }}>
                   <div style={{ fontSize: '0.74rem', fontWeight: '700', color: 'var(--primary-violet)', letterSpacing: '0.05em', borderBottom: '1px solid rgba(139, 92, 246, 0.15)', paddingBottom: '4px', marginBottom: '4px' }}>
                     ENGINE TRACES & REASONING
                   </div>
                   {streamReasoning.map((thought, idx) => (
-                    <div key={`thought-${idx}`} style={{ fontSize: '0.78rem', color: 'var(--text-sub)', fontStyle: 'italic', marginBottom: '4px' }}>
+                    <div key={`thought-${idx}`} style={{ fontSize: '0.78rem', color: 'var(--text-sub)', fontStyle: 'italic', marginBottom: '4px', wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
                       💭 {typeof thought === 'object' ? JSON.stringify(thought) : String(thought)}
                     </div>
                   ))}
@@ -209,10 +367,10 @@ export default function ResponseViewer({
                         ? JSON.stringify(tool.arguments, null, 2)
                         : String(tool.arguments || '');
                       return (
-                        <div key={`call-${idx}`} style={{ fontSize: '0.78rem', color: 'var(--primary-emerald)', fontFamily: 'var(--font-mono)', marginBottom: '4px' }}>
+                        <div key={`call-${idx}`} style={{ fontSize: '0.78rem', color: 'var(--primary-emerald)', fontFamily: 'var(--font-mono)', marginBottom: '4px', wordBreak: 'break-word' }}>
                           🛠️ Calling Tool: <strong>{tool.name || 'unknown'}</strong>
                           {renderArgs && renderArgs !== '{}' && (
-                            <pre style={{ margin: '4px 0 0 0', padding: '6px 10px', background: 'var(--bg-input)', border: '1px solid var(--border-subtle)', borderRadius: '6px', fontSize: '0.72rem', color: 'var(--text-sub)', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                            <pre style={{ margin: '4px 0 0 0', padding: '6px 10px', background: 'var(--bg-input)', border: '1px solid var(--border-subtle)', borderRadius: '6px', fontSize: '0.72rem', color: 'var(--text-sub)', whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxWidth: '100%', overflowX: 'auto' }}>
                               {renderArgs}
                             </pre>
                           )}
@@ -226,9 +384,9 @@ export default function ResponseViewer({
                         ? JSON.stringify(outputVal, null, 2)
                         : String(outputVal || 'No output.');
                       return (
-                        <div key={`result-${idx}`} style={{ fontSize: '0.78rem', color: 'var(--primary-amber)', fontFamily: 'var(--font-mono)', marginBottom: '4px' }}>
+                        <div key={`result-${idx}`} style={{ fontSize: '0.78rem', color: 'var(--primary-amber)', fontFamily: 'var(--font-mono)', marginBottom: '4px', wordBreak: 'break-word' }}>
                           ⚡ Tool <strong>{toolName}</strong> Finished ({tool.execution_time_ms || tool.executionTimeMs || 0}ms, Exit: {tool.exit_code ?? 0}) Output:
-                          <pre style={{ margin: '4px 0 0 0', padding: '6px 10px', background: 'var(--bg-input)', border: '1px solid var(--border-subtle)', borderRadius: '6px', fontSize: '0.72rem', color: 'var(--text-sub)', whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: '120px', overflowY: 'auto' }}>
+                          <pre style={{ margin: '4px 0 0 0', padding: '6px 10px', background: 'var(--bg-input)', border: '1px solid var(--border-subtle)', borderRadius: '6px', fontSize: '0.72rem', color: 'var(--text-sub)', whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: '120px', overflowY: 'auto', maxWidth: '100%' }}>
                             {renderOutput}
                           </pre>
                         </div>
@@ -240,12 +398,39 @@ export default function ResponseViewer({
               )}
 
               {/* Final text response content */}
-              <div>
+              <div style={{ minWidth: 0, maxWidth: '100%', boxSizing: 'border-box' }}>
                 <div style={{ fontSize: '0.74rem', fontWeight: '700', color: 'var(--primary-cyan)', letterSpacing: '0.05em', borderBottom: '1px solid rgba(6, 182, 212, 0.15)', paddingBottom: '4px', marginBottom: '8px' }}>
                   FINAL RESPONSE CONTENT
                 </div>
                 {streamContent ? (
-                  <div className="markdown-body" style={{ lineHeight: '1.6', fontSize: '0.9rem', color: 'var(--text-main)' }} dangerouslySetInnerHTML={{ __html: renderMarkdown(streamContent) }} />
+                  <div style={{ minWidth: 0, maxWidth: '100%', overflowX: 'hidden' }}>
+                    <div
+                      className="markdown-body"
+                      style={{
+                        lineHeight: '1.6',
+                        fontSize: '0.9rem',
+                        color: 'var(--text-main)',
+                        wordBreak: 'break-word',
+                        overflowWrap: 'anywhere',
+                        maxWidth: '100%'
+                      }}
+                      dangerouslySetInnerHTML={{ __html: renderMarkdown(streamContent) }}
+                    />
+                    {/* Artifact Pin Cards */}
+                    {Array.isArray(streamArtifacts) && streamArtifacts.length > 0 ? (
+                      streamArtifacts.map((artItem, artIdx) => (
+                        <React.Fragment key={artItem.id || artItem.token || artIdx}>
+                          {renderArtifactPinCard(artItem)}
+                        </React.Fragment>
+                      ))
+                    ) : (canvasArtifact || (typeof streamContent === 'string' && streamContent.match(/\/embed\/canvas\?token=([^\s)"']+)/))) ? (
+                      renderArtifactPinCard(canvasArtifact || {
+                        token: streamContent.match(/\/embed\/canvas\?token=([^\s)"']+)/)[1],
+                        title: 'Interactive Document',
+                        artifact_type: 'document'
+                      })
+                    ) : null}
+                  </div>
                 ) : (
                   <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>
                     {loading ? 'Assistant is typing...' : 'Console idle. Run request to see output.'}

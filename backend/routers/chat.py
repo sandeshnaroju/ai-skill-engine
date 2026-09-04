@@ -123,12 +123,14 @@ def openai_chat_completions(
                         "role": "assistant",
                         "content": result["response"],
                         "json": result.get("json"),
-                        "code": result.get("code")
+                        "code": result.get("code"),
+                        "artifacts": result.get("artifacts", [])
                     },
                     "finish_reason": "stop"
                 }
             ],
-            "executed_tools": result.get("executed_tools", [])
+            "executed_tools": result.get("executed_tools", []),
+            "artifacts": result.get("artifacts", [])
         }
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -351,7 +353,10 @@ def get_session_messages(
     page_size: int = 50
 ):
     import math
-    from models import ConversationSession, ChatMessage
+    import json
+    import re
+    from models import ConversationSession, ChatMessage, SessionArtifact
+    from artifacts.manager import mint_embed_token
     s = db.query(ConversationSession).filter(
         ConversationSession.tenant_id == tenant.id,
         ConversationSession.session_id == session_id
@@ -366,22 +371,143 @@ def get_session_messages(
             "pages": 0
         }
 
+    # Fetch artifacts belonging to this session
+    session_artifacts = db.query(SessionArtifact).filter(
+        SessionArtifact.session_id.in_([s.id, s.session_id])
+    ).order_by(SessionArtifact.updated_at.asc()).all()
+
+    art_map = {a.id: a for a in session_artifacts}
+    latest_art = session_artifacts[-1] if session_artifacts else None
+
+    def serialize_msg(m, preceding_tool_art=None):
+        art_info = None
+        artifacts_list = []
+        # 1. Direct artifact_data column on message
+        if getattr(m, 'artifact_data', None):
+            try:
+                raw_art = json.loads(m.artifact_data) if isinstance(m.artifact_data, str) else m.artifact_data
+                raw_items = raw_art if isinstance(raw_art, list) else [raw_art] if isinstance(raw_art, dict) else []
+                for item in raw_items:
+                    if not isinstance(item, dict):
+                        continue
+                    art_id = item.get("artifact_id") or item.get("id")
+                    target_art = art_map.get(art_id)
+                    fresh_token = mint_embed_token(art_id, tenant.id, expires_in_minutes=60) if art_id else item.get("token")
+                    parsed_art = {
+                        "id": art_id,
+                        "title": target_art.title if target_art else item.get("title", "Document"),
+                        "filename": target_art.filename if target_art else item.get("filename", "document.md"),
+                        "artifact_type": target_art.artifact_type if target_art else item.get("artifact_type", "document"),
+                        "current_version": target_art.current_version if target_art else item.get("current_version", 1),
+                        "token": fresh_token,
+                        "embed_url": f"/embed/canvas?token={fresh_token}" if fresh_token else ""
+                    }
+                    artifacts_list.append(parsed_art)
+                if artifacts_list:
+                    art_info = artifacts_list[0]
+            except Exception:
+                pass
+
+        # 2. Inherited from preceding tool execution in this turn
+        if not art_info and preceding_tool_art and m.role == "assistant":
+            art_info = preceding_tool_art
+            artifacts_list.append(preceding_tool_art)
+
+        # 3. Fallback: Parse embed URL from message content
+        if not art_info and m.content and "/embed/canvas?token=" in m.content:
+            match = re.search(r"/embed/canvas\?token=([^\s)\"']+)", m.content)
+            if match:
+                tok = match.group(1)
+                eff_id = None
+                if "." in tok:
+                    try:
+                        import base64
+                        raw = tok.split(".")[0].replace("-", "+").replace("_", "/")
+                        padded = raw + "=" * ((4 - len(raw) % 4) % 4)
+                        payload = json.loads(base64.b64decode(padded).decode("utf-8"))
+                        eff_id = payload.get("art")
+                    except Exception:
+                        pass
+                matched_art = art_map.get(eff_id) if eff_id else latest_art
+                fresh_tok = mint_embed_token(matched_art.id, tenant.id, expires_in_minutes=60) if matched_art else tok
+                art_info = {
+                    "id": matched_art.id if matched_art else eff_id,
+                    "title": matched_art.title if matched_art else "Interactive Document",
+                    "filename": matched_art.filename if matched_art else "document.md",
+                    "artifact_type": matched_art.artifact_type if matched_art else "document",
+                    "current_version": matched_art.current_version if matched_art else 1,
+                    "token": fresh_tok,
+                    "embed_url": f"/embed/canvas?token={fresh_tok}"
+                }
+                artifacts_list.append(art_info)
+
+        # 4. Fallback for past assistant messages in a session with artifacts
+        if not art_info and m.role == "assistant" and latest_art:
+            content_lower = (m.content or "").lower()
+            if any(k in content_lower for k in ["canvas", "artifact", "document", "spreadsheet", "presentation", latest_art.title.lower()]):
+                fresh_tok = mint_embed_token(latest_art.id, tenant.id, expires_in_minutes=60)
+                art_info = {
+                    "id": latest_art.id,
+                    "title": latest_art.title,
+                    "filename": latest_art.filename,
+                    "artifact_type": latest_art.artifact_type,
+                    "current_version": latest_art.current_version,
+                    "token": fresh_tok,
+                    "embed_url": f"/embed/canvas?token={fresh_tok}"
+                }
+                artifacts_list.append(art_info)
+
+        return {
+            "id": m.id,
+            "role": m.role,
+            "content": m.content,
+            "tool_calls": m.tool_calls,
+            "json": m.json,
+            "code": m.code,
+            "artifacts": artifacts_list,
+            "timestamp": m.created_at.strftime("%H:%M:%S") if m.created_at else ""
+        }
+
+    def serialize_msg_list(raw_msgs):
+        out = []
+        pending_tool_art = None
+        for m in raw_msgs:
+            if m.role == "tool" and m.content and "/embed/canvas?token=" in m.content:
+                match = re.search(r"/embed/canvas\?token=([^\s)\"']+)", m.content)
+                if match:
+                    tok = match.group(1)
+                    eff_id = None
+                    if "." in tok:
+                        try:
+                            import base64
+                            raw = tok.split(".")[0].replace("-", "+").replace("_", "/")
+                            padded = raw + "=" * ((4 - len(raw) % 4) % 4)
+                            payload = json.loads(base64.b64decode(padded).decode("utf-8"))
+                            eff_id = payload.get("art")
+                        except Exception:
+                            pass
+                    matched_art = art_map.get(eff_id) if eff_id else latest_art
+                    fresh_tok = mint_embed_token(matched_art.id, tenant.id, expires_in_minutes=60) if matched_art else tok
+                    pending_tool_art = {
+                        "id": matched_art.id if matched_art else eff_id,
+                        "title": matched_art.title if matched_art else "Interactive Document",
+                        "filename": matched_art.filename if matched_art else "document.md",
+                        "artifact_type": matched_art.artifact_type if matched_art else "document",
+                        "current_version": matched_art.current_version if matched_art else 1,
+                        "token": fresh_tok,
+                        "embed_url": f"/embed/canvas?token={fresh_tok}"
+                    }
+            serialized = serialize_msg(m, preceding_tool_art=pending_tool_art)
+            if m.role == "assistant":
+                pending_tool_art = None
+            out.append(serialized)
+        return out
+
     if page is None:
         msgs = db.query(ChatMessage).filter(
             ChatMessage.session_id == s.id
         ).order_by(ChatMessage.created_at.asc()).all()
-        return [
-            {
-                "id": m.id,
-                "role": m.role,
-                "content": m.content,
-                "tool_calls": m.tool_calls,
-                "json": m.json,
-                "code": m.code,
-                "timestamp": m.created_at.strftime("%H:%M:%S") if m.created_at else ""
-            }
-            for m in msgs
-        ]
+        return serialize_msg_list(msgs)
 
     query = db.query(ChatMessage).filter(
         ChatMessage.session_id == s.id
@@ -394,18 +520,7 @@ def get_session_messages(
     pages = math.ceil(total / page_size) if page_size > 0 else 1
 
     return {
-        "items": [
-            {
-                "id": m.id,
-                "role": m.role,
-                "content": m.content,
-                "tool_calls": m.tool_calls,
-                "json": m.json,
-                "code": m.code,
-                "timestamp": m.created_at.strftime("%H:%M:%S") if m.created_at else ""
-            }
-            for m in items_asc
-        ],
+        "items": serialize_msg_list(items_asc),
         "total": total,
         "page": page,
         "page_size": page_size,

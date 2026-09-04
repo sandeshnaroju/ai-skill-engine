@@ -341,124 +341,290 @@ To enable ProChat, each tenant needs a ProChat model registered alongside their 
 
 ---
 
-## 📦 Sandbox Environments
-
-AI Skill Engine runs Python code and bash scripts inside secure, isolated sandboxes. You can select and configure the active sandbox from the **Sandbox Settings** page in the dashboard:
-
-1. **Docker Sandbox (Default)**: Runs scripts inside a local ephemeral Docker container (`ai-sandbox-python:latest`). Keeps your host environment safe.
-2. **Process Sandbox**: Executes commands directly on the host server process. Recommended only for trusted private local setups.
-3. **Azure Container Apps (ACA) Sandboxes**: Offloads executions to secure, Hyper-V isolated container pools. Requires Entra ID App credentials and a Session Pool Endpoint.
-4. **E2B Sandboxes**: Runs scripts inside specialized, stateful agentic micro-VMs. Requires an `E2B API Key`.
-5. **Fly.io Sandboxes**: Routes execution to Fly.io Machines. Requires a `Fly API Token` and `App Name`.
-6. **AWS Lambda**: Routes calculations to serverless Lambdas. Requires AWS keys, `Region`, and `Function Name`.
-
-> 🔒 **Security Notice:** If any remote sandbox (Azure, E2B, Fly.io, or Lambda) is active, execution strictly targets that cloud environment. If the sandbox call fails or credentials are incomplete, it returns the error immediately and **never** silently falls back to local host processes.
-
 ---
 
-## 💾 Sandbox File Operations & Storage
+# 🚀 1. Backend Integration & API Reference
 
-### 1. Auto-Download Pipeline
-When running code inside the Azure ACA Sandbox, the system automatically:
-- Scans the sandbox filesystem for newly created files (e.g. PDFs, CSVs, plots) right after execution.
-- Transfers them back to the host server outputs folder.
-- Generates click-to-download links and surfaces them directly in the Chat Playground.
+AI Skill Engine provides an enterprise-grade OpenAI-compatible gateway (`POST /api/v1/chat/completions`) with built-in multi-turn tool execution, sandboxed code execution, and multi-tenant isolation.
 
-### 2. Sandbox File Manager Skill
-Enable the `sandbox_file_manager` skill to give the chatbot explicit control over its environment. This grants the LLM access to three tools:
-- `list_sandbox_files`: Lists all files present in the active sandbox workspace.
-- `download_sandbox_file`: Pulls a specific file from the remote sandbox to the local backend server.
-- `upload_sandbox_file`: Uploads local server inputs into the remote sandbox workspace for processing.
-
-### 3. Cloud Storage Skill
-For production environments, use the `cloud_storage` skill to upload generated outputs directly to cloud buckets (AWS S3 or Azure Blob Storage) and retrieve secure URLs.
-
----
-
-
-## 🌐 API Usage
-
-Authenticate requests using a standard Bearer token header (works natively with OpenAI SDKs):
-
+## 🔑 Authentication
+All requests must include your Tenant API Key in standard HTTP Bearer format:
 ```http
-POST /api/v1/chat/completions
-Authorization: Bearer sk_asr_YOUR_TENANT_KEY
-Content-Type: application/json
-
-{
-  "messages": [{"role": "user", "content": "Check disk space"}],
-  "model": "gemini-2.5-flash",
-  "stream": true,
-  "session_id": "user_123_thread_1",
-  "app_id": "your-app-group-uuid",
-  "skill_names": ["system_diagnostics", "weather_fetcher"]
-}
+Authorization: Bearer sk_mgr_YOUR_TENANT_API_KEY
 ```
 
-### Request Fields
+---
 
-| Field | Type | Default | Description |
+## 📡 API Modes & Model Types
+
+The `/api/v1/chat/completions` endpoint dynamically adjusts its output payload based on your requested parameters:
+
+| Request Mode / Type | Parameter Configuration | Response Type | Key Output Fields |
 |---|---|---|---|
-| `messages` | array | required | OpenAI-style message array |
-| `model` | string | tenant default | Model name (must be registered for the tenant) |
-| `stream` | bool | `false` | Stream response as SSE events |
-| `session_id` | string | `"default_session"` | Conversation thread identifier. Used to maintain persistent memory across turns — the same `session_id` will resume a stored conversation in Dashboard Playground sessions. |
-| `app_id` | string | `null` | UUID of an App group — scopes available tools to that App's skills only |
-| `skill_names` | array of strings | `null` | Directly filter which skills are active for this request. If combined with `app_id`, only skills present in both the list and the App are used. |
-| `user_data` | object | `null` | Key-value pairs (credentials, API keys, tokens) injected into skill tool parameters at runtime. These values are resolved server-side and **never exposed to the LLM** — ideal for passing per-user secrets. |
-| `prochat_model` | string | `null` | ProChat model name (e.g. `genui-mars-0.1`) — enables generative UI rendering after the LLM responds. Requires a `prochat` provider model registered for the tenant. |
+| **Standard Streaming** | `"stream": true` | `text/event-stream` (SSE) | Live tokens (`delta.content`), reasoning thoughts (`delta.reasoning`), tool invocations (`delta.tool_call`), sandbox results (`delta.tool_result`) |
+| **Standard Sync** | `"stream": false` | `application/json` | Assistant reply (`message.content`), sandbox audit history (`executed_tools`) |
+| **ProChat Generative UI (Stream)** | `"stream": true`, `"prochat_model": "genui-mars-0.1"` | `text/event-stream` (SSE) | Live UI JSON schema (`delta.json`), React component code (`delta.code`) |
+| **ProChat Generative UI (Sync)** | `"stream": false`, `"prochat_model": "genui-mars-0.1"` | `application/json` | Final UI JSON (`message.json`), final React component (`message.code`) |
+| **Universal Artifacts (Stream)** | `"stream": true`, `"skill_names": ["artifact_editor"]` | `text/event-stream` (SSE) | Real-time artifact metadata (`delta.artifact`: `artifact_id`, `title`, `token`, `embed_url`) |
+| **Universal Artifacts (Sync)** | `"stream": false`, `"skill_names": ["artifact_editor"]` | `application/json` | Assistant text reply + complete artifact payload (`message.artifact`) |
 
-> **Note:** API client conversations are **not** stored in chat history by default. Only Dashboard Chat Playground sessions persist conversation messages. Tool execution results are always logged in the API Execution Logs regardless of source.
+---
 
-### From Python (OpenAI SDK)
+## 💻 Backend Code Examples
 
-The OpenAI SDK doesn't natively support `session_id` / `app_id` / `user_data` / `skill_names`, so pass them via `extra_body`:
+### 1. cURL
 
+#### Streaming Request (SSE)
+```bash
+curl -N -X POST http://localhost:2704/api/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer sk_mgr_YOUR_TENANT_API_KEY" \
+  -d '{
+    "messages": [{"role": "user", "content": "Draft an Executive Modernization Plan in Canvas"}],
+    "model": "gemini-2.5-flash",
+    "stream": true,
+    "session_id": "client_session_801",
+    "skill_names": ["artifact_editor"]
+  }'
+```
+
+#### Synchronous Request (JSON)
+```bash
+curl -X POST http://localhost:2704/api/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer sk_mgr_YOUR_TENANT_API_KEY" \
+  -d '{
+    "messages": [{"role": "user", "content": "Check server disk space"}],
+    "stream": false,
+    "session_id": "user_session_404",
+    "skill_names": ["weather_fetcher", "math_solver"]
+  }'
+```
+
+---
+
+### 2. Python (OpenAI SDK & requests)
+
+#### Streaming with OpenAI Python SDK
 ```python
 from openai import OpenAI
 
 client = OpenAI(
     base_url="http://localhost:2704/api/v1",
-    api_key="sk_asr_YOUR_TENANT_KEY"
+    api_key="sk_mgr_YOUR_TENANT_API_KEY"
 )
 
-stream = client.chat.completions.create(
+response_stream = client.chat.completions.create(
     model="gemini-2.5-flash",
-    messages=[{"role": "user", "content": "Fetch weather in London"}],
+    messages=[{"role": "user", "content": "Draft an Executive Modernization Plan in Canvas"}],
     stream=True,
     extra_body={
-        "session_id": "user_123_thread_1",    # resumes or starts a conversation thread
-        "app_id": "your-app-group-uuid",       # scopes tools to this App's skills only
-        "skill_names": ["weather_fetcher"],    # optional: limit to specific skills
-        "prochat_model": "genui-mars-0.1",     # optional: enable ProChat generative UI
-        "user_data": {
-            "openweathermap_api_key": "YOUR_SECRET_KEY"  # injected into skill parameters server-side
-        }
+        "session_id": "client_session_801",
+        "skill_names": ["artifact_editor"]
     }
 )
 
-for chunk in stream:
-    print(chunk.choices[0].delta.content or "", end="")
+for chunk in response_stream:
+    if not chunk.choices:
+        continue
+    delta = chunk.choices[0].delta
+
+    # Stream text tokens
+    if delta.content:
+        print(delta.content, end="", flush=True)
+
+    # Extract artifact metadata if emitted
+    artifact = getattr(delta, "artifact", None) or (delta.model_extra or {}).get("artifact")
+    if artifact:
+        print(f"\n[ARTIFACT] Title: {artifact['title']} | Embed URL: {artifact['embed_url']}")
 ```
 
-### From cURL
+#### Synchronous with Python requests
+```python
+import requests
+
+url = "http://localhost:2704/api/v1/chat/completions"
+headers = {
+    "Content-Type": "application/json",
+    "Authorization": "Bearer sk_mgr_YOUR_TENANT_API_KEY"
+}
+payload = {
+    "messages": [{"role": "user", "content": "Draft an Executive Modernization Plan in Canvas"}],
+    "stream": False,
+    "session_id": "client_session_802",
+    "skill_names": ["artifact_editor"]
+}
+
+response = requests.post(url, headers=headers, json=payload).json()
+msg = response["choices"][0]["message"]
+print("Assistant Answer:", msg["content"])
+
+if "artifact" in msg:
+    art = msg["artifact"]
+    print(f"Artifact Title: {art['title']} | Embed URL: {art['embed_url']}")
+```
+
+---
+
+### 3. JavaScript / Node.js
+
+#### Fetch Streaming (SSE Parsing)
+```javascript
+const response = await fetch("http://localhost:2704/api/v1/chat/completions", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    "Authorization": "Bearer sk_mgr_YOUR_TENANT_API_KEY"
+  },
+  body: JSON.stringify({
+    messages: [{ role: "user", content: "Draft an Executive Modernization Plan in Canvas" }],
+    stream: true,
+    session_id: "client_session_801",
+    skill_names: ["artifact_editor"]
+  })
+});
+
+const reader = response.body.getReader();
+const decoder = new TextDecoder("utf-8");
+let buffer = "";
+
+while (true) {
+  const { value, done } = await reader.read();
+  if (done) break;
+
+  buffer += decoder.decode(value, { stream: true });
+  const lines = buffer.split("\n");
+  buffer = lines.pop();
+
+  for (const line of lines) {
+    const clean = line.trim();
+    if (!clean.startsWith("data: ") || clean === "data: [DONE]") continue;
+
+    try {
+      const data = JSON.parse(clean.substring(6));
+      const delta = data.choices?.[0]?.delta;
+      if (!delta) continue;
+
+      if (delta.content) process.stdout.write(delta.content);
+      if (delta.artifact) {
+        console.log("\n[Artifact Created]:", delta.artifact.title, delta.artifact.embed_url);
+      }
+    } catch (e) {}
+  }
+}
+```
+
+---
+
+# 🎨 2. Frontend Integration & Universal Artifacts Guide
+
+Give your users a **Claude Artifacts** and **ChatGPT Canvas** experience inside your own SaaS product or website. When your chatbot writes contracts, code scripts, spreadsheets, or presentations, users can interactively view, co-edit, and export them.
+
+## 📦 What the API Returns for Artifacts
+Whether streaming (`delta.artifact`) or synchronous (`message.artifact`), the engine provides:
+
+```json
+{
+  "artifact_id": "84419384-8e98-4b7f-bc21-8f2abe21f44c",
+  "title": "Application for Leave of Absence",
+  "filename": "leave_application.md",
+  "artifact_type": "document",
+  "current_version": 1,
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "embed_url": "/embed/canvas?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+}
+```
+
+---
+
+## 🖥️ UI Mode: Drop-In Iframe Mounting
+
+Mount the Canvas inside any modal dialog, slide-over drawer, or split-pane container:
+
+```html
+<!-- HTML / React / Vue Iframe Embed -->
+<iframe
+  id="canvas-frame"
+  src="https://your-engine-domain.com/embed/canvas?token=SIGNED_EMBED_TOKEN&theme=dark"
+  style="width: 100%; height: 100%; border: none;"
+  title="Interactive Document Canvas"
+  allow="clipboard-write"
+/>
+```
+
+### Iframe Input Parameters & Controls
+
+| Parameter | Location | Type | Description |
+|---|---|---|---|
+| `token` | Query parameter (`in embed_url`) | String (JWT) | Pre-signed HMAC token authorizing secure access to this specific artifact without revealing master API keys. |
+| `theme` | Query parameter (`&theme=dark` or `&theme=light`) | String | Sets initial Canvas color theme matching your parent site. |
+| `THEME_CHANGE` | `window.postMessage` | `{ type: 'THEME_CHANGE', theme: 'light'\|'dark' }` | Send to the iframe window to update theme in real-time without reloading. |
+| `allow="clipboard-write"` | HTML `<iframe>` attribute | Attribute | Enables users to use one-click code/text copy buttons inside the Canvas. |
+
+#### Real-Time Theme Switching via JavaScript
+```javascript
+function setCanvasTheme(theme) {
+  const iframe = document.getElementById("canvas-frame");
+  if (iframe && iframe.contentWindow) {
+    iframe.contentWindow.postMessage({ type: "THEME_CHANGE", theme }, "*");
+  }
+}
+```
+
+---
+
+## 🛠️ Headless Mode: REST & SSE Endpoints (cURL Reference)
+
+If you prefer building a completely custom editor or rich-text viewer without iframes, use the dedicated headless endpoints:
 
 ```bash
-curl -X POST http://localhost:2704/api/v1/chat/completions \
+# 1. Fetch Document Metadata, Title & Block Outline
+curl -X GET "https://api.yourdomain.com/api/v1/artifacts/ART_ID?token=SIGNED_EMBED_TOKEN"
+
+# 2. Fetch Specific Section Block Content
+curl -X GET "https://api.yourdomain.com/api/v1/artifacts/ART_ID/blocks/sec_1?token=SIGNED_EMBED_TOKEN"
+
+# 3. Save Inline User Edits (Creates Diff Commit & Updates Canvas)
+curl -X PUT "https://api.yourdomain.com/api/v1/artifacts/ART_ID/blocks/sec_1?token=SIGNED_EMBED_TOKEN" \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer sk_asr_YOUR_TENANT_KEY" \
   -d '{
-    "messages": [{"role": "user", "content": "Fetch weather in Paris"}],
-    "model": "gemini-2.5-flash",
-    "stream": false,
-    "session_id": "user_123_thread_1",
-    "app_id": "your-app-group-uuid",
-    "skill_names": ["weather_fetcher"],
-    "user_data": {
-      "openweathermap_api_key": "YOUR_SECRET_KEY"
-    }
+    "content": "## Updated Section Heading\n\nModified text written by user.",
+    "summary": "User edited section 1 via custom UI"
   }'
+
+# 4. Subscribe to Real-Time SSE Stream (Live Typing & Surgical Patches)
+curl -N -X GET "https://api.yourdomain.com/api/v1/artifacts/ART_ID/stream?token=SIGNED_EMBED_TOKEN"
+
+# 5. Direct Binary File Exports & Instant Download Links (docx, pdf, xlsx, pptx)
+curl -O "https://api.yourdomain.com/api/v1/artifacts/ART_ID/export?format=docx&token=SIGNED_EMBED_TOKEN"
+curl -O "https://api.yourdomain.com/api/v1/artifacts/ART_ID/export?format=pdf&token=SIGNED_EMBED_TOKEN"
+curl -O "https://api.yourdomain.com/api/v1/artifacts/ART_ID/export?format=xlsx&token=SIGNED_EMBED_TOKEN"
+curl -O "https://api.yourdomain.com/api/v1/artifacts/ART_ID/export?format=pptx&token=SIGNED_EMBED_TOKEN"
 ```
+
+---
+
+## 🔒 Production Security Architecture
+
+Never expose your master tenant API key (`sk_mgr_...`) to end users in browser code:
+
+```
+[ Customer Browser ] ─── (User Message) ───► [ Your Backend Server ]
+                                                     │
+                                                     ▼ (Includes Bearer sk_mgr_...)
+                                           [ AI Skill Engine Gateway ]
+                                                     │
+                                                     ▼ (Mints Ephemeral HMAC Token)
+[ Customer Browser ] ◄─── (embed_url + token) ─── [ Your Backend Server ]
+        │
+        ▼ (Mounts <iframe src="https://engine.../embed/canvas?token=..."/>)
+[ Interactive Document Canvas ]
+```
+
+1. **Proxy in Backend**: Your server calls `/api/v1/chat/completions` using the secret master tenant key.
+2. **Ephemeral HMAC Token**: The engine generates a time-bounded (30 min) token scoped exclusively to the requested artifact.
+3. **Safe Forwarding**: Your server returns only `reply` and `artifact` (`embed_url` and `token`) to the browser.
+4. **Background Refresh**: The Canvas automatically calls `/refresh-token` every 22 minutes to maintain seamless sessions.
 
 ---
 
@@ -554,7 +720,8 @@ Once registered, the MCP server's tools are automatically discovered and made av
 | Sandbox Audit Logs | `/logs` | Dashboard execution audit trail |
 | API Execution Logs | `/api-logs` | External API client execution logs |
 | API Tester | `/api-tester` | Built-in HTTP client to test the chat endpoint |
-| API Documentation | `/docs` | Interactive API reference |
+| API Documentation | `/api-docs` | Interactive Unified API & Artifact embedding documentation |
+| OpenAPI Swagger UI | `/swagger` | Interactive FastAPI Swagger documentation & schema explorer |
 
 ---
 

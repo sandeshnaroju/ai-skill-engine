@@ -4,7 +4,7 @@ WORKDIR /app/frontend
 
 # Leverage Docker cache for node_modules
 COPY frontend/package*.json ./
-RUN npm ci --silent
+RUN npm ci --no-audit
 
 # Build production assets
 COPY frontend/ ./

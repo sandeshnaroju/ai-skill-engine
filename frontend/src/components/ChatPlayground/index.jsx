@@ -2,9 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Send, Bot, User, Terminal, Sparkles, Trash2, Check, Copy, Activity, Code2, Globe, Plus, MessageSquare, Brain, ChevronDown, ChevronUp, Cpu, ShieldCheck, Box, Key, Download, X, History, FileText, Sparkle, Sliders, Paperclip, Maximize2, Minimize2, Loader } from 'lucide-react';
 import AsyncSearchableDropdown from '../AsyncSearchableDropdown';
-import { chatApi, tenantsApi, appsApi, userDataApi, skillsApi, apiClient } from '../../api';
+import { chatApi, tenantsApi, appsApi, userDataApi, skillsApi, apiClient, artifactsApi } from '../../api';
 import ChatInput from './ChatInput';
 import MessageList from './MessageList';
+import Canvas from '../Canvas';
 import ProChat from 'prochat';
 
 export default function ChatPlayground() {
@@ -25,6 +26,23 @@ export default function ChatPlayground() {
   };
 
   const [messages, setMessages] = useState([]);
+  const [canvasArtifact, setCanvasArtifact] = useState(null);
+  const [isCanvasOpen, setIsCanvasOpen] = useState(false);
+
+  // Auto-detect if current session already has an artifact and make it available
+  useEffect(() => {
+    if (!activeSessionId) return;
+    artifactsApi.getSessionArtifacts(activeSessionId).then((res) => {
+      const list = res?.data !== undefined ? res.data : res;
+      if (Array.isArray(list) && list.length > 0) {
+        setCanvasArtifact({
+          id: list[0].id,
+          token: null, // will load or fetch token
+          title: list[0].title || list[0].filename
+        });
+      }
+    }).catch(() => { });
+  }, [activeSessionId]);
 
   useEffect(() => {
     const urlSessionId = searchParams.get('session_id');
@@ -247,6 +265,11 @@ export default function ChatPlayground() {
       icon: Globe,
       text: 'Fetch a design philosophy quote using the sample_api skill.',
     },
+    {
+      label: 'Create Canvas Document',
+      icon: FileText,
+      text: 'Create a comprehensive project proposal document in Canvas with an Executive Summary, Architecture Overview, and Financial Projections.',
+    },
   ];
 
   const fetchSessionsList = async (activeKey) => {
@@ -284,6 +307,7 @@ export default function ChatPlayground() {
   const processLoadedMessages = (rawMessages) => {
     const processed = [];
     let pendingReasoning = [];
+    let pendingArtifacts = [];
 
     rawMessages.forEach((m) => {
       if (m.role === 'user') {
@@ -296,6 +320,30 @@ export default function ChatPlayground() {
         const contentStr = m.content || '';
         pendingReasoning.push(`💭 Tool execution completed.`);
         pendingReasoning.push(`⚡ Executed tool\nOutput: ${contentStr}`);
+
+        // Extract artifact information from tool response if available
+        if (m.artifact) {
+          pendingArtifacts.push(m.artifact);
+        } else if (m.artifact_data) {
+          try {
+            const parsed = typeof m.artifact_data === 'string' ? JSON.parse(m.artifact_data) : m.artifact_data;
+            if (Array.isArray(parsed)) {
+              pendingArtifacts.push(...parsed);
+            } else if (parsed) {
+              pendingArtifacts.push(parsed);
+            }
+          } catch (e) { }
+        } else if (contentStr.includes('/embed/canvas?token=')) {
+          const match = contentStr.match(/token=([a-zA-Z0-9_\-\.]+)/);
+          if (match) {
+            pendingArtifacts.push({
+              title: 'Interactive Document',
+              artifact_type: 'document',
+              token: match[1],
+              embed_url: `/embed/canvas?token=${match[1]}`
+            });
+          }
+        }
       } else if (m.role === 'assistant') {
         let toolCalls = [];
         if (m.tool_calls) {
@@ -333,12 +381,35 @@ export default function ChatPlayground() {
           pendingReasoning.push(`⚡ Rendered ProChat Generative UI component.`);
         }
 
+        let messageArtifacts = [];
+        if (Array.isArray(m.artifacts) && m.artifacts.length > 0) {
+          messageArtifacts = [...m.artifacts];
+        } else if (m.artifact_data) {
+          try {
+            const parsed = typeof m.artifact_data === 'string' ? JSON.parse(m.artifact_data) : m.artifact_data;
+            if (Array.isArray(parsed)) messageArtifacts.push(...parsed);
+            else if (parsed) messageArtifacts.push(parsed);
+          } catch (e) { }
+        } else if (m.artifact) {
+          messageArtifacts.push(m.artifact);
+        }
+
+        if (messageArtifacts.length === 0 && pendingArtifacts.length > 0) {
+          messageArtifacts = [...pendingArtifacts];
+        }
+
+        messageArtifacts.forEach(a => {
+          if (!a.id && a.artifact_id) a.id = a.artifact_id;
+        });
+        pendingArtifacts = [];
+
         if (m.content && m.content.trim()) {
           processed.push({
             role: 'assistant',
             content: m.content,
             json: m.json,
             code: m.code,
+            artifacts: messageArtifacts,
             timestamp: m.timestamp || new Date().toLocaleTimeString(),
             reasoning: pendingReasoning.length > 0 ? pendingReasoning.join('\n\n') : null
           });
@@ -374,6 +445,13 @@ export default function ChatPlayground() {
       if (data && data.length > 0) {
         const loadedMsgs = processLoadedMessages(data);
         setMessages(loadedMsgs);
+        // Find latest artifact from loaded messages to restore top bar button!
+        const lastWithArt = [...loadedMsgs].reverse().find(msg => msg.artifact);
+        if (lastWithArt && lastWithArt.artifact) {
+          setCanvasArtifact(lastWithArt.artifact);
+        } else {
+          setCanvasArtifact(null);
+        }
       } else {
         setMessages([
           {
@@ -383,6 +461,7 @@ export default function ChatPlayground() {
             reasoning: 'Gateway initialized with active skills & MCP drivers.',
           },
         ]);
+        setCanvasArtifact(null);
       }
     } catch (e) {
       console.error('Failed to fetch session messages:', e);
@@ -518,6 +597,12 @@ export default function ChatPlayground() {
     if (previewSessionId) {
       setActiveSessionId(previewSessionId);
       setMessages(previewMessages);
+      const lastWithArt = [...previewMessages].reverse().find(msg => msg.artifact);
+      if (lastWithArt && lastWithArt.artifact) {
+        setCanvasArtifact(lastWithArt.artifact);
+      } else {
+        setCanvasArtifact(null);
+      }
       setShowHistoryModal(false);
     }
   };
@@ -525,6 +610,8 @@ export default function ChatPlayground() {
   const handleNewSession = () => {
     const newId = `session_${Math.floor(1000 + Math.random() * 9000)}`;
     setActiveSessionId(newId);
+    setCanvasArtifact(null);
+    setIsCanvasOpen(false);
     setMessages([
       {
         role: 'assistant',
@@ -619,11 +706,12 @@ export default function ChatPlayground() {
     abortControllerRef.current = controller;
     setLiveThought('Connecting to Skill Gateway...');
 
-    let reasoningTraces = [];
     let finalContent = '';
-    let turnGeneratedFiles = [];
     let finalJson = null;
-    let finalCode = '';
+    let finalCode = null;
+    let reasoningTraces = [];
+    let turnGeneratedFiles = [];
+    let turnArtifacts = [];
 
     try {
       const headers = {
@@ -673,6 +761,7 @@ export default function ChatPlayground() {
           isStreaming: true,
           json: '',
           code: '',
+          artifacts: [],
           prochat_model: prochatModel
         },
       ]);
@@ -687,6 +776,10 @@ export default function ChatPlayground() {
             lastMsg.generatedFiles = [...turnGeneratedFiles];
             lastMsg.json = finalJson;
             lastMsg.code = finalCode;
+            lastMsg.artifacts = [...turnArtifacts];
+            if (turnArtifacts.length > 0) {
+              lastMsg.artifact = turnArtifacts[turnArtifacts.length - 1];
+            }
           }
           return next;
         });
@@ -704,68 +797,152 @@ export default function ChatPlayground() {
         for (const evtBlock of events) {
           if (!evtBlock.trim()) continue;
           const lines = evtBlock.split('\n');
-          let dataJson = null;
 
           for (const line of lines) {
             if (line.startsWith('data: ')) {
               const rawData = line.replace('data: ', '').trim();
               if (rawData === '[DONE]') continue;
               try {
-                dataJson = JSON.parse(rawData);
-              } catch (e) { }
-            }
-          }
+                const dataJson = JSON.parse(rawData);
 
-          if (dataJson && dataJson.choices && dataJson.choices[0] && dataJson.choices[0].delta) {
-            const delta = dataJson.choices[0].delta;
-            if (delta.reasoning) {
-              setLiveThought(delta.reasoning);
-              reasoningTraces.push(`💭 ${delta.reasoning}`);
-              stateChanged = true;
-            }
-            if (delta.tool_call) {
-              const rawName = delta.tool_call.name || 'tool';
-              const cleanName = rawName.split('__').pop().replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-              setLiveThought(`Invoking ${cleanName}...`);
-              reasoningTraces.push(`🛠️ Invoking Tool: ${cleanName}\nArgs: ${JSON.stringify(delta.tool_call.arguments)}`);
-              stateChanged = true;
-            }
-            if (delta.tool_result) {
-              const rawName = delta.tool_result.tool_name || 'tool';
-              const cleanName = rawName.split('__').pop().replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-              setLiveThought(`${cleanName} finished in ${delta.tool_result.execution_time_ms}ms.`);
-              reasoningTraces.push(`⚡ Executed in ${delta.tool_result.sandbox_type} sandbox (${delta.tool_result.execution_time_ms}ms, Exit: ${delta.tool_result.exit_code})\nOutput: ${(delta.tool_result.stdout || delta.tool_result.stderr || '').trim()}`);
-              setExecutedTools((prev) => [...prev, delta.tool_result]);
-              if (delta.tool_result.generated_files && delta.tool_result.generated_files.length > 0) {
-                turnGeneratedFiles.push(...delta.tool_result.generated_files);
-              }
-              stateChanged = true;
-            }
-            if (delta.content) {
-              finalContent += delta.content;
-              stateChanged = true;
-            }
-            if (delta.json) {
-              if (typeof delta.json === 'string') {
-                try {
-                  finalJson = JSON.parse(delta.json);
-                } catch (e) {
-                  // Fall back only if parsing fails
-                  finalJson = delta.json;
+                if (dataJson.type === 'done' && Array.isArray(dataJson.artifacts) && dataJson.artifacts.length > 0) {
+                  dataJson.artifacts.forEach(rawA => {
+                    const artInfo = {
+                      id: rawA.artifact_id || rawA.id,
+                      token: rawA.token,
+                      title: rawA.title || 'Document',
+                      filename: rawA.filename || 'document.md',
+                      artifact_type: rawA.artifact_type || 'document',
+                      current_version: rawA.current_version || 1,
+                      embed_url: rawA.embed_url || (rawA.token ? `/embed/canvas?token=${rawA.token}` : '')
+                    };
+                    if (!turnArtifacts.some(existing => (artInfo.id && existing.id === artInfo.id) || (existing.token && existing.token === artInfo.token))) {
+                      turnArtifacts.push(artInfo);
+                    }
+                  });
+                  if (turnArtifacts.length > 0) {
+                    setCanvasArtifact(turnArtifacts[turnArtifacts.length - 1]);
+                    stateChanged = true;
+                  }
                 }
-              } else {
-                finalJson = delta.json;
-              }
-              stateChanged = true;
-            }
-            if (delta.code) {
-              finalCode = delta.code;
-              stateChanged = true;
+
+                if (dataJson && dataJson.choices && dataJson.choices[0] && dataJson.choices[0].delta) {
+                  const delta = dataJson.choices[0].delta;
+                  if (delta.reasoning) {
+                    setLiveThought(delta.reasoning);
+                    reasoningTraces.push(`💭 ${delta.reasoning}`);
+                    stateChanged = true;
+                  }
+                  if (delta.artifact) {
+                    const rawA = delta.artifact;
+                    const artInfo = {
+                      id: rawA.artifact_id || rawA.id,
+                      token: rawA.token,
+                      title: rawA.title || 'Document',
+                      filename: rawA.filename || 'document.md',
+                      artifact_type: rawA.artifact_type || 'document',
+                      current_version: rawA.current_version || 1,
+                      embed_url: rawA.embed_url || (rawA.token ? `/embed/canvas?token=${rawA.token}` : '')
+                    };
+                    if (!turnArtifacts.some(existing => (artInfo.id && existing.id === artInfo.id) || (existing.token && existing.token === artInfo.token))) {
+                      turnArtifacts.push(artInfo);
+                    }
+                    setCanvasArtifact(artInfo);
+                    stateChanged = true;
+                  }
+                  if (delta.tool_call) {
+                    const rawName = delta.tool_call.name || 'tool';
+                    const cleanName = rawName.split('__').pop().replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                    setLiveThought(`Invoking ${cleanName}...`);
+                    reasoningTraces.push(`🛠️ Invoking Tool: ${cleanName}\nArgs: ${JSON.stringify(delta.tool_call.arguments)}`);
+                    stateChanged = true;
+                  }
+                  if (delta.tool_result) {
+                    const rawName = delta.tool_result.tool_name || 'tool';
+                    const cleanName = rawName.split('__').pop().replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                    setLiveThought(`${cleanName} finished in ${delta.tool_result.execution_time_ms}ms.`);
+                    reasoningTraces.push(`⚡ Executed in ${delta.tool_result.sandbox_type} sandbox (${delta.tool_result.execution_time_ms}ms, Exit: ${delta.tool_result.exit_code})\nOutput: ${(delta.tool_result.stdout || delta.tool_result.stderr || '').trim()}`);
+                    setExecutedTools((prev) => [...prev, delta.tool_result]);
+                    if (delta.tool_result.generated_files && delta.tool_result.generated_files.length > 0) {
+                      turnGeneratedFiles.push(...delta.tool_result.generated_files);
+                    }
+                    if (delta.tool_result.artifact_data) {
+                      const rawA = delta.tool_result.artifact_data;
+                      const artInfo = {
+                        id: rawA.artifact_id || rawA.id,
+                        token: rawA.token,
+                        title: rawA.title || 'Document',
+                        filename: rawA.filename || 'document.md',
+                        artifact_type: rawA.artifact_type || 'document',
+                        current_version: rawA.current_version || 1,
+                        embed_url: rawA.embed_url || (rawA.token ? `/embed/canvas?token=${rawA.token}` : '')
+                      };
+                      if (!turnArtifacts.some(existing => (artInfo.id && existing.id === artInfo.id) || (existing.token && existing.token === artInfo.token))) {
+                        turnArtifacts.push(artInfo);
+                      }
+                      setCanvasArtifact(artInfo);
+                    }
+                    stateChanged = true;
+                  }
+                  if (delta.content) {
+                    finalContent += delta.content;
+                    stateChanged = true;
+                  }
+                  if (delta.json) {
+                    if (typeof delta.json === 'string') {
+                      try {
+                        finalJson = JSON.parse(delta.json);
+                      } catch (e) {
+                        finalJson = delta.json;
+                      }
+                    } else {
+                      finalJson = delta.json;
+                    }
+                    stateChanged = true;
+                  }
+                  if (delta.code) {
+                    finalCode = delta.code;
+                    stateChanged = true;
+                  }
+                }
+              } catch (e) { }
             }
           }
         }
         if (stateChanged) {
           updateMessageState();
+        }
+      }
+
+      // Regex fallback check for embed links in final content
+      if (finalContent && finalContent.includes('/embed/canvas?token=')) {
+        const globalRegex = /\/embed\/canvas\?token=([^\s)"']+)/g;
+        let match;
+        while ((match = globalRegex.exec(finalContent)) !== null) {
+          const tokenStr = match[1];
+          let effId = null;
+          if (tokenStr.includes('.')) {
+            try {
+              const rawB64 = tokenStr.split('.')[0].replace(/-/g, '+').replace(/_/g, '/');
+              const padded = rawB64.padEnd(rawB64.length + ((4 - (rawB64.length % 4)) % 4), '=');
+              const payload = JSON.parse(atob(padded));
+              if (payload?.art) effId = payload.art;
+            } catch (e) { }
+          }
+          const artInfo = {
+            id: effId,
+            token: tokenStr,
+            title: 'Interactive Document',
+            artifact_type: 'document',
+            current_version: 1,
+            embed_url: `/embed/canvas?token=${tokenStr}`
+          };
+          if (!turnArtifacts.some(existing => (effId && existing.id === effId) || (existing.token && existing.token === tokenStr))) {
+            turnArtifacts.push(artInfo);
+          }
+        }
+        if (turnArtifacts.length > 0) {
+          setCanvasArtifact(turnArtifacts[turnArtifacts.length - 1]);
         }
       }
 
@@ -784,6 +961,10 @@ export default function ChatPlayground() {
           lastMsg.generatedFiles = turnGeneratedFiles;
           lastMsg.json = finalJson;
           lastMsg.code = finalCode;
+          lastMsg.artifacts = [...turnArtifacts];
+          if (turnArtifacts.length > 0) {
+            lastMsg.artifact = turnArtifacts[turnArtifacts.length - 1];
+          }
           delete lastMsg.isStreaming;
         }
         return next;
@@ -803,6 +984,10 @@ export default function ChatPlayground() {
             lastMsg.generatedFiles = turnGeneratedFiles;
             lastMsg.json = finalJson;
             lastMsg.code = finalCode;
+            lastMsg.artifacts = [...turnArtifacts];
+            if (turnArtifacts.length > 0) {
+              lastMsg.artifact = turnArtifacts[turnArtifacts.length - 1];
+            }
             delete lastMsg.isStreaming;
           }
           return next;
@@ -873,6 +1058,43 @@ export default function ChatPlayground() {
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {/* Canvas Toggle / Re-open Button */}
+            {canvasArtifact && (
+              <button
+                className="btn-outline"
+                onClick={() => setIsCanvasOpen(!isCanvasOpen)}
+                title={isCanvasOpen ? 'Collapse Document Canvas' : 'Re-open Document Canvas'}
+                style={{
+                  padding: '6px 14px',
+                  fontSize: '0.82rem',
+                  borderColor: isCanvasOpen ? '#6366f1' : 'var(--border-subtle)',
+                  background: isCanvasOpen ? 'rgba(99, 102, 241, 0.15)' : 'rgba(255, 255, 255, 0.05)',
+                  color: isCanvasOpen ? '#a5b4fc' : 'var(--text-main)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '7px',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                <FileText size={14} color="#818cf8" />
+                <span>{isCanvasOpen ? 'Close Canvas' : `Open Document (${canvasArtifact.title || 'Canvas'})`}</span>
+                {!isCanvasOpen && (
+                  <span style={{
+                    fontSize: '10px',
+                    background: 'rgba(99, 102, 241, 0.2)',
+                    color: '#818cf8',
+                    padding: '1px 6px',
+                    borderRadius: '4px',
+                    fontWeight: 600
+                  }}>
+                    Ready
+                  </span>
+                )}
+              </button>
+            )}
+
             {/* New Chat Primary Button */}
             <button
               className="btn-gradient"
@@ -910,8 +1132,6 @@ export default function ChatPlayground() {
           {/* LEFT SECTION: Message Area (Takes up remaining flex space) */}
           <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, height: '100%' }}>
 
-
-
             {/* Message Stream Viewport */}
             <MessageList
               messages={messages}
@@ -919,6 +1139,24 @@ export default function ChatPlayground() {
               setExpandedReasoning={setExpandedReasoning}
               copiedIdx={copiedIdx}
               copyText={copyText}
+              onOpenCanvas={(art) => {
+                if (!art) return;
+                let resolvedArt = { ...art };
+                if (!resolvedArt.id && resolvedArt.token && resolvedArt.token.includes('.')) {
+                  try {
+                    const rawB64 = resolvedArt.token.split('.')[0].replace(/-/g, '+').replace(/_/g, '/');
+                    const padded = rawB64.padEnd(rawB64.length + ((4 - (rawB64.length % 4)) % 4), '=');
+                    const payload = JSON.parse(atob(padded));
+                    if (payload?.art) resolvedArt.id = payload.art;
+                  } catch (e) {
+                    console.warn('Could not extract artifact id from token in onOpenCanvas:', e);
+                  }
+                }
+                setCanvasArtifact(resolvedArt);
+                setIsCanvasOpen(true);
+              }}
+              activeCanvasArtifact={canvasArtifact}
+              isCanvasOpen={isCanvasOpen}
             />
 
             {/* Input Bar */}
@@ -935,6 +1173,26 @@ export default function ChatPlayground() {
               handleStop={handleStop}
             />
           </div>
+
+          {/* CENTER/RIGHT SECTION: Interactive Document & Artifact Canvas */}
+          {canvasArtifact && isCanvasOpen && (
+            <div style={{
+              width: isSettingsOpen ? '48%' : '52%',
+              minWidth: '420px',
+              borderLeft: '1px solid var(--border-subtle)',
+              display: 'flex',
+              flexDirection: 'column',
+              height: '100%',
+              position: 'relative'
+            }}>
+              <Canvas
+                key={`${canvasArtifact.id}-${canvasArtifact.token || 'notoken'}`}
+                artifactId={canvasArtifact.id}
+                token={canvasArtifact.token}
+                onClose={() => setIsCanvasOpen(false)}
+              />
+            </div>
+          )}
 
           {/* RIGHT SECTION: Collapsible Settings Panel */}
           {isSettingsOpen && (

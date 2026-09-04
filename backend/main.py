@@ -22,11 +22,14 @@ from routers.chat import router as chat_router
 from routers.mcp import router as mcp_router
 from routers.user_data import router as user_data_router
 from routers.generator import router as generator_router
+from artifacts import artifacts_router
 
 app = FastAPI(
     title="Skill Manager Enterprise Server",
     description="Enterprise server for running custom skills and tools for chatbots without OpenAI Agents SDK",
-    version="1.0.0"
+    version="1.0.0",
+    docs_url="/swagger",
+    redoc_url="/redoc"
 )
 
 # Enable CORS for frontend development
@@ -49,6 +52,7 @@ app.include_router(chat_router, prefix="/api/v1", tags=["chat"])
 app.include_router(mcp_router, prefix="/api/v1/mcp_servers", tags=["mcp"])
 app.include_router(user_data_router, prefix="/api/v1/user_data_templates", tags=["user_data"])
 app.include_router(generator_router, prefix="/api/v1/generator", tags=["generator"])
+app.include_router(artifacts_router, prefix="/api/v1/artifacts", tags=["artifacts"])
 
 # Mount static files & SPA Fallback for clean HTML5 paths (/playground, /apps, /skills, etc.)
 frontend_dist = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend", "dist")

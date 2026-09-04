@@ -19,6 +19,14 @@ from engine.tools_builtin import (
     run_send_email_tool,
     map_local_generated_files_to_tenant,
 )
+from artifacts.tools import (
+    run_open_or_update_artifact,
+    run_artifact_search,
+    run_artifact_semantic_search,
+    run_edit_artifact_section,
+    run_patch_artifact,
+    run_rollback_artifact_block,
+)
 
 
 class SimpleMcpServerObj:
@@ -121,6 +129,18 @@ def execute_tool(fn_name: str, args: dict, tool_def: dict, user_data: dict,
             exec_res = run_upload_sandbox_file(db, session_id, exec_args, tenant_id=tenant.id)
         elif fn_name == "email__send_email":
             exec_res = run_send_email_tool(db, exec_args, tenant)
+        elif fn_name == "artifact_editor__open_or_update_artifact":
+            exec_res = run_open_or_update_artifact(db, exec_args, tenant, session_id)
+        elif fn_name == "artifact_editor__artifact_search":
+            exec_res = run_artifact_search(db, exec_args)
+        elif fn_name == "artifact_editor__artifact_semantic_search":
+            exec_res = run_artifact_semantic_search(db, exec_args)
+        elif fn_name == "artifact_editor__edit_artifact_section":
+            exec_res = run_edit_artifact_section(db, exec_args, author="assistant", session_id=session_id)
+        elif fn_name == "artifact_editor__patch_artifact":
+            exec_res = run_patch_artifact(db, exec_args, author="assistant", session_id=session_id)
+        elif fn_name == "artifact_editor__rollback_artifact_block":
+            exec_res = run_rollback_artifact_block(db, exec_args, author="assistant", session_id=session_id)
         else:
             exec_res = sandbox_manager.execute(command=exec_command, code=code, session_id=session_id, tenant_id=tenant.id)
             exec_res = map_local_generated_files_to_tenant(exec_res, tenant_name=tenant_name)

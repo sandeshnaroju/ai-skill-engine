@@ -17,6 +17,7 @@ import StorageSettings from './components/StorageSettings';
 import SandboxSettings from './components/SandboxSettings';
 import UserDataTemplates from './components/UserDataTemplates';
 import EmailSettings from './components/EmailSettings';
+import Canvas from './components/Canvas';
 import { authApi, skillsApi, tenantsApi, logsApi, apiClient } from './api';
 import { ToastProvider, useToast } from './context/ToastContext';
 
@@ -49,7 +50,7 @@ function AppContent() {
     { id: 'logs', label: 'Sandbox Audit Logs', icon: Database, order: 120 },
     { id: 'apilogs', label: 'API Execution Logs', icon: Activity, order: 130 },
     { id: 'requestlogs', label: 'Request Logs', icon: FileText, order: 140 },
-    { id: 'docs', label: 'API Documentation', icon: BookOpen, order: 150 },
+    { id: 'api-docs', label: 'API Documentation', icon: BookOpen, order: 150 },
   ];
 
   const topNavItems = [
@@ -58,7 +59,7 @@ function AppContent() {
 
   const bottomNavItems = [
     { id: 'tester', label: 'API Tester', icon: Terminal, order: 10 },
-    { id: 'docs', label: 'API Documentation', icon: BookOpen, order: 20 },
+    { id: 'api-docs', label: 'API Documentation', icon: BookOpen, order: 20 },
   ];
 
   const navGroups = [
@@ -180,7 +181,34 @@ function AppContent() {
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
     localStorage.setItem('app_theme', theme);
+    window.dispatchEvent(new CustomEvent('app-theme-change', { detail: { theme } }));
+    // Broadcast theme to all embedded iframes
+    try {
+      document.querySelectorAll('iframe').forEach((frame) => {
+        frame.contentWindow?.postMessage({ type: 'THEME_CHANGE', theme }, '*');
+      });
+    } catch {}
   }, [theme]);
+
+  // Synchronize when theme changes from within an iframe or another tab
+  useEffect(() => {
+    const handleMessage = (e) => {
+      if (e.data?.type === 'THEME_CHANGE' && (e.data.theme === 'dark' || e.data.theme === 'light')) {
+        setTheme(e.data.theme);
+      }
+    };
+    const handleStorage = (e) => {
+      if (e.key === 'app_theme' && (e.newValue === 'dark' || e.newValue === 'light')) {
+        setTheme(e.newValue);
+      }
+    };
+    window.addEventListener('message', handleMessage);
+    window.addEventListener('storage', handleStorage);
+    return () => {
+      window.removeEventListener('message', handleMessage);
+      window.removeEventListener('storage', handleStorage);
+    };
+  }, []);
 
   useEffect(() => {
     const handleResize = () => {
@@ -243,6 +271,11 @@ function AppContent() {
     ? { id: 'profile', label: 'User Profile', icon: UserIcon }
     : (navItems.find((n) => n.id === activeTab) || navItems[0]);
 
+
+  // If iframe embed canvas view, render directly without dashboard shell
+  if (location.pathname.startsWith('/embed/canvas')) {
+    return <Canvas isEmbed={true} initialTheme={theme} />;
+  }
 
   // Render database creation loader screen if DB is not ready (includes encryption key error state)
   if (!dbStatus.ready) {
@@ -805,8 +838,9 @@ function AppContent() {
         </header>
 
         {/* Main Content Component */}
-        <main style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+        <main style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
           <Routes>
+            <Route path="/embed/canvas" element={<Canvas isEmbed={true} />} />
             <Route path="/playground" element={<ChatPlayground />} />
             <Route path="/apps" element={<AppManager />} />
             <Route path="/skills" element={<SkillCatalog />} />
@@ -835,7 +869,8 @@ function AppContent() {
               />
             } />
             <Route path="/requestlogs" element={<RequestLogs />} />
-            <Route path="/docs" element={<ApiDocs />} />
+            <Route path="/api-docs" element={<ApiDocs />} />
+            <Route path="/docs" element={<Navigate to="/api-docs" replace />} />
             <Route path="/tester" element={<ApiTester />} />
             <Route path="/profile" element={<Profile />} />
             <Route path="/" element={<Navigate to="/playground" replace />} />

@@ -362,6 +362,4 @@ def run_upload_sandbox_file(db, session_id: str, args: dict, tenant_id: str = No
                 return {"stdout": f"Successfully uploaded {filename} to Azure ACA Sandbox workspace.", "stderr": "", "exit_code": 0, "sandbox_type": "azure_aca"}
             except Exception as e:
                 return {"stdout": "", "stderr": f"Failed to upload file to sandbox: {str(e)}", "exit_code": 1, "sandbox_type": "azure_aca"}
-                
     return {"stdout": f"Uploaded {filename} to local sandbox workspace.", "stderr": "", "exit_code": 0, "sandbox_type": "process"}
-

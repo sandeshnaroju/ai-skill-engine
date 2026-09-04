@@ -25,6 +25,7 @@ from engine.session import (
 )
 
 from models import Tenant, ExecutionLog, ChatMessage
+from database import SessionLocal
 from llm_client import get_llm_client, get_model_name
 from skill_registry import skill_registry
 
@@ -68,6 +69,22 @@ def _build_messages(db, persist, session_obj, user_message, allowed_skills, user
                     except Exception:
                         pass
                 msgs.append({"role": msg.role, "content": content_val})
+
+        # Inject active canvas artifacts context into system prompt
+        if session_obj and hasattr(session_obj, 'id'):
+            from models import SessionArtifact
+            artifacts = db.query(SessionArtifact).filter(SessionArtifact.session_id == session_obj.id).all()
+            if artifacts:
+                artifact_context = "\n\n[ACTIVE CANVAS ARTIFACTS IN THIS CONVERSATION]\n"
+                for art in artifacts:
+                    outline_items = ", ".join([f"{b.block_key} ('{b.title}')" for b in art.blocks])
+                    artifact_context += f"- Artifact ID: {art.id} | Title: '{art.title}' | File: '{art.filename}' | Version: {art.current_version}\n  Blocks: {outline_items}\n"
+                artifact_context += (
+                    "To modify existing documents or code, use `artifact_editor__edit_artifact_section` or `artifact_editor__patch_artifact` "
+                    "with the exact `artifact_id` and `block_key`. Use `artifact_editor__artifact_search` or `artifact_editor__artifact_semantic_search` "
+                    "if you need to find specific sections or concepts. Never regenerate the entire document if only a section needs editing."
+                )
+                msgs[0]["content"] += artifact_context
     else:
         if client_messages:
             for m in client_messages:
@@ -96,7 +113,13 @@ def _resolve_model(db, tenant, model_name):
 def _log_and_append_tool_results(db, tenant, session_id, model_name, request_source, request_id,
                                  results, messages, executed_logs, persist, session_obj):
     """Persist execution logs and append tool result messages."""
+    arts_map = {}
     for fn_name, args, tc_id, skill_name, command, exec_res, tool_result in results:
+        art_d = exec_res.get("artifact_data")
+        if art_d and isinstance(art_d, dict):
+            art_id = art_d.get("id") or art_d.get("artifact_id") or f"art_{len(arts_map)}"
+            arts_map[art_id] = art_d
+
         log_entry = ExecutionLog(
             tenant_id=tenant.id,
             session_id=session_id,
@@ -125,13 +148,15 @@ def _log_and_append_tool_results(db, tenant, session_id, model_name, request_sou
             "stderr": log_entry.stderr,
             "exit_code": log_entry.exit_code,
             "execution_time_ms": log_entry.execution_time_ms,
-            "generated_files": exec_res.get("generated_files", [])
+            "generated_files": exec_res.get("generated_files", []),
+            "artifact_data": exec_res.get("artifact_data")
         })
 
         safe_tool_result = truncate_tool_output(tool_result)
         messages.append({"role": "tool", "tool_call_id": tc_id, "content": safe_tool_result})
         if persist and session_obj:
             save_message(db, session_obj, "tool", content=safe_tool_result, tool_call_id=tc_id)
+    return list(arts_map.values())
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -193,9 +218,11 @@ class SkillEngine:
                 return {
                     "response": quota_msg, "json": prochat_json, "code": prochat_code,
                     "session_id": session_id, "request_id": request_id,
-                    "tenant": tenant.name, "executed_tools": []
+                    "tenant": tenant.name, "executed_tools": [],
+                    "artifacts": []
                 }
 
+            accumulated_artifacts = {}
             for turn in range(max_turns):
                 kwargs = {"model": model_name, "messages": messages}
                 if available_tools and turn < max_turns - 1:
@@ -224,7 +251,8 @@ class SkillEngine:
                         return {
                             "response": quota_msg, "json": prochat_json, "code": prochat_code,
                             "session_id": session_id, "request_id": request_id,
-                            "tenant": tenant.name, "executed_tools": executed_logs
+                            "tenant": tenant.name, "executed_tools": executed_logs,
+                            "artifacts": []
                         }
                     sys_content = skill_registry.get_system_instructions(tenant_id=tenant.id)
                     if user_data:
@@ -234,18 +262,12 @@ class SkillEngine:
                     response = llm.chat.completions.create(**kwargs)
 
                 response_msg = response.choices[0].message
+                tool_calls = response_msg.tool_calls
 
-                if response_msg.tool_calls:
-                    # Serialize tool calls
-                    tool_calls_dict = []
-                    for tc in response_msg.tool_calls:
-                        extra = getattr(tc, "extra_content", None)
-                        if extra:
-                            extra = extra.model_dump() if hasattr(extra, "model_dump") else extra.dict() if hasattr(extra, "dict") else extra
-                        item = {"id": tc.id, "type": tc.type, "function": {"name": tc.function.name, "arguments": tc.function.arguments or "{}"}}
-                        if extra:
-                            item["extra_content"] = extra
-                        tool_calls_dict.append(item)
+                if tool_calls:
+                    tool_calls_dict = [tc.model_dump() if hasattr(tc, 'model_dump') else tc.dict() for tc in tool_calls]
+                    for tc in tool_calls_dict:
+                        tc["type"] = "function"
 
                     if persist and session_obj:
                         save_message(db, session_obj, "assistant", content=response_msg.content, tool_calls=tool_calls_dict)
@@ -260,14 +282,27 @@ class SkillEngine:
                         except Exception:
                             args = {}
                         skill_name, tool_def = skill_registry.find_tool(fn, tenant_id=tenant.id)
-                        command, exec_res, tool_result = execute_tool(fn, args, tool_def, user_data, tenant, session_id, db, mcp_servers)
+                        worker_db = SessionLocal()
+                        try:
+                            command, exec_res, tool_result = execute_tool(fn, args, tool_def, user_data, tenant, session_id, worker_db, mcp_servers)
+                            worker_db.commit()
+                        except Exception as e:
+                            worker_db.rollback()
+                            command = ""
+                            exec_res = {"error": str(e), "exit_code": 1, "execution_time_ms": 0}
+                            tool_result = f"Error executing tool {fn}: {e}"
+                        finally:
+                            worker_db.close()
                         return fn, args, tc["id"], skill_name, command, exec_res, tool_result
 
                     with ThreadPoolExecutor() as executor:
                         results = list(executor.map(run_one, tool_calls_dict))
 
-                    _log_and_append_tool_results(db, tenant, session_id, model_name, request_source,
-                                                 request_id, results, messages, executed_logs, persist, session_obj)
+                    turn_arts = _log_and_append_tool_results(db, tenant, session_id, model_name, request_source,
+                                                            request_id, results, messages, executed_logs, persist, session_obj)
+                    for a in turn_arts:
+                        a_id = a.get("id") or a.get("artifact_id") or f"art_{len(accumulated_artifacts)}"
+                        accumulated_artifacts[a_id] = a
 
                     # Post-tool-turn Quota / Context check before next turn
                     is_breached, quota_msg = check_tenant_quotas(db, tenant, session_id, messages, model_name)
@@ -286,15 +321,17 @@ class SkillEngine:
                                 pin_r, pout_r, pau_in_r, pau_out_r = prochat_rates
                                 update_request_usage(chat_req, prochat_usage, pin_r, pout_r, pau_in_r, pau_out_r, is_secondary=True, model_name=prochat_model or "genui-mars-0.1")
 
+                    arts_list = list(accumulated_artifacts.values())
                     if persist and session_obj:
-                        save_message(db, session_obj, "assistant", content=final_answer, json_data=extracted_json, code=extracted_code)
+                        save_message(db, session_obj, "assistant", content=final_answer, json_data=extracted_json, code=extracted_code, artifact_data=arts_list if arts_list else None)
 
                     finalize_request(db, chat_req, final_answer, executed_logs, start_time,
                                      getattr(response, "usage", None), in_r, out_r, au_in_r, au_out_r, model_name=model_name)
                     return {
                         "response": final_answer, "json": extracted_json, "code": extracted_code,
                         "session_id": session_id, "request_id": request_id,
-                        "tenant": tenant.name, "executed_tools": executed_logs
+                        "tenant": tenant.name, "executed_tools": executed_logs,
+                        "artifacts": arts_list
                     }
 
             # Max turns reached
@@ -307,14 +344,16 @@ class SkillEngine:
                     if prochat_usage and prochat_rates:
                         pin_r, pout_r, pau_in_r, pau_out_r = prochat_rates
                         update_request_usage(chat_req, prochat_usage, pin_r, pout_r, pau_in_r, pau_out_r, is_secondary=True, model_name=prochat_model or "genui-mars-0.1")
+            arts_list = list(accumulated_artifacts.values())
             if persist and session_obj:
-                save_message(db, session_obj, "assistant", content=final_res, json_data=extracted_json, code=extracted_code)
+                save_message(db, session_obj, "assistant", content=final_res, json_data=extracted_json, code=extracted_code, artifact_data=arts_list if arts_list else None)
             finalize_request(db, chat_req, final_res, executed_logs, start_time,
                              getattr(response, "usage", None), in_r, out_r, au_in_r, au_out_r, model_name=model_name)
             return {
                 "response": final_res, "json": extracted_json, "code": extracted_code,
                 "session_id": session_id, "request_id": request_id,
-                "tenant": tenant.name, "executed_tools": executed_logs
+                "tenant": tenant.name, "executed_tools": executed_logs,
+                "artifacts": arts_list
             }
 
         except Exception as e:
@@ -365,6 +404,7 @@ class SkillEngine:
             executed_logs = []
             final_answer = ""
             accumulated_usage = {"prompt_tokens": 0, "completion_tokens": 0}  # summed across all turns
+            accumulated_artifacts = {}
 
             if persist:
                 session_obj = get_or_create_session(db, tenant, session_id)
@@ -393,14 +433,14 @@ class SkillEngine:
                 if persist and session_obj:
                     save_message(db, session_obj, "assistant", content=quota_msg)
                 finalize_request(db, chat_req, quota_msg, executed_logs, start_time,
-                                 usage_obj=None, in_rate=in_r, out_rate=out_r, au_in_rate=au_in_r, au_out_rate=au_out_rate if 'au_out_rate' in locals() else au_out_r, model_name=model_name)
+                                 usage_obj=None, in_rate=in_r, out_rate=out_r, au_in_rate=au_in_r, au_out_rate=au_out_r, model_name=model_name)
                 delta_payload = {"content": quota_msg}
                 if prochat_model:
                     delta_payload["json"] = prochat_json
                     delta_payload["code"] = prochat_code
 
                 yield f"data: {json.dumps({'id': f'chatcmpl-{session_id}', 'object': 'chat.completion.chunk', 'created': 1700000000, 'model': model_name, 'choices': [{'index': 0, 'delta': delta_payload, 'finish_reason': 'stop'}]})}\n\n"
-                yield f"data: {json.dumps({'type': 'done', 'request_id': request_id, 'tools_called': 0})}\n\n"
+                yield f"data: {json.dumps({'type': 'done', 'request_id': request_id, 'tools_called': 0, 'artifacts': []})}\n\n"
                 yield "data: [DONE]\n\n"
                 return
 
@@ -443,7 +483,7 @@ class SkillEngine:
                             delta_payload["code"] = prochat_code
 
                         yield f"data: {json.dumps({'id': f'chatcmpl-{session_id}', 'object': 'chat.completion.chunk', 'created': 1700000000, 'model': model_name, 'choices': [{'index': 0, 'delta': delta_payload, 'finish_reason': 'stop'}]})}\n\n"
-                        yield f"data: {json.dumps({'type': 'done', 'request_id': request_id, 'tools_called': len(executed_logs)})}\n\n"
+                        yield f"data: {json.dumps({'type': 'done', 'request_id': request_id, 'tools_called': len(executed_logs), 'artifacts': []})}\n\n"
                         yield "data: [DONE]\n\n"
                         return
                     sys_content = skill_registry.get_system_instructions(tenant_id=tenant.id)
@@ -497,14 +537,10 @@ class SkillEngine:
 
 
                 # Accumulate this turn's token usage into the running total.
-                # If the API didn't return a usage chunk (e.g. some Gemini streams),
-                # estimate from character counts so cost is never silently zero.
                 if turn_usage:
                     accumulated_usage["prompt_tokens"] += getattr(turn_usage, "prompt_tokens", 0) or 0
                     accumulated_usage["completion_tokens"] += getattr(turn_usage, "completion_tokens", 0) or 0
                 else:
-                    # Rough estimate: ~4 chars per token
-                    # Some messages have list/None content (tool-call turns), guard carefully
                     def _safe_content_str(m):
                         if not isinstance(m, dict):
                             return ""
@@ -549,7 +585,7 @@ class SkillEngine:
                                      reasoning=f"Invoking {clean_name} (Skill: {clean_skill})...",
                                      tool_call={"name": clean_name, "arguments": args})
 
-                    # Execute tools in parallel
+                    # Execute tools in parallel with thread-safe DB sessions
                     def run_one_stream(tc):
                         fn = tc["function"]["name"]
                         try:
@@ -557,13 +593,27 @@ class SkillEngine:
                         except Exception:
                             args = {}
                         skill_name, tool_def = skill_registry.find_tool(fn, tenant_id=tenant.id)
-                        command, exec_res, tool_result = execute_tool(fn, args, tool_def, user_data, tenant, session_id, db, mcp_servers)
+                        worker_db = SessionLocal()
+                        try:
+                            command, exec_res, tool_result = execute_tool(fn, args, tool_def, user_data, tenant, session_id, worker_db, mcp_servers)
+                            worker_db.commit()
+                        except Exception as e:
+                            worker_db.rollback()
+                            command = ""
+                            exec_res = {"error": str(e), "exit_code": 1, "execution_time_ms": 0}
+                            tool_result = f"Error executing tool {fn}: {e}"
+                        finally:
+                            worker_db.close()
                         return tc, skill_name, fn, args, command, exec_res, tool_result
 
                     with ThreadPoolExecutor() as executor:
                         futures = [executor.submit(run_one_stream, tc) for tc in tool_calls_list]
                         for fut in as_completed(futures):
                             tc, skill_name, fn_name, args, command, exec_res, tool_result = fut.result()
+                            art_d = exec_res.get("artifact_data")
+                            if art_d and isinstance(art_d, dict):
+                                a_id = art_d.get("id") or art_d.get("artifact_id") or f"art_{len(accumulated_artifacts)}"
+                                accumulated_artifacts[a_id] = art_d
 
                             log_entry = ExecutionLog(
                                 tenant_id=tenant.id, session_id=session_id,
@@ -581,7 +631,8 @@ class SkillEngine:
                                 "tool_name": fn_name, "skill_name": skill_name,
                                 "exit_code": exec_res.get("exit_code"),
                                 "execution_time_ms": exec_res.get("execution_time_ms"),
-                                "generated_files": exec_res.get("generated_files", [])
+                                "generated_files": exec_res.get("generated_files", []),
+                                "artifact_data": exec_res.get("artifact_data")
                             })
 
                             raw_name = fn_name.split("__")[-1]
@@ -596,7 +647,8 @@ class SkillEngine:
                                              "sandbox_type": exec_res.get("sandbox_type"),
                                              "execution_time_ms": exec_res.get("execution_time_ms"),
                                              "exit_code": exec_res.get("exit_code"),
-                                             "generated_files": exec_res.get("generated_files", [])
+                                             "generated_files": exec_res.get("generated_files", []),
+                                             "artifact_data": exec_res.get("artifact_data")
                                          })
 
                             safe_tool_result = truncate_tool_output(tool_result)
@@ -628,15 +680,17 @@ class SkillEngine:
                             elif res_val:
                                 last_extracted_json, last_extracted_code = res_val[0], res_val[1]
 
+                    arts_list = list(accumulated_artifacts.values())
                     if persist and session_obj:
                         save_message(db, session_obj, "assistant", content=full_text,
-                                     json_data=last_extracted_json, code=last_extracted_code)
+                                     json_data=last_extracted_json, code=last_extracted_code,
+                                     artifact_data=arts_list if arts_list else None)
 
                     finalize_request(db, chat_req, full_text, executed_logs, start_time,
                                      accumulated_usage if accumulated_usage["prompt_tokens"] else None,
                                      in_r, out_r, au_in_r, au_out_r, model_name=model_name)
 
-                    yield f"data: {json.dumps({'type': 'done', 'request_id': request_id, 'tools_called': len(executed_logs)})}\n\n"
+                    yield f"data: {json.dumps({'type': 'done', 'request_id': request_id, 'tools_called': len(executed_logs), 'artifacts': arts_list})}\n\n"
                     yield "data: [DONE]\n\n"
                     return
 
@@ -657,9 +711,11 @@ class SkillEngine:
                     elif res_val:
                         last_extracted_json, last_extracted_code = res_val[0], res_val[1]
 
+            arts_list = list(accumulated_artifacts.values())
             if persist and session_obj:
                 save_message(db, session_obj, "assistant", content=final_answer,
-                             json_data=last_extracted_json, code=last_extracted_code)
+                             json_data=last_extracted_json, code=last_extracted_code,
+                             artifact_data=last_artifact_data)
 
             finalize_request(db, chat_req, final_answer, executed_logs, start_time,
                              accumulated_usage if accumulated_usage["prompt_tokens"] else None,

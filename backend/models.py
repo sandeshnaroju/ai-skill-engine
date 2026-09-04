@@ -69,6 +69,7 @@ class Tenant(Base):
     user_data_templates = relationship("UserDataTemplate", back_populates="tenant", cascade="all, delete-orphan")
     storage_configs = relationship("StorageConfig", back_populates="tenant", cascade="all, delete-orphan")
     sandbox_configs = relationship("SandboxConfig", back_populates="tenant", cascade="all, delete-orphan")
+    artifacts = relationship("SessionArtifact", back_populates="tenant", cascade="all, delete-orphan")
 
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -99,6 +100,7 @@ class ConversationSession(Base):
 
     tenant = relationship("Tenant", back_populates="sessions")
     messages = relationship("ChatMessage", back_populates="session", cascade="all, delete-orphan")
+    artifacts = relationship("SessionArtifact", back_populates="session", cascade="all, delete-orphan")
 
 class ChatMessage(Base):
     __tablename__ = "chat_messages"
@@ -111,6 +113,7 @@ class ChatMessage(Base):
     tool_call_id = Column(String, nullable=True)
     json = Column(Text, nullable=True)        # Saved ProChat UI component structure
     code = Column(Text, nullable=True)        # Saved ProChat component code block
+    artifact_data = Column(Text, nullable=True) # Saved artifact metadata JSON
     created_at = Column(DateTime, default=datetime.utcnow)
 
     session = relationship("ConversationSession", back_populates="messages")
@@ -325,3 +328,56 @@ class UserDataTemplate(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     tenant = relationship("Tenant", back_populates="user_data_templates")
+
+
+class SessionArtifact(Base):
+    __tablename__ = "session_artifacts"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    session_id = Column(String, ForeignKey("conversation_sessions.id"), nullable=False, index=True)
+    tenant_id = Column(String, ForeignKey("tenants.id"), nullable=False, index=True)
+    title = Column(String, nullable=False)
+    filename = Column(String, nullable=False)
+    artifact_type = Column(String, nullable=False)  # code, document, spreadsheet, presentation, diagram_svg, audio, video
+    media_url = Column(String, nullable=True)
+    language = Column(String, nullable=True)
+    current_version = Column(Integer, default=1, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    session = relationship("ConversationSession", back_populates="artifacts")
+    tenant = relationship("Tenant", back_populates="artifacts")
+    blocks = relationship("ArtifactBlock", back_populates="artifact", cascade="all, delete-orphan", order_by="ArtifactBlock.order_index")
+    commits = relationship("ArtifactCommit", back_populates="artifact", cascade="all, delete-orphan", order_by="ArtifactCommit.version.desc()")
+
+
+class ArtifactBlock(Base):
+    __tablename__ = "artifact_blocks"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    artifact_id = Column(String, ForeignKey("session_artifacts.id"), nullable=False, index=True)
+    block_key = Column(String, nullable=False, index=True)
+    order_index = Column(Integer, default=0, nullable=False)
+    title = Column(String, nullable=False)
+    content = Column(Text, nullable=False)
+    version = Column(Integer, default=1, nullable=False)
+    embedding = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    artifact = relationship("SessionArtifact", back_populates="blocks")
+
+
+class ArtifactCommit(Base):
+    __tablename__ = "artifact_commits"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    artifact_id = Column(String, ForeignKey("session_artifacts.id"), nullable=False, index=True)
+    version = Column(Integer, nullable=False, index=True)
+    author = Column(String, nullable=False, default="assistant")
+    block_key = Column(String, nullable=True, index=True)
+    summary = Column(String, nullable=False)
+    patch = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    artifact = relationship("SessionArtifact", back_populates="commits")

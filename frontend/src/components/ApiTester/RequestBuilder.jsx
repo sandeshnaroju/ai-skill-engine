@@ -46,7 +46,7 @@ export default function RequestBuilder({
   togglePause
 }) {
   return (
-    <div className="glass-box" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+    <div className="glass-box" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px', minWidth: 0, width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
       <h3 style={{ fontSize: '1.02rem', fontWeight: '600', color: 'var(--text-main)' }}>
         Request Configuration
       </h3>
@@ -401,8 +401,38 @@ export default function RequestBuilder({
         </div>
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-        <label style={{ fontSize: '0.76rem', color: 'var(--text-sub)', fontWeight: '600' }}>User Message</label>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <label style={{ fontSize: '0.76rem', color: 'var(--text-sub)', fontWeight: '600' }}>User Message</label>
+          <div style={{ display: 'flex', gap: '6px' }}>
+            <button
+              type="button"
+              className="btn-outline"
+              style={{ fontSize: '0.7rem', padding: '2px 8px' }}
+              onClick={() => {
+                setCurrentMessage('Create a project roadmap document in Canvas with sections for Executive Summary, Tech Architecture, and Financial Projections.');
+                if (!selectedSkillNames.includes('artifact_editor')) {
+                  setSelectedSkillNames(prev => [...prev, 'artifact_editor']);
+                }
+              }}
+            >
+              📄 Create Canvas Doc
+            </button>
+            <button
+              type="button"
+              className="btn-outline"
+              style={{ fontSize: '0.7rem', padding: '2px 8px' }}
+              onClick={() => {
+                setCurrentMessage('Update the Financial Projections section in the active canvas document to include 2028 growth estimates.');
+                if (!selectedSkillNames.includes('artifact_editor')) {
+                  setSelectedSkillNames(prev => [...prev, 'artifact_editor']);
+                }
+              }}
+            >
+              ✏️ Edit Canvas Section
+            </button>
+          </div>
+        </div>
         <textarea
           rows={4}
           value={currentMessage}

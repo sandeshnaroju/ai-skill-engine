@@ -28,8 +28,9 @@ def get_or_create_session(db: DbSession, tenant, session_id: str) -> Conversatio
 
 def save_message(db: DbSession, session_obj: ConversationSession, role: str,
                  content=None, tool_calls=None, tool_call_id=None,
-                 json_data=None, code=None):
+                 json_data=None, code=None, artifact_data=None):
     """Persist a single chat message to the database."""
+    art_str = json.dumps(artifact_data) if (artifact_data and not isinstance(artifact_data, str)) else artifact_data
     msg = ChatMessage(
         session_id=session_obj.id,
         role=role,
@@ -37,6 +38,7 @@ def save_message(db: DbSession, session_obj: ConversationSession, role: str,
         tool_call_id=tool_call_id,
         json=json_data,
         code=code,
+        artifact_data=art_str,
     )
     if tool_calls is not None:
         msg.tool_calls = json.dumps(tool_calls) if not isinstance(tool_calls, str) else tool_calls

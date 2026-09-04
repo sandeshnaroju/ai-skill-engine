@@ -210,17 +210,20 @@ def init_db():
 
     if inspector.has_table("chat_messages"):
         columns = [c["name"] for c in inspector.get_columns("chat_messages")]
-        if "json" not in columns:
-            db = SessionLocal()
-            try:
+        db = SessionLocal()
+        try:
+            if "json" not in columns:
                 db.execute(text("ALTER TABLE chat_messages ADD COLUMN json TEXT"))
                 db.execute(text("ALTER TABLE chat_messages ADD COLUMN code TEXT"))
-                db.commit()
                 print("Migration: Added json and code columns to chat_messages table")
-            except Exception as e:
-                print(f"Migration warning: Could not add json/code columns to chat_messages: {e}")
-            finally:
-                db.close()
+            if "artifact_data" not in columns:
+                db.execute(text("ALTER TABLE chat_messages ADD COLUMN artifact_data TEXT"))
+                print("Migration: Added artifact_data column to chat_messages table")
+            db.commit()
+        except Exception as e:
+            print(f"Migration warning: Could not add columns to chat_messages: {e}")
+        finally:
+            db.close()
 
     if inspector.has_table("tenant_llms"):
         columns = [c["name"] for c in inspector.get_columns("tenant_llms")]

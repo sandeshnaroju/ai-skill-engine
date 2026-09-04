@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Terminal, Send, Play, Copy, Check, Info, Cpu, Code2, ToggleLeft, ToggleRight, Database, X } from 'lucide-react';
+import { Terminal, Send, Play, Copy, Check, Info, Cpu, Code2, ToggleLeft, ToggleRight, Database, X, FileText, ExternalLink } from 'lucide-react';
 import AsyncSearchableDropdown from '../AsyncSearchableDropdown';
 import ProChat from 'prochat';
+import Canvas from '../Canvas';
 import RequestBuilder from './RequestBuilder';
 import ResponseViewer from './ResponseViewer';
 import { userDataApi, tenantsApi, appsApi, chatApi, apiClient } from '../../api';
@@ -164,6 +165,29 @@ export default function ApiTester() {
   const [prochatUiJson, setProchatUiJson] = useState(null);
   const [prochatUiCode, setProchatUiCode] = useState('');
 
+  // Interactive Document & Canvas state
+  const [streamArtifacts, setStreamArtifacts] = useState([]);
+  const [canvasArtifact, setCanvasArtifact] = useState(null);
+  const [isCanvasOpen, setIsCanvasOpen] = useState(false);
+
+  const handleOpenCanvas = (art) => {
+    if (!art) return;
+    let resolvedArt = { ...art };
+    if (!resolvedArt.id && resolvedArt.artifact_id) {
+      resolvedArt.id = resolvedArt.artifact_id;
+    }
+    if (!resolvedArt.id && resolvedArt.token && resolvedArt.token.includes('.')) {
+      try {
+        const rawB64 = resolvedArt.token.split('.')[0].replace(/-/g, '+').replace(/_/g, '/');
+        const padded = rawB64.padEnd(rawB64.length + ((4 - (rawB64.length % 4)) % 4), '=');
+        const payload = JSON.parse(atob(padded));
+        if (payload?.art) resolvedArt.id = payload.art;
+      } catch (e) { }
+    }
+    setCanvasArtifact(resolvedArt);
+    setIsCanvasOpen(true);
+  };
+
   // Terminal log output
   const [logs, setLogs] = useState([]);
 
@@ -322,6 +346,7 @@ export default function ApiTester() {
     setStreamContent('');
     setStreamReasoning([]);
     setStreamTools([]);
+    setStreamArtifacts([]);
     setProchatUiJson(null);
     setProchatUiCode('');
 
@@ -343,7 +368,7 @@ export default function ApiTester() {
       finalMessages.push({ role: 'system', content: systemPrompt.trim() });
     }
     finalMessages.push(...messageHistory);
-    
+
     let finalCurrentMessage = currentMessage;
     if (uploadedFile) {
       if (attachMode === 'text') {
@@ -394,6 +419,8 @@ export default function ApiTester() {
         return;
       }
 
+      let turnArtifacts = [];
+
       if (stream) {
         logText(`Connection established. Listening to SSE Event Stream...`);
         const reader = res.body.getReader();
@@ -420,16 +447,70 @@ export default function ApiTester() {
                 if (rawData !== '[DONE]') {
                   try {
                     const dataJson = JSON.parse(rawData);
+                    if (dataJson.type === 'done' && Array.isArray(dataJson.artifacts) && dataJson.artifacts.length > 0) {
+                      dataJson.artifacts.forEach(rawA => {
+                        const artInfo = {
+                          id: rawA.artifact_id || rawA.id,
+                          token: rawA.token,
+                          title: rawA.title || 'Document',
+                          filename: rawA.filename || 'document.md',
+                          artifact_type: rawA.artifact_type || 'document',
+                          current_version: rawA.current_version || 1,
+                          embed_url: rawA.embed_url || (rawA.token ? `/embed/canvas?token=${rawA.token}` : '')
+                        };
+                        if (!turnArtifacts.some(existing => (artInfo.id && existing.id === artInfo.id) || (existing.token && existing.token === artInfo.token))) {
+                          turnArtifacts.push(artInfo);
+                        }
+                      });
+                      if (turnArtifacts.length > 0) {
+                        setStreamArtifacts([...turnArtifacts]);
+                        setCanvasArtifact(turnArtifacts[turnArtifacts.length - 1]);
+                      }
+                    }
                     if (dataJson.choices && dataJson.choices[0] && dataJson.choices[0].delta) {
                       const delta = dataJson.choices[0].delta;
                       if (delta.reasoning) {
                         setStreamReasoning(prev => [...prev, delta.reasoning]);
+                      }
+                      if (delta.artifact) {
+                        const rawA = delta.artifact;
+                        const artInfo = {
+                          id: rawA.artifact_id || rawA.id,
+                          token: rawA.token,
+                          title: rawA.title || 'Document',
+                          filename: rawA.filename || 'document.md',
+                          artifact_type: rawA.artifact_type || 'document',
+                          current_version: rawA.current_version || 1,
+                          embed_url: rawA.embed_url || (rawA.token ? `/embed/canvas?token=${rawA.token}` : '')
+                        };
+                        if (!turnArtifacts.some(existing => (artInfo.id && existing.id === artInfo.id) || (existing.token && existing.token === artInfo.token))) {
+                          turnArtifacts.push(artInfo);
+                        }
+                        setStreamArtifacts([...turnArtifacts]);
+                        setCanvasArtifact(artInfo);
                       }
                       if (delta.tool_call) {
                         setStreamTools(prev => [...prev, { type: 'call', ...delta.tool_call }]);
                       }
                       if (delta.tool_result) {
                         setStreamTools(prev => [...prev, { type: 'result', ...delta.tool_result }]);
+                        if (delta.tool_result.artifact_data) {
+                          const rawA = delta.tool_result.artifact_data;
+                          const artInfo = {
+                            id: rawA.artifact_id || rawA.id,
+                            token: rawA.token,
+                            title: rawA.title || 'Document',
+                            filename: rawA.filename || 'document.md',
+                            artifact_type: rawA.artifact_type || 'document',
+                            current_version: rawA.current_version || 1,
+                            embed_url: rawA.embed_url || (rawA.token ? `/embed/canvas?token=${rawA.token}` : '')
+                          };
+                          if (!turnArtifacts.some(existing => (artInfo.id && existing.id === artInfo.id) || (existing.token && existing.token === artInfo.token))) {
+                            turnArtifacts.push(artInfo);
+                          }
+                          setStreamArtifacts([...turnArtifacts]);
+                          setCanvasArtifact(artInfo);
+                        }
                       }
                       if (delta.content) {
                         localStreamContent += delta.content;
@@ -461,11 +542,49 @@ export default function ApiTester() {
           logText(`data: ${rest.trim()}`);
         }
         logText(`Stream finished. Duration: ${Date.now() - startTime}ms`);
-        
+
+        if (localStreamContent && localStreamContent.includes('/embed/canvas?token=')) {
+          const globalRegex = /\/embed\/canvas\?token=([^\s)"']+)/g;
+          let match;
+          while ((match = globalRegex.exec(localStreamContent)) !== null) {
+            const tokenStr = match[1];
+            let effId = null;
+            if (tokenStr.includes('.')) {
+              try {
+                const rawB64 = tokenStr.split('.')[0].replace(/-/g, '+').replace(/_/g, '/');
+                const padded = rawB64.padEnd(rawB64.length + ((4 - (rawB64.length % 4)) % 4), '=');
+                const payload = JSON.parse(atob(padded));
+                if (payload?.art) effId = payload.art;
+              } catch (e) { }
+            }
+            const artInfo = {
+              id: effId,
+              token: tokenStr,
+              title: 'Interactive Document',
+              artifact_type: 'document',
+              current_version: 1,
+              embed_url: `/embed/canvas?token=${tokenStr}`
+            };
+            if (!turnArtifacts.some(existing => (effId && existing.id === effId) || (existing.token && existing.token === tokenStr))) {
+              turnArtifacts.push(artInfo);
+            }
+          }
+          if (turnArtifacts.length > 0) {
+            setStreamArtifacts([...turnArtifacts]);
+            setCanvasArtifact(turnArtifacts[turnArtifacts.length - 1]);
+          }
+        }
+
         setMessageHistory(prev => [
           ...prev,
           { role: 'user', content: currentMessage },
-          { role: 'assistant', content: localStreamContent }
+          {
+            role: 'assistant',
+            content: localStreamContent,
+            artifacts: turnArtifacts,
+            prochatUiJson: prochatUiJson,
+            prochatUiCode: prochatUiCode
+          }
         ]);
         setCurrentMessage('');
 
@@ -474,6 +593,53 @@ export default function ApiTester() {
         logText(`Response JSON:\n${JSON.stringify(data, null, 2)}`);
 
         const assistantMessage = data.choices?.[0]?.message;
+        let nonStreamArtifacts = [];
+        if (Array.isArray(assistantMessage?.artifacts) && assistantMessage.artifacts.length > 0) {
+          nonStreamArtifacts = [...assistantMessage.artifacts];
+        } else if (Array.isArray(data.artifacts) && data.artifacts.length > 0) {
+          nonStreamArtifacts = [...data.artifacts];
+        }
+        if (nonStreamArtifacts.length === 0 && data.executed_tools) {
+          data.executed_tools.forEach(t => {
+            const a = t.artifact_data || t.artifact;
+            if (a) nonStreamArtifacts.push(a);
+          });
+        }
+        if (assistantMessage?.content && assistantMessage.content.includes('/embed/canvas?token=')) {
+          const globalRegex = /\/embed\/canvas\?token=([^\s)"']+)/g;
+          let match;
+          while ((match = globalRegex.exec(assistantMessage.content)) !== null) {
+            const tokenStr = match[1];
+            let effId = null;
+            if (tokenStr.includes('.')) {
+              try {
+                const rawB64 = tokenStr.split('.')[0].replace(/-/g, '+').replace(/_/g, '/');
+                const padded = rawB64.padEnd(rawB64.length + ((4 - (rawB64.length % 4)) % 4), '=');
+                const payload = JSON.parse(atob(padded));
+                if (payload?.art) effId = payload.art;
+              } catch (e) { }
+            }
+            const artInfo = {
+              id: effId,
+              token: tokenStr,
+              title: 'Interactive Document',
+              artifact_type: 'document',
+              current_version: 1,
+              embed_url: `/embed/canvas?token=${tokenStr}`
+            };
+            if (!nonStreamArtifacts.some(existing => (effId && existing.id === effId) || (existing.token && existing.token === tokenStr))) {
+              nonStreamArtifacts.push(artInfo);
+            }
+          }
+        }
+        if (nonStreamArtifacts.length > 0) {
+          nonStreamArtifacts.forEach(a => {
+            if (!a.id && a.artifact_id) a.id = a.artifact_id;
+          });
+          setStreamArtifacts([...nonStreamArtifacts]);
+          setCanvasArtifact(nonStreamArtifacts[nonStreamArtifacts.length - 1]);
+        }
+
         if (assistantMessage) {
           setStreamContent(assistantMessage.content || '');
           if (assistantMessage.json) {
@@ -482,11 +648,17 @@ export default function ApiTester() {
           if (assistantMessage.code) {
             setProchatUiCode(assistantMessage.code);
           }
-          
+
           setMessageHistory(prev => [
             ...prev,
             { role: 'user', content: currentMessage },
-            { role: 'assistant', content: assistantMessage.content || '' }
+            {
+              role: 'assistant',
+              content: assistantMessage.content || '',
+              artifacts: nonStreamArtifacts,
+              prochatUiJson: assistantMessage.json,
+              prochatUiCode: assistantMessage.code
+            }
           ]);
           setCurrentMessage('');
         }
@@ -549,20 +721,61 @@ export default function ApiTester() {
   -d '${JSON.stringify(requestPayload, null, 2)}'`;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', width: '100%', maxWidth: '100%', minWidth: 0, boxSizing: 'border-box' }}>
 
       {/* Banner */}
-      <div className="glass-box" style={{ padding: '20px 24px' }}>
-        <h2 style={{ fontSize: '1.25rem', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <Terminal size={22} color="var(--primary-cyan)" /> Developer API Client Tester
-        </h2>
-        <p style={{ color: 'var(--text-sub)', fontSize: '0.88rem', marginTop: '4px' }}>
-          Directly execute raw HTTP requests against the `/api/v1/chat/completions` gateway endpoint to audit SSE events and payload schemas.
-        </p>
+      <div className="glass-box" style={{ padding: '20px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px', width: '100%', maxWidth: '100%', minWidth: 0, boxSizing: 'border-box' }}>
+        <div>
+          <h2 style={{ fontSize: '1.25rem', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <Terminal size={22} color="var(--primary-cyan)" /> Developer API Client Tester
+          </h2>
+          <p style={{ color: 'var(--text-sub)', fontSize: '0.88rem', marginTop: '4px' }}>
+            Directly execute raw HTTP requests against the `/api/v1/chat/completions` gateway endpoint to audit SSE events, payload schemas, and interactive document canvases.
+          </p>
+        </div>
+
+        {/* Canvas Toggle / Re-open Button */}
+        {canvasArtifact && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <button
+              className="btn-outline"
+              onClick={() => setIsCanvasOpen(!isCanvasOpen)}
+              title={isCanvasOpen ? 'Collapse Document Canvas' : 'Re-open Document Canvas'}
+              style={{
+                padding: '8px 16px',
+                fontSize: '0.84rem',
+                borderColor: isCanvasOpen ? '#6366f1' : 'var(--border-subtle)',
+                background: isCanvasOpen ? 'rgba(99, 102, 241, 0.15)' : 'rgba(255, 255, 255, 0.05)',
+                color: isCanvasOpen ? '#a5b4fc' : 'var(--text-main)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease'
+              }}
+            >
+              <FileText size={15} color="#818cf8" />
+              <span>{isCanvasOpen ? 'Close Canvas' : `Open Document (${canvasArtifact.title || 'Canvas'})`}</span>
+              {!isCanvasOpen && (
+                <span style={{
+                  fontSize: '10px',
+                  background: 'rgba(99, 102, 241, 0.2)',
+                  color: '#818cf8',
+                  padding: '1px 6px',
+                  borderRadius: '4px',
+                  fontWeight: 600
+                }}>
+                  Ready
+                </span>
+              )}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Main Grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.4fr', gap: '24px' }}>
+      <div className="api-tester-grid">
 
         {/* Column 1: Config Form */}
         <RequestBuilder
@@ -630,8 +843,154 @@ export default function ApiTester() {
           curlCommand={curlCommand}
           copiedKey={copiedKey}
           setCopiedKey={setCopiedKey}
+          streamArtifacts={streamArtifacts}
+          canvasArtifact={canvasArtifact}
+          isCanvasOpen={isCanvasOpen}
+          setIsCanvasOpen={setIsCanvasOpen}
+          onOpenCanvas={handleOpenCanvas}
         />
       </div>
+
+
+
+      {/* Slide-over Right Side Menu Bar / Drawer */}
+      {canvasArtifact && (
+        <>
+          {/* Backdrop */}
+          {isCanvasOpen && (
+            <div
+              onClick={() => setIsCanvasOpen(false)}
+              style={{
+                position: 'fixed',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                background: 'rgba(0, 0, 0, 0.45)',
+                backdropFilter: 'blur(3px)',
+                zIndex: 9998,
+                transition: 'opacity 0.25s ease'
+              }}
+            />
+          )}
+
+          {/* Right Side Drawer Container */}
+          <div
+            style={{
+              position: 'fixed',
+              top: 0,
+              right: 0,
+              bottom: 0,
+              width: 'min(720px, 94vw)',
+              background: 'var(--bg-card, #0f172a)',
+              borderLeft: '1px solid rgba(99, 102, 241, 0.35)',
+              boxShadow: '-12px 0 40px rgba(0, 0, 0, 0.65)',
+              zIndex: 9999,
+              display: 'flex',
+              flexDirection: 'column',
+              transform: isCanvasOpen ? 'translateX(0)' : 'translateX(105%)',
+              transition: 'transform 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+              overflow: 'hidden'
+            }}
+          >
+            {/* Right Drawer Header */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '12px 18px',
+              borderBottom: '1px solid var(--border-subtle)',
+              background: 'rgba(255, 255, 255, 0.03)',
+              flexShrink: 0
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+                <div style={{
+                  width: '30px',
+                  height: '30px',
+                  borderRadius: '7px',
+                  background: 'rgba(99, 102, 241, 0.2)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#818cf8',
+                  flexShrink: 0
+                }}>
+                  <FileText size={16} />
+                </div>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{
+                    fontWeight: 650,
+                    fontSize: '0.9rem',
+                    color: 'var(--text-main)',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis'
+                  }}>
+                    {canvasArtifact.title || 'Interactive Document'}
+                  </div>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                    <span>{(canvasArtifact.artifact_type || 'document').toUpperCase()}</span>
+                    {canvasArtifact.current_version && <span> • v{canvasArtifact.current_version}</span>}
+                    <span> • Right Side Menu Bar</span>
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {canvasArtifact.embed_url && (
+                  <a
+                    href={canvasArtifact.embed_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn-outline"
+                    style={{
+                      padding: '5px 10px',
+                      fontSize: '0.76rem',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                      color: 'var(--text-sub)',
+                      borderRadius: '6px',
+                      textDecoration: 'none'
+                    }}
+                    title="Open full page in new tab"
+                  >
+                    <ExternalLink size={13} />
+                    <span>Full Tab</span>
+                  </a>
+                )}
+                <button
+                  onClick={() => setIsCanvasOpen(false)}
+                  className="btn-outline"
+                  style={{
+                    padding: '6px 8px',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    color: 'var(--text-muted)'
+                  }}
+                  title="Close right side menu bar"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            </div>
+
+            {/* Drawer Canvas Body */}
+            <div style={{ flex: 1, width: '100%', maxWidth: '100%', boxSizing: 'border-box', position: 'relative', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+              <Canvas
+                key={`${canvasArtifact.id}-${canvasArtifact.token || 'notoken'}`}
+                isEmbed={true}
+                artifactId={canvasArtifact.id}
+                token={canvasArtifact.token}
+                onClose={() => setIsCanvasOpen(false)}
+              />
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

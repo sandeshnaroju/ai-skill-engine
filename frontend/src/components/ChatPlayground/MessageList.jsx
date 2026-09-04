@@ -1,5 +1,5 @@
 import React from 'react';
-import { Bot, User, Brain, MessageSquare, Sparkles, Terminal, Code2, Copy, Check, FileText, ChevronUp, ChevronDown, Loader } from 'lucide-react';
+import { Bot, User, Brain, MessageSquare, Sparkles, Terminal, Code2, Copy, Check, FileText, ChevronUp, ChevronDown, Loader, Pin, PinOff, ExternalLink, Table, Presentation, Image, ArrowRight } from 'lucide-react';
 import ProChat from 'prochat';
 
 export default function MessageList({
@@ -7,7 +7,10 @@ export default function MessageList({
   expandedReasoning,
   setExpandedReasoning,
   copiedIdx,
-  copyText
+  copyText,
+  onOpenCanvas,
+  activeCanvasArtifact,
+  isCanvasOpen
 }) {
   const renderMarkdown = (src) => {
     if (!src) return '';
@@ -25,7 +28,7 @@ export default function MessageList({
     html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
     html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
     html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" style="color: var(--primary-violet); text-decoration: underline; font-weight: 500;">$1</a>');
-    
+
     html = html.replace(/^# (.*?)$/gm, '<h1>$1</h1>');
     html = html.replace(/^## (.*?)$/gm, '<h2>$1</h2>');
     html = html.replace(/^### (.*?)$/gm, '<h3>$1</h3>');
@@ -106,7 +109,30 @@ export default function MessageList({
 
     const renderTextContent = (txt) => {
       if (!txt) return null;
-      return <div className="markdown-body" dangerouslySetInnerHTML={{ __html: renderMarkdown(txt) }} />;
+      const canvasMatch = txt.match(/\/embed\/canvas\?token=([^\s)"']+)/);
+      return (
+        <div>
+          <div className="markdown-body" dangerouslySetInnerHTML={{ __html: renderMarkdown(txt) }} />
+          {canvasMatch && (
+            <div style={{ marginTop: '12px' }}>
+              <button
+                className="btn-gradient"
+                onClick={() => onOpenCanvas && onOpenCanvas({ token: canvasMatch[1] })}
+                style={{
+                  padding: '7px 14px',
+                  fontSize: '0.82rem',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  borderRadius: '8px'
+                }}
+              >
+                <Sparkles size={14} /> Open in Interactive Canvas
+              </button>
+            </div>
+          )}
+        </div>
+      );
     };
 
     const renderAttachments = () => {
@@ -213,6 +239,118 @@ export default function MessageList({
       );
     }
 
+    const getArtifactIcon = (type) => {
+      switch (type) {
+        case 'spreadsheet':
+          return <Table size={16} style={{ color: '#10b981' }} />;
+        case 'presentation':
+          return <Presentation size={16} style={{ color: '#f59e0b' }} />;
+        case 'code':
+          return <Code2 size={16} style={{ color: '#3b82f6' }} />;
+        case 'svg':
+          return <Image size={16} style={{ color: '#ec4899' }} />;
+        default:
+          return <FileText size={16} style={{ color: '#8b5cf6' }} />;
+      }
+    };
+
+    const renderArtifactPinCard = (m) => {
+      let art = m.artifact || m.artifact_data;
+      if (typeof art === 'string') {
+        try { art = JSON.parse(art); } catch (e) { }
+      }
+      if (!art && typeof m.content === 'string') {
+        const match = m.content.match(/\/embed\/canvas\?token=([^\s)"']+)/);
+        if (match) {
+          art = { token: match[1], title: 'Interactive Document' };
+        }
+      }
+      if (!art) return null;
+      if (!art.id && art.artifact_id) {
+        art.id = art.artifact_id;
+      }
+
+      const isActive = Boolean(
+        activeCanvasArtifact && isCanvasOpen && (
+          (art.id && activeCanvasArtifact.id === art.id) ||
+          (art.token && activeCanvasArtifact.token === art.token)
+        )
+      );
+
+      return (
+        <div
+          className="msg-artifact-pin-card"
+          onClick={() => onOpenCanvas && onOpenCanvas(art)}
+          style={{
+            marginTop: '8px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '10px',
+            padding: '6px 12px',
+            background: isActive ? 'rgba(99, 102, 241, 0.12)' : 'rgba(99, 102, 241, 0.05)',
+            border: isActive ? '1px solid #6366f1' : '1px solid rgba(99, 102, 241, 0.2)',
+            borderRadius: '8px',
+            cursor: 'pointer',
+            transition: 'all 0.15s ease',
+            width: '100%',
+            maxWidth: '100%',
+            minWidth: 0,
+            boxSizing: 'border-box'
+          }}
+          title="Click to view in Document Canvas"
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: 1 }}>
+            <div style={{
+              color: '#818cf8',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0
+            }}>
+              {getArtifactIcon(art.artifact_type)}
+            </div>
+            <span style={{
+              fontWeight: 600,
+              fontSize: '0.82rem',
+              color: 'var(--text-main)',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis'
+            }}>
+              {art.title || art.filename || 'Document'}
+            </span>
+            {art.current_version && (
+              <span style={{
+                fontSize: '0.66rem',
+                color: 'var(--text-muted)',
+                background: 'rgba(255, 255, 255, 0.06)',
+                padding: '1px 5px',
+                borderRadius: '4px',
+                flexShrink: 0
+              }}>
+                v{art.current_version}
+              </span>
+            )}
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+            <span style={{
+              fontSize: '0.74rem',
+              fontWeight: 600,
+              color: isActive ? '#10b981' : '#818cf8',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '3px'
+            }}>
+              {isActive ? 'Active' : 'Open Canvas'}
+              <ArrowRight size={12} />
+            </span>
+          </div>
+        </div>
+      );
+    };
+
     return (
       <div
         style={{
@@ -230,6 +368,34 @@ export default function MessageList({
         }}
       >
         {!isProchatActive && renderMessageContent(m.content)}
+        {(() => {
+          if (Array.isArray(m.artifacts) && m.artifacts.length > 0) {
+            return m.artifacts.map((artItem, artIdx) => (
+              <React.Fragment key={artItem.id || artItem.token || artIdx}>
+                {renderArtifactPinCard({ ...m, artifact: artItem, artifact_data: artItem })}
+              </React.Fragment>
+            ));
+          }
+          if (typeof m.content === 'string' && m.content.includes('/embed/canvas?token=')) {
+            const globalRegex = /\/embed\/canvas\?token=([^\s)"']+)/g;
+            const extracted = [];
+            let match;
+            while ((match = globalRegex.exec(m.content)) !== null) {
+              const tokenStr = match[1];
+              if (!extracted.some(e => e.token === tokenStr)) {
+                extracted.push({ token: tokenStr, title: 'Interactive Document' });
+              }
+            }
+            if (extracted.length > 0) {
+              return extracted.map((artItem, artIdx) => (
+                <React.Fragment key={artItem.token || artIdx}>
+                  {renderArtifactPinCard({ ...m, artifact: artItem, artifact_data: artItem })}
+                </React.Fragment>
+              ));
+            }
+          }
+          return renderArtifactPinCard(m);
+        })()}
         {(() => {
           const hasUiChunk = m.json;
           if (!hasUiChunk) return null;
