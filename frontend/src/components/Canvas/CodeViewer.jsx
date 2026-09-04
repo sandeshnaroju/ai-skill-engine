@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Copy, CheckCheck, Edit2, Check, X, History } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Copy, CheckCheck, Edit2, Check, X, History, Eye, Code as CodeIcon, ExternalLink } from 'lucide-react';
 import { artifactsApi } from '../../api';
 
 export default function CodeViewer({
@@ -9,6 +9,7 @@ export default function CodeViewer({
   language = 'python',
   filename = 'code.py',
   token,
+  theme = 'dark',
   onOpenHistory,
   onBlockUpdated
 }) {
@@ -17,10 +18,19 @@ export default function CodeViewer({
   const [code, setCode] = useState(fullContent);
   const [saving, setSaving] = useState(false);
 
+  const isHtml = language === 'html' || language === 'htm' || filename.endsWith('.html') || filename.endsWith('.htm') || (typeof fullContent === 'string' && (fullContent.includes('<!DOCTYPE html>') || fullContent.includes('<html')));
+  const [activeTab, setActiveTab] = useState(isHtml ? 'preview' : 'code'); // 'code' | 'preview'
+
+  useEffect(() => {
+    if (!isEditing) {
+      setCode(fullContent);
+    }
+  }, [fullContent, isEditing]);
+
   const mainBlock = blocks[0] || { block_key: 'main_block', title: 'Main Code' };
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(code);
+    navigator.clipboard.writeText(code || fullContent || '');
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -40,17 +50,60 @@ export default function CodeViewer({
     }
   };
 
+  const cleanHtmlCode = (str) => {
+    if (!str) return '';
+    let cleaned = str.trim();
+    const match = cleaned.match(/```(?:html|xml)?\s*([\s\S]*?)```/i);
+    return match ? match[1].trim() : cleaned;
+  };
+
   const lines = String(isEditing ? (code ?? '') : (fullContent ?? '')).split('\n');
 
   return (
     <div className="code-viewer-container">
       <div className="code-toolbar">
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{ fontSize: '12px', fontWeight: 600, color: '#f3f4f6' }}>{filename}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+          <span style={{ fontSize: '12px', fontWeight: 650, color: 'var(--doc-title-color)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {filename}
+          </span>
           <span className="canvas-version-pill">{language}</span>
+
+          {isHtml && (
+            <div style={{ display: 'flex', gap: '4px', marginLeft: '8px' }}>
+              <button
+                className={`canvas-btn ${activeTab === 'preview' ? 'canvas-btn-primary' : 'canvas-btn-secondary'}`}
+                style={{ fontSize: '11px', padding: '3px 8px' }}
+                onClick={() => { setActiveTab('preview'); setIsEditing(false); }}
+              >
+                <Eye size={12} /> Live Preview
+              </button>
+              <button
+                className={`canvas-btn ${activeTab === 'code' ? 'canvas-btn-primary' : 'canvas-btn-secondary'}`}
+                style={{ fontSize: '11px', padding: '3px 8px' }}
+                onClick={() => setActiveTab('code')}
+              >
+                <CodeIcon size={12} /> Code
+              </button>
+            </div>
+          )}
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          {isHtml && activeTab === 'preview' && (
+            <button
+              className="canvas-btn canvas-btn-secondary"
+              style={{ fontSize: '11px' }}
+              onClick={() => {
+                const blob = new Blob([cleanHtmlCode(code || fullContent)], { type: 'text/html' });
+                const url = URL.createObjectURL(blob);
+                window.open(url, '_blank');
+              }}
+              title="Open in new tab"
+            >
+              <ExternalLink size={12} /> Open Tab
+            </button>
+          )}
+
           <button
             className="canvas-btn canvas-btn-secondary"
             title="View Code Diff History"
@@ -62,15 +115,17 @@ export default function CodeViewer({
           <button
             className="canvas-btn canvas-btn-secondary"
             onClick={handleCopy}
+            title="Copy Code"
           >
-            {copied ? <CheckCheck size={13} style={{ color: '#34d399' }} /> : <Copy size={13} />}
+            {copied ? <CheckCheck size={13} style={{ color: '#10b981' }} /> : <Copy size={13} />}
             {copied ? 'Copied' : 'Copy'}
           </button>
 
           {!isEditing ? (
             <button
               className="canvas-btn canvas-btn-primary"
-              onClick={() => { setIsEditing(true); setCode(fullContent); }}
+              onClick={() => { setIsEditing(true); setCode(fullContent); setActiveTab('code'); }}
+              title="Edit Code"
             >
               <Edit2 size={13} /> Edit
             </button>
@@ -95,20 +150,33 @@ export default function CodeViewer({
         </div>
       </div>
 
-      {isEditing ? (
+      {isHtml && activeTab === 'preview' && !isEditing ? (
+        <div className="html-preview-stage" style={{ minHeight: '450px' }}>
+          <div className="html-frame-wrapper" style={{ width: '100%' }}>
+            <iframe
+              title="HTML Live Preview"
+              srcDoc={cleanHtmlCode(code || fullContent)}
+              className="html-preview-iframe"
+              sandbox="allow-scripts allow-modals allow-forms allow-popups allow-same-origin"
+            />
+          </div>
+        </div>
+      ) : isEditing ? (
         <textarea
           style={{
             width: '100%',
-            background: '#090d16',
-            color: '#f3f4f6',
-            fontFamily: 'monospace',
+            background: 'var(--doc-textarea-bg)',
+            color: 'var(--doc-textarea-text)',
+            fontFamily: '"Fira Code", Monaco, Consolas, "Courier New", monospace',
             fontSize: '13px',
             lineHeight: '1.6',
             padding: '16px',
             border: 'none',
             outline: 'none',
             minHeight: '400px',
-            resize: 'vertical'
+            maxHeight: 'calc(100vh - 140px)',
+            resize: 'vertical',
+            boxSizing: 'border-box'
           }}
           value={code}
           onChange={(e) => setCode(e.target.value)}
@@ -119,10 +187,10 @@ export default function CodeViewer({
             <tbody>
               {lines.map((line, idx) => (
                 <tr key={idx}>
-                  <td style={{ color: '#4b5563', paddingRight: '16px', userSelect: 'none', textAlign: 'right', width: '36px' }}>
+                  <td className="code-line-number">
                     {idx + 1}
                   </td>
-                  <td style={{ color: '#e2e8f0', whiteSpace: 'pre' }}>
+                  <td className="code-line-content">
                     {line || ' '}
                   </td>
                 </tr>

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
-  FileText, Code, Table, Presentation, Image, Music, Video,
+  FileText, Code, Table, Presentation, Image, Music, Video, Globe,
   Download, History, RefreshCw, CheckCircle2,
   Sun, Moon, BookOpen, X
 } from 'lucide-react';
@@ -11,6 +11,7 @@ import CodeViewer from './CodeViewer';
 import SlidePlayer from './SlidePlayer';
 import SheetGrid from './SheetGrid';
 import SvgViewer from './SvgViewer';
+import HtmlViewer from './HtmlViewer';
 import MediaViewer from './MediaViewer';
 import BlockHistoryModal from './BlockHistoryModal';
 import './canvas.css';
@@ -279,6 +280,84 @@ function CanvasInner({ isEmbed = false, artifactId: propArtifactId, token: propT
     setArtifact((prev) => prev ? { ...prev, current_version: (prev.current_version || 1) + 1 } : prev);
   };
 
+  const getNormalizedType = (art) => {
+    if (!art) return 'document';
+    const type = (art.artifact_type || '').toLowerCase();
+    const filename = (art.filename || '').toLowerCase();
+    const lang = (art.language || '').toLowerCase();
+
+    if (
+      type === 'diagram_svg' ||
+      type === 'svg' ||
+      type === 'diagram' ||
+      type === 'vector' ||
+      type === 'image' ||
+      lang === 'svg' ||
+      filename.endsWith('.svg')
+    ) {
+      return 'svg';
+    }
+
+    if (
+      type === 'spreadsheet' ||
+      type === 'sheet' ||
+      type === 'table' ||
+      type === 'csv' ||
+      type === 'tsv' ||
+      type === 'excel' ||
+      filename.endsWith('.xlsx') ||
+      filename.endsWith('.csv') ||
+      filename.endsWith('.tsv')
+    ) {
+      return 'spreadsheet';
+    }
+
+    if (
+      type === 'presentation' ||
+      type === 'slides' ||
+      type === 'deck' ||
+      filename.endsWith('.pptx') ||
+      filename.endsWith('.key')
+    ) {
+      return 'presentation';
+    }
+
+    if (
+      type === 'html' ||
+      type === 'web' ||
+      type === 'website' ||
+      lang === 'html' ||
+      lang === 'htm' ||
+      filename.endsWith('.html') ||
+      filename.endsWith('.htm')
+    ) {
+      return 'html';
+    }
+
+    if (
+      type === 'code' ||
+      type === 'script' ||
+      ['python', 'javascript', 'typescript', 'css', 'json', 'sql', 'bash', 'sh', 'c', 'cpp', 'rust', 'go', 'jsx', 'tsx'].includes(lang) ||
+      /\.(py|js|ts|jsx|tsx|css|json|sql|sh|c|cpp|rs|go|yaml|yml|xml|env)$/i.test(filename)
+    ) {
+      return 'code';
+    }
+
+    if (type === 'audio' || /\.(mp3|wav|ogg|m4a|aac)$/i.test(filename)) {
+      return 'audio';
+    }
+
+    if (type === 'video' || /\.(mp4|webm|mov|avi|mkv)$/i.test(filename)) {
+      return 'video';
+    }
+
+    if (type === 'pdf' || filename.endsWith('.pdf')) {
+      return 'pdf';
+    }
+
+    return 'document';
+  };
+
   const getTypeIcon = (type) => {
     switch (type) {
       case 'document':
@@ -286,6 +365,8 @@ function CanvasInner({ isEmbed = false, artifactId: propArtifactId, token: propT
         return <FileText size={15} />;
       case 'code':
         return <Code size={15} />;
+      case 'html':
+        return <Globe size={15} />;
       case 'spreadsheet':
         return <Table size={15} />;
       case 'presentation':
@@ -326,7 +407,7 @@ function CanvasInner({ isEmbed = false, artifactId: propArtifactId, token: propT
     );
   }
 
-  const artType = artifact?.artifact_type || 'document';
+  const artType = getNormalizedType(artifact);
 
   const inIframe = isEmbed || (() => {
     try {
@@ -497,9 +578,22 @@ function CanvasInner({ isEmbed = false, artifactId: propArtifactId, token: propT
             />
           )}
 
+          {artType === 'html' && (
+            <HtmlViewer
+              fullContent={artifact?.full_content || (blocks && blocks[0] ? blocks[0].content : '') || ''}
+              blocks={blocks}
+              artifactId={artifact?.id}
+              filename={artifact?.filename || 'index.html'}
+              token={currentToken}
+              theme={theme}
+              onOpenHistory={(key, title) => setHistoryModal({ blockKey: key, blockTitle: title })}
+              onBlockUpdated={handleBlockUpdated}
+            />
+          )}
+
           {artType === 'svg' && (
             <SvgViewer
-              fullContent={artifact?.full_content || ''}
+              fullContent={artifact?.full_content || (blocks && blocks.length ? blocks.map(b => b.content || '').join('\n') : '')}
               blocks={blocks}
             />
           )}

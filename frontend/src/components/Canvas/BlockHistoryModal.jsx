@@ -65,7 +65,13 @@ export default function BlockHistoryModal({ artifactId, blockKey, blockTitle, to
               Zero-snapshot patch log. Rollback any block with non-destructive commits.
             </div>
           </div>
-          <button className="doc-action-btn" onClick={onClose}><X size={18} /></button>
+          <button
+            className="history-modal-close-btn"
+            onClick={onClose}
+            title="Close Version History"
+          >
+            <X size={15} />
+          </button>
         </div>
 
         <div className="history-commits-list">

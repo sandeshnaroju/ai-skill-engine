@@ -1,5 +1,5 @@
 import React from 'react';
-import { Bot, User, Brain, MessageSquare, Sparkles, Terminal, Code2, Copy, Check, FileText, ChevronUp, ChevronDown, Loader, Pin, PinOff, ExternalLink, Table, Presentation, Image, ArrowRight } from 'lucide-react';
+import { Bot, User, Brain, MessageSquare, Sparkles, Terminal, Code2, Copy, Check, FileText, ChevronUp, ChevronDown, Loader, Pin, PinOff, ExternalLink, Table, Presentation, Image, ArrowRight, Globe } from 'lucide-react';
 import ProChat from 'prochat';
 
 export default function MessageList({
@@ -242,12 +242,19 @@ export default function MessageList({
     const getArtifactIcon = (type) => {
       switch (type) {
         case 'spreadsheet':
+        case 'sheet':
           return <Table size={16} style={{ color: '#10b981' }} />;
         case 'presentation':
+        case 'slides':
           return <Presentation size={16} style={{ color: '#f59e0b' }} />;
         case 'code':
           return <Code2 size={16} style={{ color: '#3b82f6' }} />;
+        case 'html':
+        case 'web':
+          return <Globe size={16} style={{ color: '#f97316' }} />;
+        case 'diagram_svg':
         case 'svg':
+        case 'diagram':
           return <Image size={16} style={{ color: '#ec4899' }} />;
         default:
           return <FileText size={16} style={{ color: '#8b5cf6' }} />;

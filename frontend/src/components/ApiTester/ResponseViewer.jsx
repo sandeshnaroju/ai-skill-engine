@@ -1,7 +1,7 @@
 import React from 'react';
 import {
   Check, FileText, Sparkles, ExternalLink, ArrowRight,
-  Code, Table, Presentation, Image, Music, Video
+  Code, Table, Presentation, Image, Music, Video, Globe
 } from 'lucide-react';
 import ProChat from 'prochat';
 
@@ -34,10 +34,16 @@ export default function ResponseViewer({
 }) {
   const getArtifactIcon = (type) => {
     switch (type) {
-      case 'presentation': return <Presentation size={14} color="#f59e0b" />;
+      case 'presentation':
+      case 'slides': return <Presentation size={14} color="#f59e0b" />;
       case 'code': return <Code size={14} color="#06b6d4" />;
-      case 'sheet': return <Table size={14} color="#10b981" />;
-      case 'svg': return <Image size={14} color="#ec4899" />;
+      case 'html':
+      case 'web': return <Globe size={14} color="#f97316" />;
+      case 'sheet':
+      case 'spreadsheet': return <Table size={14} color="#10b981" />;
+      case 'diagram_svg':
+      case 'svg':
+      case 'diagram': return <Image size={14} color="#ec4899" />;
       case 'audio': return <Music size={14} color="#8b5cf6" />;
       case 'video': return <Video size={14} color="#ef4444" />;
       default: return <FileText size={14} color="#818cf8" />;

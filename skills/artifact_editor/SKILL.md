@@ -148,8 +148,21 @@ Use this skill whenever generating, modifying, or refining digital artifacts for
 3. **Spreadsheets (`.xlsx`, `.csv`)**:
    - Format content as JSON containing `sheet_name`, `columns`, and `rows`.
    - Formulas should start with `=` (e.g. `"=SUM(B2:B10)"`, `"=B2*C2"`).
-4. **Presentations (`.pptx`)**:
-   - Format content as JSON containing an array of `slides` with `title`, `subtitle`, `cards`, `bullets`, and optional `speaker_notes`.
+4. **Presentations (`.pptx` or presentation decks)**:
+   - The LLM has complete creative freedom to dynamically decide the theme, visual atmosphere, color palettes, gradients, and layout for each presentation slide based on the user's specific query topic and brand tone.
+   - Format content as JSON containing an array of `slides` with rich dynamic visual layouts and custom styling:
+     - `bg` / `background`: The LLM selects bespoke background gradients or colors (e.g. radial/linear gradients, dark glassmorphism, sleek light minimal, neo-brutalist, or neon cyber).
+     - `accent` / `accent_color`: Topic-matched accent colors (e.g. gold/emerald for finance, violet/cyan for AI, crimson/slate for cybersecurity).
+     - `card_bg`, `card_border`, `text_color`, `subtext_color`: Dynamic matching surface tokens.
+     - `layout`: Choose or invent an innovative layout per slide based on narrative context:
+       - `"hero"`: Cover/title or bold keynote vision (with `badge`, `subtitle`, `tags`).
+       - `"stats"`: Performance metrics, KPIs, and data highlights (`stats: [{"value": "$4.2M", "label": "ARR", "change": "+120%"}, ...]`).
+       - `"timeline"` / `"process"`: Roadmaps, phased launches, and milestone steps (`steps: [{"step": "Phase 1", "title": "Foundation", "desc": "Core infra"}, ...]`).
+       - `"matrix"` / `"grid"`: Multi-pillar architectures, feature grids, or capability matrices (`cards: [{"title": "Pillar A", "description": "...", "badge": "Core"}, ...]`).
+       - `"split"` / `"comparison"`: Side-by-side comparative column containers (`columns: [{"title": "Legacy", "items": [...]}, {"title": "AI Engine", "items": [...]}]`).
+       - `"quote"` / `"callout"`: Impactful vision statements and testimonials (`quote`, `author`, `role`).
+       - `"custom_html"`: Complete design autonomy to output full custom HTML + CSS directly inside the slide.
+     - Include `speaker_notes` where helpful for presentations.
 5. **Diagrams (`.svg`)**:
    - Emit valid standalone `<svg>` tags with `viewBox`, clean styling, and modern color palettes.
 
