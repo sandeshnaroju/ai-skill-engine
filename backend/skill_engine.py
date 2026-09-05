@@ -434,7 +434,6 @@ class SkillEngine:
                     save_message(db, session_obj, "assistant", content=quota_msg)
                 finalize_request(db, chat_req, quota_msg, executed_logs, start_time,
                                  usage_obj=None, in_rate=in_r, out_rate=out_r, au_in_rate=au_in_r, au_out_rate=au_out_r, model_name=model_name)
-                delta_payload = {"content": quota_msg}
                 if prochat_model:
                     delta_payload["json"] = prochat_json
                     delta_payload["code"] = prochat_code
@@ -457,6 +456,16 @@ class SkillEngine:
                 else:
                     turn_msg = f"Processing tool outputs & synthesizing response (Turn {turn+1})..."
                 yield _chunk(session_id, model_name, reasoning=turn_msg)
+
+                # Enable Gemini Thinking/Reasoning mode via extra_body
+                if "gemini" in model_name.lower():
+                    kwargs["extra_body"] = {
+                        "google": {
+                            "thinking_config": {
+                                "include_thoughts": True
+                            }
+                        }
+                    }
 
                 try:
                     response_stream = llm.chat.completions.create(**kwargs)
@@ -483,15 +492,10 @@ class SkillEngine:
                             delta_payload["code"] = prochat_code
 
                         yield f"data: {json.dumps({'id': f'chatcmpl-{session_id}', 'object': 'chat.completion.chunk', 'created': 1700000000, 'model': model_name, 'choices': [{'index': 0, 'delta': delta_payload, 'finish_reason': 'stop'}]})}\n\n"
-                        yield f"data: {json.dumps({'type': 'done', 'request_id': request_id, 'tools_called': len(executed_logs), 'artifacts': []})}\n\n"
+                        yield f"data: {json.dumps({'type': 'done', 'request_id': request_id, 'tools_called': len(executed_logs), 'artifacts': list(accumulated_artifacts.values())})}\n\n"
                         yield "data: [DONE]\n\n"
                         return
-                    sys_content = skill_registry.get_system_instructions(tenant_id=tenant.id)
-                    if user_data:
-                        sys_content = resolve_user_data_placeholders(sys_content, user_data)
-                    messages = [{"role": "system", "content": sys_content}, {"role": "user", "content": user_message}]
-                    kwargs["messages"] = messages
-                    response_stream = llm.chat.completions.create(**kwargs)
+                    raise e
 
                 full_text = ""
                 tool_calls_accumulator = {}
@@ -505,14 +509,22 @@ class SkillEngine:
                     if not chunk.choices:
                         continue
                     choice = chunk.choices[0]
+                    delta = choice.delta
+
                     # Extract native LLM reasoning / thought process (Gemini 2.5/3 Thinking, DeepSeek-R1, OpenRouter)
-                    thought_chunk = (
+                    raw_thought = (
                         getattr(delta, "reasoning_content", None) or
                         getattr(delta, "reasoning", None) or
                         getattr(delta, "thought", None)
                     )
-                    if thought_chunk:
-                        yield _chunk(session_id, model_name, reasoning=thought_chunk)
+                    thought_text = ""
+                    if isinstance(raw_thought, str):
+                        thought_text = raw_thought
+                    elif isinstance(raw_thought, dict):
+                        thought_text = raw_thought.get("text") or raw_thought.get("content") or json.dumps(raw_thought)
+
+                    if thought_text:
+                        yield _chunk(session_id, model_name, reasoning=thought_text)
 
                     if delta.content:
                         full_text += delta.content
