@@ -34,7 +34,7 @@ export default function ChatPlayground() {
   const [messages, setMessages] = useState([]);
   const [canvasArtifact, setCanvasArtifact] = useState(null);
   const [isCanvasOpen, setIsCanvasOpen] = useState(false);
-  const [canvasWidthPercent, setCanvasWidthPercent] = useState(64);
+  const [canvasWidthPercent, setCanvasWidthPercent] = useState(55);
 
   // Auto-detect if current session already has an artifact and make it available
   useEffect(() => {
@@ -1019,24 +1019,105 @@ export default function ChatPlayground() {
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           {/* Canvas Toggle (Highlight when artifact ready) */}
           {canvasArtifact && (
-            <button
-              type="button"
-              onClick={() => setIsCanvasOpen(!isCanvasOpen)}
-              className="btn-gradient"
-              style={{
-                padding: '6px 12px',
-                fontSize: '0.8rem',
-                borderRadius: '8px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                boxShadow: isCanvasOpen ? '0 0 12px rgba(139, 92, 246, 0.4)' : 'none'
-              }}
-              title={isCanvasOpen ? 'Collapse Canvas' : 'Expand Canvas Document'}
-            >
-              <FileText size={14} />
-              <span>{isCanvasOpen ? 'Close Canvas' : `Canvas: ${canvasArtifact.title || 'Document'}`}</span>
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <button
+                type="button"
+                onClick={() => setIsCanvasOpen(!isCanvasOpen)}
+                className="btn-gradient"
+                style={{
+                  padding: '6px 12px',
+                  fontSize: '0.8rem',
+                  borderRadius: isCanvasOpen ? '8px 0 0 8px' : '8px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  boxShadow: isCanvasOpen ? '0 0 12px rgba(139, 92, 246, 0.4)' : 'none'
+                }}
+                title={isCanvasOpen ? 'Close Canvas Panel' : 'Open Canvas Document'}
+              >
+                <FileText size={14} />
+                <span>{isCanvasOpen ? 'Canvas Active' : `Canvas: ${canvasArtifact.title || 'Document'}`}</span>
+              </button>
+              {isCanvasOpen && (
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  background: 'var(--bg-input)',
+                  border: '1px solid var(--border-subtle)',
+                  borderRadius: '0 8px 8px 0',
+                  padding: '2px',
+                  borderLeft: 'none'
+                }}>
+                  <button
+                    type="button"
+                    onClick={() => setCanvasWidthPercent(50)}
+                    title="50/50 Split View"
+                    style={{
+                      padding: '4px 6px',
+                      fontSize: '0.7rem',
+                      background: canvasWidthPercent === 50 ? 'rgba(139, 92, 246, 0.2)' : 'transparent',
+                      color: canvasWidthPercent === 50 ? 'var(--primary-violet)' : 'var(--text-muted)',
+                      border: 'none',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      fontWeight: '600'
+                    }}
+                  >
+                    50%
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCanvasWidthPercent(65)}
+                    title="Wide Canvas View (65%)"
+                    style={{
+                      padding: '4px 6px',
+                      fontSize: '0.7rem',
+                      background: canvasWidthPercent === 65 ? 'rgba(139, 92, 246, 0.2)' : 'transparent',
+                      color: canvasWidthPercent === 65 ? 'var(--primary-violet)' : 'var(--text-muted)',
+                      border: 'none',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      fontWeight: '600'
+                    }}
+                  >
+                    65%
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCanvasWidthPercent(100)}
+                    title="Full Canvas View (100%)"
+                    style={{
+                      padding: '4px 6px',
+                      fontSize: '0.7rem',
+                      background: canvasWidthPercent === 100 ? 'rgba(139, 92, 246, 0.2)' : 'transparent',
+                      color: canvasWidthPercent === 100 ? 'var(--primary-violet)' : 'var(--text-muted)',
+                      border: 'none',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      fontWeight: '600'
+                    }}
+                  >
+                    100%
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsCanvasOpen(false)}
+                    title="Close Canvas"
+                    style={{
+                      padding: '4px 6px',
+                      fontSize: '0.7rem',
+                      background: 'transparent',
+                      color: 'var(--text-muted)',
+                      border: 'none',
+                      borderRadius: '4px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+              )}
+            </div>
           )}
 
           {/* Slide-over Config Trigger */}
@@ -1089,76 +1170,88 @@ export default function ChatPlayground() {
         flex: 1,
         minHeight: 0,
         width: '100%',
+        minWidth: 0,
+        overflow: 'hidden',
         position: 'relative'
       }}>
 
         {/* LEFT SECTION: Chat Conversation Viewport */}
-        <div style={{
-          display: 'flex',
-          flexDirection: 'column',
-          flex: 1,
-          minHeight: 0,
-          height: '100%',
-          position: 'relative'
-        }}>
-          {/* Messages Stream */}
-          <MessageList
-            messages={messages}
-            expandedReasoning={expandedReasoning}
-            setExpandedReasoning={setExpandedReasoning}
-            copiedIdx={copiedIdx}
-            copyText={copyText}
-            onOpenCanvas={(art) => {
-              if (!art) return;
-              let resolvedArt = { ...art };
-              if (!resolvedArt.id && resolvedArt.token && resolvedArt.token.includes('.')) {
-                try {
-                  const rawB64 = resolvedArt.token.split('.')[0].replace(/-/g, '+').replace(/_/g, '/');
-                  const padded = rawB64.padEnd(rawB64.length + ((4 - (rawB64.length % 4)) % 4), '=');
-                  const payload = JSON.parse(atob(padded));
-                  if (payload?.art) resolvedArt.id = payload.art;
-                } catch (e) {
-                  console.warn('Could not extract artifact id:', e);
+        {(!isCanvasOpen || canvasWidthPercent < 100) && (
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            flex: isCanvasOpen ? `0 0 calc(100% - ${canvasWidthPercent}%)` : '1 1 100%',
+            width: isCanvasOpen ? `calc(100% - ${canvasWidthPercent}%)` : '100%',
+            minWidth: 0,
+            maxWidth: isCanvasOpen ? `calc(100% - ${canvasWidthPercent}%)` : '100%',
+            minHeight: 0,
+            height: '100%',
+            position: 'relative',
+            overflow: 'hidden',
+            transition: 'width 0.15s ease'
+          }}>
+            {/* Messages Stream */}
+            <MessageList
+              messages={messages}
+              expandedReasoning={expandedReasoning}
+              setExpandedReasoning={setExpandedReasoning}
+              copiedIdx={copiedIdx}
+              copyText={copyText}
+              onOpenCanvas={(art) => {
+                if (!art) return;
+                let resolvedArt = { ...art };
+                if (!resolvedArt.id && resolvedArt.token && resolvedArt.token.includes('.')) {
+                  try {
+                    const rawB64 = resolvedArt.token.split('.')[0].replace(/-/g, '+').replace(/_/g, '/');
+                    const padded = rawB64.padEnd(rawB64.length + ((4 - (rawB64.length % 4)) % 4), '=');
+                    const payload = JSON.parse(atob(padded));
+                    if (payload?.art) resolvedArt.id = payload.art;
+                  } catch (e) {
+                    console.warn('Could not extract artifact id:', e);
+                  }
                 }
-              }
-              setCanvasArtifact(resolvedArt);
-              setIsCanvasOpen(true);
-            }}
-            activeCanvasArtifact={canvasArtifact}
-            isCanvasOpen={isCanvasOpen}
-            onSelectPreset={(text) => handleSend(text)}
-          />
+                setCanvasArtifact(resolvedArt);
+                setIsCanvasOpen(true);
+              }}
+              activeCanvasArtifact={canvasArtifact}
+              isCanvasOpen={isCanvasOpen}
+              onSelectPreset={(text) => handleSend(text)}
+            />
 
-          {/* Floating Pill Chat Input */}
-          <ChatInput
-            attachedFiles={attachedFiles}
-            setAttachedFiles={setAttachedFiles}
-            fileInputRef={fileInputRef}
-            handleFileChange={handleFileChange}
-            loading={loading}
-            uploading={uploading}
-            input={input}
-            setInput={setInput}
-            handleSend={handleSend}
-            handleStop={handleStop}
-            activeModelName={selectedModel}
-            activeAppName={activeApp?.name}
-          />
-        </div>
+            {/* Floating Pill Chat Input */}
+            <ChatInput
+              attachedFiles={attachedFiles}
+              setAttachedFiles={setAttachedFiles}
+              fileInputRef={fileInputRef}
+              handleFileChange={handleFileChange}
+              loading={loading}
+              uploading={uploading}
+              input={input}
+              setInput={setInput}
+              handleSend={handleSend}
+              handleStop={handleStop}
+              activeModelName={selectedModel}
+              activeAppName={activeApp?.name}
+            />
+          </div>
+        )}
 
         {/* RIGHT SECTION: Interactive Canvas (Slides, Docs, Sheets, Code) */}
         {canvasArtifact && isCanvasOpen && (
           <div style={{
-            width: `${canvasWidthPercent}%`,
-            minWidth: '520px',
-            maxWidth: '85%',
-            borderLeft: '1px solid var(--border-subtle)',
+            width: canvasWidthPercent === 100 ? '100%' : `${canvasWidthPercent}%`,
+            flex: canvasWidthPercent === 100 ? '1 1 100%' : `0 0 ${canvasWidthPercent}%`,
+            minWidth: 0,
+            maxWidth: canvasWidthPercent === 100 ? '100%' : `${canvasWidthPercent}%`,
+            borderLeft: canvasWidthPercent === 100 ? 'none' : '1px solid var(--border-subtle)',
             display: 'flex',
             flexDirection: 'column',
             height: '100%',
             position: 'relative',
             background: 'var(--bg-main)',
-            animation: 'fadeIn 0.2s ease'
+            overflow: 'hidden',
+            animation: 'fadeIn 0.2s ease',
+            transition: 'width 0.15s ease'
           }}>
             <Canvas
               key={`${canvasArtifact.id}-${canvasArtifact.token || 'notoken'}`}
