@@ -774,7 +774,7 @@ def _parse_presentation_blocks(blocks: List[Any], default_title: str = "Presenta
                 if stat_m:
                     stats.append({"value": stat_m.group(1), "label": stat_m.group(2)})
                 else:
-                    bullets.push(bullet_txt) if hasattr(bullets, 'push') else bullets.append(bullet_txt)
+                    bullets.append(bullet_txt)
             elif re.match(r'^\d+\.\s+', line):
                 bullets.append(re.sub(r'^\d+\.\s+', '', line))
             elif line.startswith(">"):
@@ -804,6 +804,61 @@ def _parse_presentation_blocks(blocks: List[Any], default_title: str = "Presenta
         slides.append({"title": default_title, "subtitle": "AI Generated Presentation", "bullets": [], "stats": [], "cards": [], "steps": [], "columns": [], "quote": "", "author": "", "role": "", "notes": "", "badge": "KEYNOTE", "layout": "hero"})
 
     return slides
+
+
+def _add_clean_multiline_text(
+    text_frame,
+    text,
+    font_name="Calibri",
+    font_size=None,
+    font_bold=False,
+    font_italic=False,
+    font_color=None,
+    space_before=None,
+    space_after=None,
+    align=None,
+    prefix=""
+):
+    """
+    Safely writes multiline text into DrawingML text frames.
+    DrawingML strict schema requires single-line text runs inside paragraph (<a:p>) elements.
+    Raw newlines inside <a:t> cause Apple Keynote import failure ('file format is invalid').
+    """
+    from pptx.util import Pt
+    from pptx.dml.color import RGBColor
+
+    if text is None:
+        return
+    text_str = str(text).replace("\r\n", "\n").replace("\r", "\n")
+    raw_lines = [_strip_html(l).strip() for l in text_str.split("\n")]
+    clean_lines = [l for l in raw_lines if l]
+    if not clean_lines:
+        return
+
+    for idx, line in enumerate(clean_lines):
+        if idx == 0 and len(text_frame.paragraphs) == 1 and not text_frame.paragraphs[0].text:
+            p = text_frame.paragraphs[0]
+        else:
+            p = text_frame.add_paragraph()
+
+        if space_before is not None and idx == 0:
+            p.space_before = space_before
+        if space_after is not None and idx == len(clean_lines) - 1:
+            p.space_after = space_after
+        if align is not None:
+            p.alignment = align
+
+        clean_run_text = f"{prefix}{line}".replace("\n", " ").replace("\r", "").strip()
+        run = p.add_run()
+        run.text = clean_run_text
+        if font_name:
+            run.font.name = font_name
+        if font_size:
+            run.font.size = font_size
+        run.font.bold = font_bold
+        run.font.italic = font_italic
+        if font_color:
+            run.font.color.rgb = font_color
 
 
 def compile_to_pptx(artifact: SessionArtifact) -> io.BytesIO:
@@ -888,14 +943,14 @@ def compile_to_pptx(artifact: SessionArtifact) -> io.BytesIO:
                 badge_shape.line.width = Pt(1)
                 b_tf = badge_shape.text_frame
                 b_tf.word_wrap = True
-                bp = b_tf.paragraphs[0]
-                bp.alignment = PP_ALIGN.CENTER
-                br = bp.add_run()
-                br.text = badge_text.upper()
-                br.font.name = "Calibri"
-                br.font.size = Pt(11)
-                br.font.bold = True
-                br.font.color.rgb = accent_cyan
+                _add_clean_multiline_text(
+                    b_tf,
+                    badge_text.upper(),
+                    font_size=Pt(11),
+                    font_bold=True,
+                    font_color=accent_cyan,
+                    align=PP_ALIGN.CENTER
+                )
 
             # Main Title & Subtitle Box
             top_pos = 2.8 if badge_text else 2.2
@@ -903,22 +958,22 @@ def compile_to_pptx(artifact: SessionArtifact) -> io.BytesIO:
             tf = tx_box.text_frame
             tf.word_wrap = True
 
-            p1 = tf.paragraphs[0]
-            p1.space_after = Pt(14)
-            r1 = p1.add_run()
-            r1.text = title_text
-            r1.font.name = "Calibri"
-            r1.font.size = Pt(38)
-            r1.font.bold = True
-            r1.font.color.rgb = text_white
+            _add_clean_multiline_text(
+                tf,
+                title_text,
+                font_size=Pt(38),
+                font_bold=True,
+                font_color=text_white,
+                space_after=Pt(14)
+            )
 
             if subtitle_text:
-                p2 = tf.add_paragraph()
-                r2 = p2.add_run()
-                r2.text = subtitle_text
-                r2.font.name = "Calibri"
-                r2.font.size = Pt(18)
-                r2.font.color.rgb = text_slate
+                _add_clean_multiline_text(
+                    tf,
+                    subtitle_text,
+                    font_size=Pt(18),
+                    font_color=text_slate
+                )
 
         # ── CONTENT SLIDES (STATS, CARDS, TIMELINE, QUOTE, SPLIT, STANDARD) ──
         else:
@@ -927,22 +982,22 @@ def compile_to_pptx(artifact: SessionArtifact) -> io.BytesIO:
             htf = hdr_box.text_frame
             htf.word_wrap = True
 
-            hp1 = htf.paragraphs[0]
-            hr1 = hp1.add_run()
-            hr1.text = title_text
-            hr1.font.name = "Calibri"
-            hr1.font.size = Pt(28)
-            hr1.font.bold = True
-            hr1.font.color.rgb = text_white
+            _add_clean_multiline_text(
+                htf,
+                title_text,
+                font_size=Pt(28),
+                font_bold=True,
+                font_color=text_white
+            )
 
             if subtitle_text:
-                hp2 = htf.add_paragraph()
-                hp2.space_before = Pt(4)
-                hr2 = hp2.add_run()
-                hr2.text = subtitle_text
-                hr2.font.name = "Calibri"
-                hr2.font.size = Pt(14)
-                hr2.font.color.rgb = text_muted
+                _add_clean_multiline_text(
+                    htf,
+                    subtitle_text,
+                    font_size=Pt(14),
+                    font_color=text_muted,
+                    space_before=Pt(4)
+                )
 
             # ── STATS LAYOUT ──
             if layout == "stats" and (stats or bullets):
@@ -961,31 +1016,29 @@ def compile_to_pptx(artifact: SessionArtifact) -> io.BytesIO:
                     ctf = card.text_frame
                     ctf.word_wrap = True
 
-                    val_p = ctf.paragraphs[0]
-                    val_p.space_after = Pt(8)
-                    vr = val_p.add_run()
-                    vr.text = _strip_html(str(st.get("value", "")))
-                    vr.font.name = "Calibri"
-                    vr.font.size = Pt(34)
-                    vr.font.bold = True
-                    vr.font.color.rgb = accent_indigo
-
-                    lbl_p = ctf.add_paragraph()
-                    lr = lbl_p.add_run()
-                    lr.text = _strip_html(str(st.get("label", "")))
-                    lr.font.name = "Calibri"
-                    lr.font.size = Pt(15)
-                    lr.font.bold = True
-                    lr.font.color.rgb = text_white
-
+                    _add_clean_multiline_text(
+                        ctf,
+                        str(st.get("value", "")),
+                        font_size=Pt(34),
+                        font_bold=True,
+                        font_color=accent_indigo,
+                        space_after=Pt(8)
+                    )
+                    _add_clean_multiline_text(
+                        ctf,
+                        str(st.get("label", "")),
+                        font_size=Pt(15),
+                        font_bold=True,
+                        font_color=text_white
+                    )
                     if st.get("desc"):
-                        desc_p = ctf.add_paragraph()
-                        desc_p.space_before = Pt(6)
-                        dr = desc_p.add_run()
-                        dr.text = _strip_html(str(st["desc"]))
-                        dr.font.name = "Calibri"
-                        dr.font.size = Pt(12)
-                        dr.font.color.rgb = text_muted
+                        _add_clean_multiline_text(
+                            ctf,
+                            str(st["desc"]),
+                            font_size=Pt(12),
+                            font_color=text_muted,
+                            space_before=Pt(6)
+                        )
 
             # ── CARDS / GRID LAYOUT ──
             elif layout == "grid" and (cards or bullets):
@@ -1004,21 +1057,20 @@ def compile_to_pptx(artifact: SessionArtifact) -> io.BytesIO:
                     ctf = card.text_frame
                     ctf.word_wrap = True
 
-                    t_p = ctf.paragraphs[0]
-                    t_p.space_after = Pt(8)
-                    tr = t_p.add_run()
-                    tr.text = _strip_html(str(cd.get("title", f"Point {c_idx+1}")))
-                    tr.font.name = "Calibri"
-                    tr.font.size = Pt(17)
-                    tr.font.bold = True
-                    tr.font.color.rgb = accent_cyan
-
-                    d_p = ctf.add_paragraph()
-                    dr = d_p.add_run()
-                    dr.text = _strip_html(str(cd.get("desc", cd.get("text", ""))))
-                    dr.font.name = "Calibri"
-                    dr.font.size = Pt(13)
-                    dr.font.color.rgb = text_slate
+                    _add_clean_multiline_text(
+                        ctf,
+                        str(cd.get("title", f"Point {c_idx+1}")),
+                        font_size=Pt(17),
+                        font_bold=True,
+                        font_color=accent_cyan,
+                        space_after=Pt(8)
+                    )
+                    _add_clean_multiline_text(
+                        ctf,
+                        str(cd.get("desc", cd.get("text", ""))),
+                        font_size=Pt(13),
+                        font_color=text_slate
+                    )
 
             # ── TIMELINE / STEPS LAYOUT ──
             elif layout == "timeline" and (steps or bullets):
@@ -1037,30 +1089,28 @@ def compile_to_pptx(artifact: SessionArtifact) -> io.BytesIO:
                     ctf = card.text_frame
                     ctf.word_wrap = True
 
-                    st_p = ctf.paragraphs[0]
-                    st_p.space_after = Pt(6)
-                    strun = st_p.add_run()
-                    strun.text = f"PHASE {st_idx + 1}"
-                    strun.font.name = "Calibri"
-                    strun.font.size = Pt(11)
-                    strun.font.bold = True
-                    strun.font.color.rgb = accent_cyan
-
-                    t_p = ctf.add_paragraph()
-                    t_p.space_after = Pt(6)
-                    tr = t_p.add_run()
-                    tr.text = _strip_html(str(st.get("title", f"Step {st_idx + 1}")))
-                    tr.font.name = "Calibri"
-                    tr.font.size = Pt(16)
-                    tr.font.bold = True
-                    tr.font.color.rgb = text_white
-
-                    d_p = ctf.add_paragraph()
-                    dr = d_p.add_run()
-                    dr.text = _strip_html(str(st.get("desc", "")))
-                    dr.font.name = "Calibri"
-                    dr.font.size = Pt(12.5)
-                    dr.font.color.rgb = text_slate
+                    _add_clean_multiline_text(
+                        ctf,
+                        f"PHASE {st_idx + 1}",
+                        font_size=Pt(11),
+                        font_bold=True,
+                        font_color=accent_cyan,
+                        space_after=Pt(6)
+                    )
+                    _add_clean_multiline_text(
+                        ctf,
+                        str(st.get("title", f"Step {st_idx + 1}")),
+                        font_size=Pt(16),
+                        font_bold=True,
+                        font_color=text_white,
+                        space_after=Pt(6)
+                    )
+                    _add_clean_multiline_text(
+                        ctf,
+                        str(st.get("desc", "")),
+                        font_size=Pt(12.5),
+                        font_color=text_slate
+                    )
 
             # ── QUOTE LAYOUT ──
             elif layout == "quote" and (quote_text or bullets):
@@ -1074,25 +1124,26 @@ def compile_to_pptx(artifact: SessionArtifact) -> io.BytesIO:
                 qtf = q_card.text_frame
                 qtf.word_wrap = True
 
-                qp = qtf.paragraphs[0]
-                qp.space_after = Pt(14)
-                qr = qp.add_run()
-                qr.text = f'"{_strip_html(q_content)}"'
-                qr.font.name = "Calibri"
-                qr.font.size = Pt(22)
-                qr.font.italic = True
-                qr.font.color.rgb = text_white
+                _add_clean_multiline_text(
+                    qtf,
+                    f'"{q_content}"',
+                    font_size=Pt(22),
+                    font_italic=True,
+                    font_color=text_white,
+                    space_after=Pt(14)
+                )
 
                 author = _strip_html(slide_info.get("author", ""))
                 role = _strip_html(slide_info.get("role", ""))
                 if author or role:
-                    ap = qtf.add_paragraph()
-                    ar = ap.add_run()
-                    ar.text = f"— {author}" + (f", {role}" if role else "")
-                    ar.font.name = "Calibri"
-                    ar.font.size = Pt(14)
-                    ar.font.bold = True
-                    ar.font.color.rgb = accent_indigo
+                    author_str = f"— {author}" + (f", {role}" if role else "")
+                    _add_clean_multiline_text(
+                        qtf,
+                        author_str,
+                        font_size=Pt(14),
+                        font_bold=True,
+                        font_color=accent_indigo
+                    )
 
             # ── SPLIT / COLUMNS LAYOUT ──
             elif layout == "split" and (columns or len(bullets) >= 2):
@@ -1113,23 +1164,24 @@ def compile_to_pptx(artifact: SessionArtifact) -> io.BytesIO:
                     ctf = card.text_frame
                     ctf.word_wrap = True
 
-                    cp = ctf.paragraphs[0]
-                    cp.space_after = Pt(10)
-                    cr = cp.add_run()
-                    cr.text = _strip_html(str(col_data.get("title", f"Column {col_idx + 1}")))
-                    cr.font.name = "Calibri"
-                    cr.font.size = Pt(17)
-                    cr.font.bold = True
-                    cr.font.color.rgb = accent_indigo
+                    _add_clean_multiline_text(
+                        ctf,
+                        str(col_data.get("title", f"Column {col_idx + 1}")),
+                        font_size=Pt(17),
+                        font_bold=True,
+                        font_color=accent_indigo,
+                        space_after=Pt(10)
+                    )
 
                     for b_str in col_data.get("bullets", []):
-                        bp = ctf.add_paragraph()
-                        bp.space_after = Pt(6)
-                        br = bp.add_run()
-                        br.text = f"• {_strip_html(str(b_str))}"
-                        br.font.name = "Calibri"
-                        br.font.size = Pt(13.5)
-                        br.font.color.rgb = text_slate
+                        _add_clean_multiline_text(
+                            ctf,
+                            str(b_str),
+                            font_size=Pt(13.5),
+                            font_color=text_slate,
+                            space_after=Pt(6),
+                            prefix="• "
+                        )
 
             # ── STANDARD BULLET LIST ──
             else:
@@ -1143,21 +1195,22 @@ def compile_to_pptx(artifact: SessionArtifact) -> io.BytesIO:
                 ctf.word_wrap = True
 
                 if bullets:
-                    for b_idx, b_item in enumerate(bullets):
-                        bp = ctf.paragraphs[0] if b_idx == 0 else ctf.add_paragraph()
-                        bp.space_after = Pt(8)
-                        br = bp.add_run()
-                        br.text = f"• {_strip_html(str(b_item))}"
-                        br.font.name = "Calibri"
-                        br.font.size = Pt(15)
-                        br.font.color.rgb = text_slate
+                    for b_item in bullets:
+                        _add_clean_multiline_text(
+                            ctf,
+                            str(b_item),
+                            font_size=Pt(15),
+                            font_color=text_slate,
+                            space_after=Pt(8),
+                            prefix="• "
+                        )
                 else:
-                    bp = ctf.paragraphs[0]
-                    br = bp.add_run()
-                    br.text = _strip_html(str(slide_info.get("content", "")))
-                    br.font.name = "Calibri"
-                    br.font.size = Pt(15)
-                    br.font.color.rgb = text_slate
+                    _add_clean_multiline_text(
+                        ctf,
+                        str(slide_info.get("content", "")),
+                        font_size=Pt(15),
+                        font_color=text_slate
+                    )
 
         # ── SPEAKER NOTES ──
         notes = slide_info.get("notes", "")
@@ -1165,7 +1218,12 @@ def compile_to_pptx(artifact: SessionArtifact) -> io.BytesIO:
             try:
                 notes_slide = slide.notes_slide
                 notes_tf = notes_slide.notes_text_frame
-                notes_tf.text = _strip_html(str(notes))
+                _add_clean_multiline_text(
+                    notes_tf,
+                    str(notes),
+                    font_size=Pt(12),
+                    font_color=RGBColor(0, 0, 0)
+                )
             except Exception:
                 pass
 

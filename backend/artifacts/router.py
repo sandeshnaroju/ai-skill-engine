@@ -391,6 +391,7 @@ def rollback_artifact_block_endpoint(
 @router.get("/{artifact_id}/export")
 def export_artifact_file(
     artifact_id: str,
+    format: Optional[str] = Query(None),
     auth: dict = Depends(authenticate_canvas_access),
     db: Session = Depends(get_db)
 ):
@@ -398,7 +399,7 @@ def export_artifact_file(
     if not artifact:
         raise HTTPException(status_code=404, detail="Artifact not found")
 
-    data_bytes, mime_type, filename = export_artifact(artifact)
+    data_bytes, mime_type, filename = export_artifact(artifact, target_format=format)
 
     return Response(
         content=data_bytes,
