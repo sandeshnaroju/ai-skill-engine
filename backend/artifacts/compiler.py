@@ -693,88 +693,475 @@ def compile_to_xlsx(artifact: SessionArtifact) -> io.BytesIO:
     return output
 
 
+def _parse_presentation_blocks(blocks: List[Any], default_title: str = "Presentation") -> List[Dict[str, Any]]:
+    """
+    Parses slide blocks from JSON, Markdown, or HTML into structured slide dictionaries:
+    [{"title": "...", "subtitle": "...", "bullets": [...], "stats": [...], "cards": [...], "steps": [...], "quote": "...", "layout": "...", "notes": "..."}]
+    """
+    slides = []
+
+    for idx, block in enumerate(blocks):
+        raw = str(getattr(block, 'content', '') or '').strip()
+        b_title = getattr(block, 'title', '') or f"Slide {idx + 1}"
+        if not raw:
+            continue
+
+        cleaned = re.sub(r'^```(?:[a-zA-Z0-9_-]+)?\s*\n', '', raw)
+        cleaned = re.sub(r'\n```\s*$', '', cleaned).strip()
+
+        # 1. Try parsing JSON format
+        try:
+            data = json.loads(cleaned)
+            if isinstance(data, dict):
+                # { "slides": [ { ... }, ... ] }
+                if "slides" in data and isinstance(data["slides"], list) and len(data["slides"]) > 0:
+                    for s_idx, s in enumerate(data["slides"]):
+                        s_title = s.get("title") or f"{b_title} - Slide {s_idx + 1}"
+                        slides.append({
+                            "title": s_title,
+                            "subtitle": s.get("subtitle") or s.get("tagline") or "",
+                            "bullets": s.get("bullets") or (s.get("content") if isinstance(s.get("content"), list) else ([s.get("content")] if s.get("content") else [])),
+                            "stats": s.get("stats") or [],
+                            "cards": s.get("cards") or [],
+                            "steps": s.get("steps") or s.get("timeline") or [],
+                            "columns": s.get("columns") or [],
+                            "quote": s.get("quote") or "",
+                            "author": s.get("author") or "",
+                            "role": s.get("role") or "",
+                            "notes": s.get("notes") or s.get("speaker_notes") or "",
+                            "badge": s.get("badge") or s.get("tag") or (f"KEYNOTE" if idx == 0 and s_idx == 0 else ""),
+                            "layout": s.get("layout") or ""
+                        })
+                    continue
+
+                # Single slide JSON
+                slides.append({
+                    "title": data.get("title") or b_title,
+                    "subtitle": data.get("subtitle") or data.get("tagline") or "",
+                    "bullets": data.get("bullets") or (data.get("content") if isinstance(data.get("content"), list) else ([data.get("content")] if data.get("content") else [])),
+                    "stats": data.get("stats") or [],
+                    "cards": data.get("cards") or [],
+                    "steps": data.get("steps") or data.get("timeline") or [],
+                    "columns": data.get("columns") or [],
+                    "quote": data.get("quote") or "",
+                    "author": data.get("author") or "",
+                    "role": data.get("role") or "",
+                    "notes": data.get("notes") or data.get("speaker_notes") or "",
+                    "badge": data.get("badge") or data.get("tag") or (f"KEYNOTE" if idx == 0 else ""),
+                    "layout": data.get("layout") or ""
+                })
+                continue
+        except Exception:
+            pass
+
+        # 2. Parse Markdown Slide format
+        lines = [l.strip() for l in cleaned.splitlines() if l.strip()]
+        title = b_title
+        subtitle = ""
+        bullets = []
+        quote = ""
+        stats = []
+
+        for line in lines:
+            if line.startswith("# "):
+                title = line[2:].strip()
+            elif line.startswith("## ") and not subtitle:
+                subtitle = line[3:].strip()
+            elif line.startswith("- ") or line.startswith("* ") or line.startswith("• "):
+                bullet_txt = line[2:].strip()
+                # Check for stat format: **$500k**: Revenue Growth
+                stat_m = re.match(r'^\*\*(.+?)\*\*:\s*(.+)$', bullet_txt)
+                if stat_m:
+                    stats.append({"value": stat_m.group(1), "label": stat_m.group(2)})
+                else:
+                    bullets.push(bullet_txt) if hasattr(bullets, 'push') else bullets.append(bullet_txt)
+            elif re.match(r'^\d+\.\s+', line):
+                bullets.append(re.sub(r'^\d+\.\s+', '', line))
+            elif line.startswith(">"):
+                quote = re.sub(r'^>\s*', '', line).strip()
+            elif not subtitle:
+                subtitle = line
+            else:
+                bullets.append(line)
+
+        slides.append({
+            "title": title,
+            "subtitle": subtitle,
+            "bullets": bullets,
+            "stats": stats,
+            "cards": [],
+            "steps": [],
+            "columns": [],
+            "quote": quote,
+            "author": "",
+            "role": "",
+            "notes": "",
+            "badge": "KEYNOTE" if idx == 0 else "",
+            "layout": ""
+        })
+
+    if not slides:
+        slides.append({"title": default_title, "subtitle": "AI Generated Presentation", "bullets": [], "stats": [], "cards": [], "steps": [], "columns": [], "quote": "", "author": "", "role": "", "notes": "", "badge": "KEYNOTE", "layout": "hero"})
+
+    return slides
+
+
 def compile_to_pptx(artifact: SessionArtifact) -> io.BytesIO:
-    """Compile Slide JSON into native Microsoft PowerPoint (.pptx)."""
+    """Compile Presentation artifact into high-end 16:9 Microsoft PowerPoint (.pptx) with modern dark styling and card layouts."""
     from pptx import Presentation
     from pptx.util import Inches, Pt
     from pptx.dml.color import RGBColor
+    from pptx.enum.text import PP_ALIGN
+    from pptx.enum.shapes import MSO_SHAPE
 
     prs = Presentation()
+    # 16:9 widescreen layout (13.333 x 7.5 inches)
     prs.slide_width = Inches(13.333)
     prs.slide_height = Inches(7.5)
+    blank_layout = prs.slide_layouts[6]
 
     blocks = sorted(artifact.blocks, key=lambda b: b.order_index) if artifact.blocks else []
+    slides_data = _parse_presentation_blocks(blocks, default_title=artifact.title or "Presentation Deck")
 
-    for idx, block in enumerate(blocks):
-        try:
-            slide_dict = json.loads(block.content)
-        except Exception:
-            slide_dict = {"title": block.title, "content": block.content}
+    # Theme colors
+    bg_color = RGBColor(11, 15, 25)          # #0B0F19 Dark Navy Canvas
+    card_bg = RGBColor(22, 31, 48)           # #161F30 Dark Slate Container
+    card_border = RGBColor(51, 65, 85)       # #334155 Card Border
+    accent_indigo = RGBColor(129, 140, 248)  # #818CF8 Accent Indigo
+    accent_cyan = RGBColor(56, 189, 248)     # #38BDF8 Accent Sky
+    text_white = RGBColor(255, 255, 255)     # #FFFFFF Main Text
+    text_slate = RGBColor(203, 213, 225)     # #CBD5E1 Subtitle / Body
+    text_muted = RGBColor(148, 163, 184)     # #94A3B8 Muted Text
 
-        title_text = slide_dict.get("title", f"Slide {idx + 1}")
-        subtitle_text = slide_dict.get("subtitle", "")
-        layout_name = slide_dict.get("layout", "content")
-        cards = slide_dict.get("cards", [])
-        bullets = slide_dict.get("bullets", [])
+    for idx, slide_info in enumerate(slides_data):
+        slide = prs.slides.add_slide(blank_layout)
 
-        if idx == 0 and layout_name in ("title", "title_slide"):
-            slide_layout = prs.slide_layouts[0]
-            slide = prs.slides.add_slide(slide_layout)
-            slide.shapes.title.text = title_text
-            if slide.placeholders and len(slide.placeholders) > 1:
-                slide.placeholders[1].text = subtitle_text or artifact.title
-        else:
-            slide_layout = prs.slide_layouts[6]
-            slide = prs.slides.add_slide(slide_layout)
+        # 1. Full-bleed background shape
+        bg = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, 0, Inches(13.333), Inches(7.5))
+        bg.fill.solid()
+        bg.fill.fore_color.rgb = bg_color
+        bg.line.fill.background()
 
-            tx_box = slide.shapes.add_textbox(Inches(0.8), Inches(0.6), Inches(11.7), Inches(1.0))
-            tf = tx_box.text_frame
-            p = tf.paragraphs[0]
-            p.text = title_text
-            p.font.size = Pt(32)
-            p.font.bold = True
-            p.font.color.rgb = RGBColor(30, 41, 59)
+        title_text = _strip_html(slide_info.get("title", f"Slide {idx + 1}"))
+        subtitle_text = _strip_html(slide_info.get("subtitle", ""))
+        bullets = slide_info.get("bullets", [])
+        stats = slide_info.get("stats", [])
+        cards = slide_info.get("cards", [])
+        steps = slide_info.get("steps", [])
+        columns = slide_info.get("columns", [])
+        quote_text = _strip_html(slide_info.get("quote", ""))
+        badge_text = _strip_html(slide_info.get("badge", ""))
+        layout = slide_info.get("layout", "").lower()
 
-            if cards:
-                num_cards = min(len(cards), 4)
-                card_width = (11.7 - (0.4 * (num_cards - 1))) / num_cards
-                for c_idx, card in enumerate(cards[:num_cards]):
-                    left = 0.8 + c_idx * (card_width + 0.4)
-                    c_box = slide.shapes.add_textbox(Inches(left), Inches(2.0), Inches(card_width), Inches(4.5))
-                    c_tf = c_box.text_frame
-                    c_tf.word_wrap = True
-
-                    cp1 = c_tf.paragraphs[0]
-                    cp1.text = card.get("title", f"Point {c_idx+1}")
-                    cp1.font.size = Pt(20)
-                    cp1.font.bold = True
-                    cp1.font.color.rgb = RGBColor(99, 102, 241)
-
-                    cp2 = c_tf.add_paragraph()
-                    cp2.text = card.get("desc", card.get("text", ""))
-                    cp2.font.size = Pt(14)
-                    cp2.font.color.rgb = RGBColor(100, 116, 139)
-                    cp2.space_before = Pt(8)
-            elif bullets:
-                b_box = slide.shapes.add_textbox(Inches(1.0), Inches(2.0), Inches(11.0), Inches(4.8))
-                b_tf = b_box.text_frame
-                for b_idx, bullet in enumerate(bullets):
-                    bp = b_tf.add_paragraph() if b_idx > 0 else b_tf.paragraphs[0]
-                    bp.text = f"• {bullet}"
-                    bp.font.size = Pt(18)
-                    bp.space_after = Pt(10)
+        # Determine auto layout if not explicitly set
+        if not layout:
+            if idx == 0 and not stats and not cards and len(bullets) <= 1:
+                layout = "hero"
+            elif stats or any(re.search(r'\b(\$?\d+[\d,\.]*[%kMGBx\+]*)\b', str(b)) for b in bullets):
+                layout = "stats"
+            elif quote_text:
+                layout = "quote"
+            elif steps:
+                layout = "timeline"
+            elif cards or len(bullets) >= 4:
+                layout = "grid"
+            elif columns or len(bullets) in (2, 3):
+                layout = "split"
             else:
-                t_box = slide.shapes.add_textbox(Inches(1.0), Inches(2.0), Inches(11.0), Inches(4.8))
-                t_tf = t_box.text_frame
-                t_tf.word_wrap = True
-                t_p = t_tf.paragraphs[0]
-                t_p.text = slide_dict.get("content", block.content)
-                t_p.font.size = Pt(16)
+                layout = "standard"
 
-        if slide_dict.get("speaker_notes"):
+        # ── HERO / TITLE SLIDE ──
+        if layout in ("hero", "title", "title_slide"):
+            # Accent decorative glow bar
+            accent_bar = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(1.2), Inches(1.8), Inches(0.8), Inches(0.08))
+            accent_bar.fill.solid()
+            accent_bar.fill.fore_color.rgb = accent_indigo
+            accent_bar.line.fill.background()
+
+            # Category Pill Badge
+            if badge_text:
+                badge_shape = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(1.2), Inches(2.2), Inches(2.2), Inches(0.45))
+                badge_shape.fill.solid()
+                badge_shape.fill.fore_color.rgb = card_bg
+                badge_shape.line.color.rgb = accent_indigo
+                badge_shape.line.width = Pt(1)
+                b_tf = badge_shape.text_frame
+                b_tf.word_wrap = False
+                bp = b_tf.paragraphs[0]
+                bp.text = badge_text.upper()
+                bp.font.size = Pt(11)
+                bp.font.bold = True
+                bp.font.color.rgb = accent_cyan
+                bp.alignment = PP_ALIGN.CENTER
+
+            # Main Title & Subtitle Box
+            top_pos = 2.8 if badge_text else 2.2
+            tx_box = slide.shapes.add_textbox(Inches(1.2), Inches(top_pos), Inches(10.9), Inches(3.8))
+            tf = tx_box.text_frame
+            tf.word_wrap = True
+
+            p1 = tf.paragraphs[0]
+            p1.text = title_text
+            p1.font.name = "Calibri"
+            p1.font.size = Pt(40)
+            p1.font.bold = True
+            p1.font.color.rgb = text_white
+            p1.space_after = Pt(16)
+
+            if subtitle_text:
+                p2 = tf.add_paragraph()
+                p2.text = subtitle_text
+                p2.font.name = "Calibri"
+                p2.font.size = Pt(20)
+                p2.font.color.rgb = text_slate
+
+        # ── CONTENT SLIDES (STATS, CARDS, TIMELINE, QUOTE, SPLIT, STANDARD) ──
+        else:
+            # Header Section
+            hdr_box = slide.shapes.add_textbox(Inches(1.0), Inches(0.6), Inches(11.333), Inches(1.3))
+            htf = hdr_box.text_frame
+            htf.word_wrap = True
+
+            hp1 = htf.paragraphs[0]
+            hp1.text = title_text
+            hp1.font.name = "Calibri"
+            hp1.font.size = Pt(28)
+            hp1.font.bold = True
+            hp1.font.color.rgb = text_white
+
+            if subtitle_text:
+                hp2 = htf.add_paragraph()
+                hp2.text = subtitle_text
+                hp2.font.name = "Calibri"
+                hp2.font.size = Pt(14)
+                hp2.font.color.rgb = text_muted
+                hp2.space_before = Pt(4)
+
+            # ── STATS LAYOUT ──
+            if layout == "stats" and (stats or bullets):
+                items = stats if stats else [{"value": str(b).split(":", 1)[0], "label": str(b).split(":", 1)[1] if ":" in str(b) else "Key Metric"} for b in bullets]
+                num_items = min(len(items), 4)
+                card_w = (11.333 - (0.4 * (num_items - 1))) / num_items
+
+                for s_idx, st in enumerate(items[:num_items]):
+                    left_pos = 1.0 + s_idx * (card_w + 0.4)
+                    card = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(left_pos), Inches(2.2), Inches(card_w), Inches(4.2))
+                    card.fill.solid()
+                    card.fill.fore_color.rgb = card_bg
+                    card.line.color.rgb = card_border
+                    card.line.width = Pt(1)
+
+                    ctf = card.text_frame
+                    ctf.word_wrap = True
+                    ctf.margin_top = Inches(0.4)
+                    ctf.margin_left = Inches(0.3)
+                    ctf.margin_right = Inches(0.3)
+
+                    val_p = ctf.paragraphs[0]
+                    val_p.text = _strip_html(str(st.get("value", "")))
+                    val_p.font.name = "Calibri"
+                    val_p.font.size = Pt(36)
+                    val_p.font.bold = True
+                    val_p.font.color.rgb = accent_indigo
+                    val_p.space_after = Pt(10)
+
+                    lbl_p = ctf.add_paragraph()
+                    lbl_p.text = _strip_html(str(st.get("label", "")))
+                    lbl_p.font.name = "Calibri"
+                    lbl_p.font.size = Pt(16)
+                    lbl_p.font.bold = True
+                    lbl_p.font.color.rgb = text_white
+
+                    if st.get("desc"):
+                        desc_p = ctf.add_paragraph()
+                        desc_p.text = _strip_html(str(st["desc"]))
+                        desc_p.font.name = "Calibri"
+                        desc_p.font.size = Pt(12)
+                        desc_p.font.color.rgb = text_muted
+                        desc_p.space_before = Pt(8)
+
+            # ── CARDS / GRID LAYOUT ──
+            elif layout == "grid" and (cards or bullets):
+                items = cards if cards else [{"title": f"Feature {b_i+1}", "desc": str(b)} for b_i, b in enumerate(bullets)]
+                num_items = min(len(items), 4)
+                card_w = (11.333 - (0.4 * (num_items - 1))) / num_items
+
+                for c_idx, cd in enumerate(items[:num_items]):
+                    left_pos = 1.0 + c_idx * (card_w + 0.4)
+                    card = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(left_pos), Inches(2.2), Inches(card_w), Inches(4.2))
+                    card.fill.solid()
+                    card.fill.fore_color.rgb = card_bg
+                    card.line.color.rgb = card_border
+                    card.line.width = Pt(1)
+
+                    ctf = card.text_frame
+                    ctf.word_wrap = True
+                    ctf.margin_top = Inches(0.4)
+                    ctf.margin_left = Inches(0.3)
+                    ctf.margin_right = Inches(0.3)
+
+                    t_p = ctf.paragraphs[0]
+                    t_p.text = _strip_html(str(cd.get("title", f"Point {c_idx+1}")))
+                    t_p.font.name = "Calibri"
+                    t_p.font.size = Pt(18)
+                    t_p.font.bold = True
+                    t_p.font.color.rgb = accent_cyan
+                    t_p.space_after = Pt(10)
+
+                    d_p = ctf.add_paragraph()
+                    d_p.text = _strip_html(str(cd.get("desc", cd.get("text", ""))))
+                    d_p.font.name = "Calibri"
+                    d_p.font.size = Pt(13)
+                    d_p.font.color.rgb = text_slate
+
+            # ── TIMELINE / STEPS LAYOUT ──
+            elif layout == "timeline" and (steps or bullets):
+                items = steps if steps else [{"title": f"Step {s_i+1}", "desc": str(b)} for s_i, b in enumerate(bullets)]
+                num_items = min(len(items), 4)
+                step_w = (11.333 - (0.4 * (num_items - 1))) / num_items
+
+                for st_idx, st in enumerate(items[:num_items]):
+                    left_pos = 1.0 + st_idx * (step_w + 0.4)
+                    card = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(left_pos), Inches(2.2), Inches(step_w), Inches(4.2))
+                    card.fill.solid()
+                    card.fill.fore_color.rgb = card_bg
+                    card.line.color.rgb = accent_indigo
+                    card.line.width = Pt(1.5)
+
+                    ctf = card.text_frame
+                    ctf.word_wrap = True
+                    ctf.margin_top = Inches(0.35)
+                    ctf.margin_left = Inches(0.3)
+                    ctf.margin_right = Inches(0.3)
+
+                    st_p = ctf.paragraphs[0]
+                    st_p.text = f"PHASE {st_idx + 1}"
+                    st_p.font.name = "Calibri"
+                    st_p.font.size = Pt(11)
+                    st_p.font.bold = True
+                    st_p.font.color.rgb = accent_cyan
+                    st_p.space_after = Pt(8)
+
+                    t_p = ctf.add_paragraph()
+                    t_p.text = _strip_html(str(st.get("title", f"Step {st_idx + 1}")))
+                    t_p.font.name = "Calibri"
+                    t_p.font.size = Pt(17)
+                    t_p.font.bold = True
+                    t_p.font.color.rgb = text_white
+                    t_p.space_after = Pt(8)
+
+                    d_p = ctf.add_paragraph()
+                    d_p.text = _strip_html(str(st.get("desc", "")))
+                    d_p.font.name = "Calibri"
+                    d_p.font.size = Pt(12.5)
+                    d_p.font.color.rgb = text_slate
+
+            # ── QUOTE LAYOUT ──
+            elif layout == "quote" and (quote_text or bullets):
+                q_content = quote_text if quote_text else (bullets[0] if bullets else "")
+                q_card = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(1.5), Inches(2.2), Inches(10.333), Inches(4.0))
+                q_card.fill.solid()
+                q_card.fill.fore_color.rgb = card_bg
+                q_card.line.color.rgb = accent_indigo
+                q_card.line.width = Pt(2)
+
+                qtf = q_card.text_frame
+                qtf.word_wrap = True
+                qtf.margin_top = Inches(0.6)
+                qtf.margin_left = Inches(0.6)
+                qtf.margin_right = Inches(0.6)
+
+                qp = qtf.paragraphs[0]
+                qp.text = f'"{_strip_html(q_content)}"'
+                qp.font.name = "Calibri"
+                qp.font.size = Pt(22)
+                qp.font.italic = True
+                qp.font.color.rgb = text_white
+                qp.space_after = Pt(16)
+
+                author = _strip_html(slide_info.get("author", ""))
+                role = _strip_html(slide_info.get("role", ""))
+                if author or role:
+                    ap = qtf.add_paragraph()
+                    ap.text = f"— {author}" + (f", {role}" if role else "")
+                    ap.font.name = "Calibri"
+                    ap.font.size = Pt(14)
+                    ap.font.bold = True
+                    ap.font.color.rgb = accent_indigo
+
+            # ── SPLIT / COLUMNS LAYOUT ──
+            elif layout == "split" and (columns or len(bullets) >= 2):
+                col_items = columns if columns else [
+                    {"title": "Key Points", "bullets": bullets[:len(bullets)//2 + len(bullets)%2]},
+                    {"title": "Key Takeaways", "bullets": bullets[len(bullets)//2 + len(bullets)%2:]}
+                ]
+                col_w = (11.333 - 0.5) / 2
+
+                for col_idx, col_data in enumerate(col_items[:2]):
+                    left_pos = 1.0 + col_idx * (col_w + 0.5)
+                    card = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(left_pos), Inches(2.2), Inches(col_w), Inches(4.2))
+                    card.fill.solid()
+                    card.fill.fore_color.rgb = card_bg
+                    card.line.color.rgb = card_border
+                    card.line.width = Pt(1)
+
+                    ctf = card.text_frame
+                    ctf.word_wrap = True
+                    ctf.margin_top = Inches(0.4)
+                    ctf.margin_left = Inches(0.4)
+                    ctf.margin_right = Inches(0.4)
+
+                    cp = ctf.paragraphs[0]
+                    cp.text = _strip_html(str(col_data.get("title", f"Column {col_idx + 1}")))
+                    cp.font.name = "Calibri"
+                    cp.font.size = Pt(18)
+                    cp.font.bold = True
+                    cp.font.color.rgb = accent_indigo
+                    cp.space_after = Pt(12)
+
+                    for b_str in col_data.get("bullets", []):
+                        bp = ctf.add_paragraph()
+                        bp.text = f"• {_strip_html(str(b_str))}"
+                        bp.font.name = "Calibri"
+                        bp.font.size = Pt(14)
+                        bp.font.color.rgb = text_slate
+                        bp.space_after = Pt(8)
+
+            # ── STANDARD BULLET LIST ──
+            else:
+                card = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(1.0), Inches(2.2), Inches(11.333), Inches(4.2))
+                card.fill.solid()
+                card.fill.fore_color.rgb = card_bg
+                card.line.color.rgb = card_border
+                card.line.width = Pt(1)
+
+                ctf = card.text_frame
+                ctf.word_wrap = True
+                ctf.margin_top = Inches(0.4)
+                ctf.margin_left = Inches(0.5)
+                ctf.margin_right = Inches(0.5)
+
+                if bullets:
+                    for b_idx, b_item in enumerate(bullets):
+                        bp = ctf.paragraphs[0] if b_idx == 0 else ctf.add_paragraph()
+                        bp.text = f"• {_strip_html(str(b_item))}"
+                        bp.font.name = "Calibri"
+                        bp.font.size = Pt(16)
+                        bp.font.color.rgb = text_slate
+                        bp.space_after = Pt(10)
+                else:
+                    bp = ctf.paragraphs[0]
+                    bp.text = _strip_html(str(slide_info.get("content", "")))
+                    bp.font.name = "Calibri"
+                    bp.font.size = Pt(16)
+                    bp.font.color.rgb = text_slate
+
+        # ── SPEAKER NOTES ──
+        notes = slide_info.get("notes", "")
+        if notes:
             notes_slide = slide.notes_slide
             notes_tf = notes_slide.notes_text_frame
-            notes_tf.text = slide_dict["speaker_notes"]
+            notes_tf.text = _strip_html(str(notes))
 
     output = io.BytesIO()
     prs.save(output)
