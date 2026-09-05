@@ -298,7 +298,10 @@ export default function MessageList({
         {messages.map((m, idx) => {
           const isUser = m.role === 'user';
           const hasReasoning = m.reasoning && m.reasoning.trim().length > 0;
-          const isReasoningOpen = !!expandedReasoning[idx];
+          // While streaming, default accordion to open unless user/stream closed it; when done, default closed unless user opened it
+          const isReasoningOpen = expandedReasoning[idx] !== undefined
+            ? !!expandedReasoning[idx]
+            : (m.isStreaming && hasReasoning);
           const hasArtifacts = Array.isArray(m.artifacts) && m.artifacts.length > 0;
 
           return (
