@@ -16,11 +16,11 @@ tools:
           description: File name with extension (e.g. main.py, agreement.docx, pitch_deck.pptx, model.xlsx, diagram.svg).
         artifact_type:
           type: string
-          enum: ["code", "document", "spreadsheet", "presentation", "diagram_svg", "audio", "video"]
+          enum: ["code", "document", "spreadsheet", "presentation", "diagram_svg", "audio", "video", "cad_2d", "cad_3d", "gis", "diagram", "engineering_data"]
           description: Category of artifact.
         language:
           type: string
-          description: Programming or markup language (e.g. python, javascript, markdown, svg, json).
+          description: Programming, markup, or CAD format language (e.g. python, javascript, markdown, svg, json, dxf, step, geojson, xml).
         content:
           type: string
           description: Complete raw content of the artifact.
@@ -136,7 +136,7 @@ tools:
 
 # Universal Artifact Editor Skill
 
-Use this skill whenever generating, modifying, or refining digital artifacts for the user. Instead of outputting static download links, use `open_or_update_artifact` so the user can interactively preview, edit, run, and export the creation inside the Canvas.
+Use this skill whenever generating, modifying, or refining digital artifacts for the user. Instead of outputting static download links or raw markdown dumps, use `open_or_update_artifact` so the user can interactively preview, edit, inspect, and export the creation inside the Canvas.
 
 ### 🎯 Guidelines for Creating Artifacts:
 1. **Code & Scripts (`.py`, `.js`, etc.)**:
@@ -151,20 +151,27 @@ Use this skill whenever generating, modifying, or refining digital artifacts for
 4. **Presentations (`.pptx` or presentation decks)**:
    - The LLM has complete creative freedom to dynamically decide the theme, visual atmosphere, color palettes, gradients, and layout for each presentation slide based on the user's specific query topic and brand tone.
    - Format content as JSON containing an array of `slides` with rich dynamic visual layouts and custom styling:
-     - `bg` / `background`: The LLM selects bespoke background gradients or colors (e.g. radial/linear gradients, dark glassmorphism, sleek light minimal, neo-brutalist, or neon cyber).
+     - `bg` / `background`: Bespoke background gradients or colors (e.g. radial/linear gradients, dark glassmorphism, sleek light minimal, neo-brutalist, or neon cyber).
      - `accent` / `accent_color`: Topic-matched accent colors (e.g. gold/emerald for finance, violet/cyan for AI, crimson/slate for cybersecurity).
      - `card_bg`, `card_border`, `text_color`, `subtext_color`: Dynamic matching surface tokens.
-     - `layout`: Choose or invent an innovative layout per slide based on narrative context:
-       - `"hero"`: Cover/title or bold keynote vision (with `badge`, `subtitle`, `tags`).
-       - `"stats"`: Performance metrics, KPIs, and data highlights (`stats: [{"value": "$4.2M", "label": "ARR", "change": "+120%"}, ...]`).
-       - `"timeline"` / `"process"`: Roadmaps, phased launches, and milestone steps (`steps: [{"step": "Phase 1", "title": "Foundation", "desc": "Core infra"}, ...]`).
-       - `"matrix"` / `"grid"`: Multi-pillar architectures, feature grids, or capability matrices (`cards: [{"title": "Pillar A", "description": "...", "badge": "Core"}, ...]`).
-       - `"split"` / `"comparison"`: Side-by-side comparative column containers (`columns: [{"title": "Legacy", "items": [...]}, {"title": "AI Engine", "items": [...]}]`).
-       - `"quote"` / `"callout"`: Impactful vision statements and testimonials (`quote`, `author`, `role`).
-       - `"custom_html"`: Complete design autonomy to output full custom HTML + CSS directly inside the slide.
+     - `layout`: Choose or invent an innovative layout per slide (`hero`, `stats`, `timeline`, `matrix`, `split`, `quote`, `custom_html`).
      - Include `speaker_notes` where helpful for presentations.
-5. **Diagrams (`.svg`)**:
-   - Emit valid standalone `<svg>` tags with `viewBox`, clean styling, and modern color palettes.
+5. **Diagrams & Vector Graphics (`.svg`, `.vsdx`)**:
+   - For `.svg`: Emit valid standalone `<svg>` tags with `viewBox`, clean styling, and modern color palettes.
+   - For diagrams / workflows: Use `artifact_type="diagram"` or `"diagram_svg"`.
+6. **2D CAD & Engineering Drawings (`.dxf`, `.dwg`)**:
+   - Set `artifact_type="cad_2d"`.
+   - For `.dxf`: Output standard ASCII DXF format (with `ENTITIES` containing `LINE`, `LWPOLYLINE`, `CIRCLE`, `ARC`, `TEXT`, `MTEXT`, `DIMENSION` with appropriate layer assignments like `0`, `CENTER`, `HIDDEN`, `DIMENSIONS`).
+7. **3D Solid Models & Assemblies (`.step`, `.stp`, `.iges`, `.igs`, `.stl`, `.obj`, `.ifc`)**:
+   - Set `artifact_type="cad_3d"`.
+   - Output standard 3D file formats (e.g., ASCII Wavefront `.obj` with vertex/face definitions, standard ASCII `.stl` solid blocks with facet normals, or ISO-10303-21 `.step` part definitions).
+8. **Geospatial & Infrastructure Maps (`.geojson`, `.kml`, `.shp`)**:
+   - Set `artifact_type="gis"`.
+   - For `.geojson`: Emit a valid GeoJSON `FeatureCollection` with geographic features (`Point`, `LineString`, `Polygon`, `MultiPolygon`) and rich properties for interactive layer inspection.
+9. **Industrial Automation & Project Controls (`.l5x`, `.m`, `.s7p`, `.xer`)**:
+   - Set `artifact_type="engineering_data"`.
+   - For Rockwell Studio 5000 / ControlLogix (`.l5x`): Emit valid RSLogix XML containing `<RSLogix5000Content>`, `<Controller>`, `<Tags>`, and `<Routines>`.
+   - For Primavera P6 (`.xer`): Emit valid P6 exchange format tables (`%T`, `%F`, `CALENDAR`, `TASK`, `PROJWBS`).
 
 ### 🛠️ Guidelines for Editing Artifacts:
 1. **Prefer surgical tools over full document re-generation**:
@@ -174,4 +181,5 @@ Use this skill whenever generating, modifying, or refining digital artifacts for
 3. If the location is unclear, call `artifact_search` or `artifact_semantic_search` to find the exact block key and line number.
 4. If the user asks to rewrite, restructure, or regenerate the entire artifact, call `open_or_update_artifact` with the full revised `content`.
 5. If the user asks to undo or bring back old wording, use `rollback_artifact_block` to perform non-destructive time-travel on only that block.
+
 
