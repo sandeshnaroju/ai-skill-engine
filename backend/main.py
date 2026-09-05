@@ -6,10 +6,7 @@ from fastapi.responses import FileResponse
 
 from database import init_db
 
-# Initialize/Verify database tables on startup
-# init_db() checks ENCRYPTION_SECRET_KEY first and sets db_creation_status["error"]
-# if it is missing or invalid, so the UI can surface the problem.
-init_db()
+# database initialization will run in startup event
 
 from routers.auth import router as auth_router
 from routers.tenants import router as tenants_router
@@ -31,6 +28,10 @@ app = FastAPI(
     docs_url="/swagger",
     redoc_url="/redoc"
 )
+ 
+@app.on_event("startup")
+def on_startup():
+    init_db()
 
 # Enable CORS for frontend development
 app.add_middleware(

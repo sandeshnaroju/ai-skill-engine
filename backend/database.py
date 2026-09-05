@@ -464,13 +464,10 @@ def _migrate_encryption():
                             setattr(row, col, encrypt_key(plaintext))
                             changed = True
                             migrated_total += 1
-                        else:
-                            print(f"WARNING: Could not decrypt {Model.__tablename__}.{col} (row id={getattr(row, 'id', '?')}). Left unchanged.")
                     if changed:
                         db.add(row)
                 db.commit()
             except Exception as e:
-                print(f"WARNING: Encryption migration failed for {Model.__tablename__}: {e}")
                 db.rollback()
     finally:
         db.close()
