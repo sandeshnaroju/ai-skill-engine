@@ -457,8 +457,9 @@ class SkillEngine:
                     turn_msg = f"Processing tool outputs & synthesizing response (Turn {turn+1})..."
                 yield _chunk(session_id, model_name, reasoning=turn_msg)
 
-                # Enable Gemini Thinking/Reasoning mode via extra_body
-                if "gemini" in model_name.lower():
+                # Enable Thinking/Reasoning across providers
+                m_lower = model_name.lower()
+                if "gemini" in m_lower:
                     kwargs["extra_body"] = {
                         "google": {
                             "thinking_config": {
@@ -466,6 +467,13 @@ class SkillEngine:
                             }
                         }
                     }
+                elif any(k in m_lower for k in ["deepseek-r1", "deepseek-reasoner", "r1", "qwq"]):
+                    kwargs["extra_body"] = {
+                        "include_reasoning": True
+                    }
+                elif any(k in m_lower for k in ["o1", "o3", "o4"]):
+                    # OpenAI o-series thinking effort
+                    kwargs["reasoning_effort"] = "medium"
 
                 try:
                     response_stream = llm.chat.completions.create(**kwargs)
@@ -502,6 +510,7 @@ class SkillEngine:
                 id_to_index = {}
                 last_idx = 0
                 turn_usage = None
+                in_think_tag = False
 
                 for chunk in response_stream:
                     if getattr(chunk, "usage", None):
@@ -511,11 +520,12 @@ class SkillEngine:
                     choice = chunk.choices[0]
                     delta = choice.delta
 
-                    # Extract native LLM reasoning / thought process (Gemini 2.5/3 Thinking, DeepSeek-R1, OpenRouter)
+                    # 1. Extract dedicated reasoning / thought tokens (Gemini, DeepSeek, OpenRouter, Anthropic CoT)
                     raw_thought = (
                         getattr(delta, "reasoning_content", None) or
                         getattr(delta, "reasoning", None) or
-                        getattr(delta, "thought", None)
+                        getattr(delta, "thought", None) or
+                        getattr(delta, "thoughts", None)
                     )
                     thought_text = ""
                     if isinstance(raw_thought, str):
@@ -526,10 +536,33 @@ class SkillEngine:
                     if thought_text:
                         yield _chunk(session_id, model_name, reasoning=thought_text)
 
+                    # 2. Extract content & handle inline <think> tags (e.g., local Ollama / vLLM DeepSeek R1 models)
                     if delta.content:
-                        full_text += delta.content
-                        final_answer = full_text
-                        yield f"data: {json.dumps({'id': f'chatcmpl-{session_id}', 'object': 'chat.completion.chunk', 'created': 1700000000, 'model': model_name, 'choices': [{'index': 0, 'delta': {'content': delta.content}, 'finish_reason': choice.finish_reason}]})}\n\n"
+                        content_piece = delta.content
+                        if "<think>" in content_piece:
+                            in_think_tag = True
+                            parts = content_piece.split("<think>", 1)
+                            if parts[0]:
+                                full_text += parts[0]
+                                yield f"data: {json.dumps({'id': f'chatcmpl-{session_id}', 'object': 'chat.completion.chunk', 'created': 1700000000, 'model': model_name, 'choices': [{'index': 0, 'delta': {'content': parts[0]}, 'finish_reason': choice.finish_reason}]})}\n\n"
+                            content_piece = parts[1] if len(parts) > 1 else ""
+
+                        if in_think_tag:
+                            if "</think>" in content_piece:
+                                think_part, rest = content_piece.split("</think>", 1)
+                                if think_part:
+                                    yield _chunk(session_id, model_name, reasoning=think_part)
+                                in_think_tag = False
+                                content_piece = rest
+                            else:
+                                if content_piece:
+                                    yield _chunk(session_id, model_name, reasoning=content_piece)
+                                content_piece = ""
+
+                        if content_piece:
+                            full_text += content_piece
+                            final_answer = full_text
+                            yield f"data: {json.dumps({'id': f'chatcmpl-{session_id}', 'object': 'chat.completion.chunk', 'created': 1700000000, 'model': model_name, 'choices': [{'index': 0, 'delta': {'content': content_piece}, 'finish_reason': choice.finish_reason}]})}\n\n"
 
                     if delta.tool_calls:
                         for tc in delta.tool_calls:
