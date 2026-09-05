@@ -99,6 +99,32 @@ export default function ArtifactManager() {
     }
   };
 
+  // Download handler: Ensure fresh signed embed token exists so direct browser download succeeds 100%
+  const handleDownload = async (art, e) => {
+    e?.preventDefault?.();
+    e?.stopPropagation?.();
+    try {
+      let token = art.token;
+      if (!token) {
+        try {
+          const res = await artifactsApi.mintEmbedToken(art.id, 60);
+          token = res?.token;
+        } catch (tokErr) {
+          console.warn('Failed to mint download token:', tokErr);
+        }
+      }
+      const exportUrl = artifactsApi.getExportUrl(art.id, token);
+      const link = document.createElement('a');
+      link.href = exportUrl;
+      link.download = art.filename || 'download';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (err) {
+      showError(err.message || 'Failed to initiate download');
+    }
+  };
+
   // Handle Delete
   const handleDelete = async (artifactId) => {
     setDeletingId(artifactId);
@@ -561,26 +587,25 @@ export default function ArtifactManager() {
                     {copiedId === art.id ? <Check size={14} /> : <Copy size={14} />}
                   </button>
 
-                  {/* Direct Export Link */}
-                  <a
-                    href={artifactsApi.getExportUrl(art.id)}
-                    target="_blank"
-                    rel="noreferrer"
+                  {/* Direct Export Button */}
+                  <button
+                    type="button"
+                    onClick={(e) => handleDownload(art, e)}
                     className="btn-outline"
                     style={{
                       padding: '7px 10px',
                       borderRadius: '8px',
                       border: '1px solid var(--border-subtle)',
-                      textDecoration: 'none',
                       color: 'var(--text-main)',
                       display: 'inline-flex',
                       alignItems: 'center',
-                      justifyContent: 'center'
+                      justifyContent: 'center',
+                      cursor: 'pointer'
                     }}
                     title="Export / Download File"
                   >
                     <Download size={14} />
-                  </a>
+                  </button>
 
                   {/* Delete Button */}
                   <button

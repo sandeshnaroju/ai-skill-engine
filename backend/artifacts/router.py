@@ -39,6 +39,7 @@ def authenticate_canvas_access(
     x_embed_token: Optional[str] = Header(None),
     authorization: Optional[str] = Header(None),
     x_api_key: Optional[str] = Header(None),
+    api_key: Optional[str] = Query(None),
     session_token: Optional[str] = Cookie(None),
     db: Session = Depends(get_db)
 ) -> dict:
@@ -55,6 +56,30 @@ def authenticate_canvas_access(
             raise HTTPException(status_code=401, detail=f"Invalid or expired embed token: {str(e)}")
 
     # 2. Master / Admin Session / Tenant Authentication (Used when no embed token is supplied)
+    cand_api_key = x_api_key or api_key
+    if not cand_api_key and authorization and authorization.startswith("Bearer "):
+        cand_api_key = authorization.split(" ")[1].strip()
+
+    if cand_api_key:
+        tenant = db.query(Tenant).filter(
+            (Tenant.api_key == cand_api_key) | (Tenant.id == cand_api_key),
+            Tenant.is_active == True
+        ).first()
+        if tenant:
+            art = db.query(SessionArtifact).filter(SessionArtifact.id == artifact_id).first()
+            if not art:
+                raise HTTPException(status_code=404, detail="Artifact not found")
+            return {"type": "tenant", "tenant_id": tenant.id, "artifact_id": artifact_id}
+
+    if session_token:
+        user = db.query(User).filter(User.session_token == session_token).first()
+        if user:
+            art = db.query(SessionArtifact).filter(SessionArtifact.id == artifact_id).first()
+            if not art:
+                raise HTTPException(status_code=404, detail="Artifact not found")
+            return {"type": "session", "user_id": user.id, "artifact_id": artifact_id}
+
+    # Fallback: get_current_tenant
     try:
         tenant = get_current_tenant(
             authorization=authorization,
@@ -67,8 +92,8 @@ def authenticate_canvas_access(
             if not art:
                 raise HTTPException(status_code=404, detail="Artifact not found")
             return {"type": "tenant", "tenant_id": art.tenant_id, "artifact_id": artifact_id}
-    except HTTPException as he:
-        raise he
+    except HTTPException:
+        pass
     except Exception:
         pass
 
