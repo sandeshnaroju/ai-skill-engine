@@ -461,10 +461,8 @@ class SkillEngine:
                 m_lower = model_name.lower()
                 if "gemini" in m_lower:
                     kwargs["extra_body"] = {
-                        "google": {
-                            "thinking_config": {
-                                "include_thoughts": True
-                            }
+                        "thinking_config": {
+                            "include_thoughts": True
                         }
                     }
                 elif any(k in m_lower for k in ["deepseek-r1", "deepseek-reasoner", "r1", "qwq"]):
