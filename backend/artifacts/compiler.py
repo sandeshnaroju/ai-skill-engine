@@ -10,7 +10,7 @@ Compiles Artifacts into native binary and text files:
 import io
 import re
 import json
-from typing import Tuple
+from typing import Tuple, List, Optional, Any, Dict
 
 from models import SessionArtifact
 from .manager import assemble_full_content
@@ -319,6 +319,167 @@ def compile_to_docx(artifact: SessionArtifact) -> io.BytesIO:
 
     output = io.BytesIO()
     doc.save(output)
+    output.seek(0)
+    return output
+
+
+def compile_to_xlsx(artifact: SessionArtifact) -> io.BytesIO:
+    """Compile spreadsheet JSON/CSV blocks into native Microsoft Excel (.xlsx)."""
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+
+    wb = openpyxl.Workbook()
+    # Remove default sheet
+    wb.remove(wb.active)
+
+    blocks = sorted(artifact.blocks, key=lambda b: b.order_index) if artifact.blocks else []
+
+    header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+    header_fill = PatternFill(start_color="1E293B", end_color="1E293B", fill_type="solid")
+    data_font = Font(name="Calibri", size=10, color="1E293B")
+    thin_border = Border(
+        left=Side(style='thin', color='E2E8F0'),
+        right=Side(style='thin', color='E2E8F0'),
+        top=Side(style='thin', color='E2E8F0'),
+        bottom=Side(style='thin', color='E2E8F0')
+    )
+
+    for idx, block in enumerate(blocks):
+        sheet_title = (block.title or f"Sheet{idx + 1}")[:31]
+        ws = wb.create_sheet(title=sheet_title)
+
+        try:
+            data = json.loads(block.content)
+            if isinstance(data, list):
+                for r_idx, row in enumerate(data, 1):
+                    if isinstance(row, dict):
+                        if r_idx == 1:
+                            headers = list(row.keys())
+                            for c_idx, h in enumerate(headers, 1):
+                                cell = ws.cell(row=1, column=c_idx, value=h)
+                                cell.font = header_font
+                                cell.fill = header_fill
+                                cell.alignment = Alignment(horizontal="center", vertical="center")
+                                cell.border = thin_border
+                        values = list(row.values())
+                        for c_idx, val in enumerate(values, 1):
+                            cell = ws.cell(row=r_idx + 1, column=c_idx, value=val)
+                            cell.font = data_font
+                            cell.border = thin_border
+                    elif isinstance(row, list):
+                        for c_idx, val in enumerate(row, 1):
+                            cell = ws.cell(row=r_idx, column=c_idx, value=val)
+                            if r_idx == 1:
+                                cell.font = header_font
+                                cell.fill = header_fill
+                            else:
+                                cell.font = data_font
+                            cell.border = thin_border
+            else:
+                ws.append([block.content])
+        except Exception:
+            for line in block.content.splitlines():
+                ws.append([c.strip() for c in line.split(",")])
+
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    return output
+
+
+def compile_to_pptx(artifact: SessionArtifact) -> io.BytesIO:
+    """Compile Slide JSON into native Microsoft PowerPoint (.pptx)."""
+    from pptx import Presentation
+    from pptx.util import Inches, Pt
+    from pptx.dml.color import RGBColor
+
+    prs = Presentation()
+    # 16:9 widescreen layout
+    prs.slide_width = Inches(13.333)
+    prs.slide_height = Inches(7.5)
+
+    blocks = sorted(artifact.blocks, key=lambda b: b.order_index) if artifact.blocks else []
+
+    for idx, block in enumerate(blocks):
+        try:
+            slide_dict = json.loads(block.content)
+        except Exception:
+            slide_dict = {"title": block.title, "content": block.content}
+
+        title_text = slide_dict.get("title", f"Slide {idx + 1}")
+        subtitle_text = slide_dict.get("subtitle", "")
+        layout_name = slide_dict.get("layout", "content")
+        cards = slide_dict.get("cards", [])
+        bullets = slide_dict.get("bullets", [])
+
+        if idx == 0 and layout_name in ("title", "title_slide"):
+            # Title slide layout
+            slide_layout = prs.slide_layouts[0]
+            slide = prs.slides.add_slide(slide_layout)
+            slide.shapes.title.text = title_text
+            if slide.placeholders and len(slide.placeholders) > 1:
+                slide.placeholders[1].text = subtitle_text or artifact.title
+        else:
+            # Blank or content slide
+            slide_layout = prs.slide_layouts[6]  # Blank
+            slide = prs.slides.add_slide(slide_layout)
+
+            # Slide Title
+            tx_box = slide.shapes.add_textbox(Inches(0.8), Inches(0.6), Inches(11.7), Inches(1.0))
+            tf = tx_box.text_frame
+            p = tf.paragraphs[0]
+            p.text = title_text
+            p.font.size = Pt(32)
+            p.font.bold = True
+            p.font.color.rgb = RGBColor(30, 41, 59)
+
+            # Cards or Bullets
+            if cards:
+                num_cards = min(len(cards), 4)
+                card_width = (11.7 - (0.4 * (num_cards - 1))) / num_cards
+                for c_idx, card in enumerate(cards[:num_cards]):
+                    left = 0.8 + c_idx * (card_width + 0.4)
+                    c_box = slide.shapes.add_textbox(Inches(left), Inches(2.0), Inches(card_width), Inches(4.5))
+                    c_tf = c_box.text_frame
+                    c_tf.word_wrap = True
+
+                    cp1 = c_tf.paragraphs[0]
+                    cp1.text = card.get("title", f"Point {c_idx+1}")
+                    cp1.font.size = Pt(20)
+                    cp1.font.bold = True
+                    cp1.font.color.rgb = RGBColor(99, 102, 241)
+
+                    cp2 = c_tf.add_paragraph()
+                    cp2.text = card.get("desc", card.get("text", ""))
+                    cp2.font.size = Pt(14)
+                    cp2.font.color.rgb = RGBColor(100, 116, 139)
+                    cp2.space_before = Pt(8)
+            elif bullets:
+                b_box = slide.shapes.add_textbox(Inches(1.0), Inches(2.0), Inches(11.0), Inches(4.8))
+                b_tf = b_box.text_frame
+                for b_idx, bullet in enumerate(bullets):
+                    bp = b_tf.add_paragraph() if b_idx > 0 else b_tf.paragraphs[0]
+                    bp.text = f"• {bullet}"
+                    bp.font.size = Pt(18)
+                    bp.space_after = Pt(10)
+            else:
+                # Text content
+                t_box = slide.shapes.add_textbox(Inches(1.0), Inches(2.0), Inches(11.0), Inches(4.8))
+                t_tf = t_box.text_frame
+                t_tf.word_wrap = True
+                t_p = t_tf.paragraphs[0]
+                t_p.text = slide_dict.get("content", block.content)
+                t_p.font.size = Pt(16)
+
+        # Speaker notes if present
+        if slide_dict.get("speaker_notes"):
+            notes_slide = slide.notes_slide
+            notes_tf = notes_slide.notes_text_frame
+            notes_tf.text = slide_dict["speaker_notes"]
+
+    output = io.BytesIO()
+    prs.save(output)
     output.seek(0)
     return output
 
