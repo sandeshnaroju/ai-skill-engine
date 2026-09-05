@@ -79,6 +79,26 @@ export default function ArtifactManager() {
     fetchArtifacts();
   }, [fetchArtifacts]);
 
+  // Open Canvas handler: Ensure fresh signed embed token exists so canvas loads immediately with 100% authorization
+  const handleOpenCanvas = async (art) => {
+    try {
+      let token = art.token;
+      if (!token) {
+        const res = await artifactsApi.mintEmbedToken(art.id, 120);
+        token = res.token;
+      }
+      setPreviewArtifact({
+        ...art,
+        token: token
+      });
+      setIsCanvasOpen(true);
+    } catch (err) {
+      console.warn('Fallback opening without fresh token:', err);
+      setPreviewArtifact(art);
+      setIsCanvasOpen(true);
+    }
+  };
+
   // Handle Delete
   const handleDelete = async (artifactId) => {
     setDeletingId(artifactId);
@@ -103,7 +123,7 @@ export default function ArtifactManager() {
     try {
       let token = art.token;
       if (!token) {
-        const tokenRes = await artifactsApi.mintEmbedToken(art.id, 60);
+        const tokenRes = await artifactsApi.mintEmbedToken(art.id, 120);
         token = tokenRes.token;
       }
       const fullUrl = `${window.location.origin}/embed/canvas?token=${token}`;
@@ -513,10 +533,7 @@ export default function ArtifactManager() {
                   <button
                     type="button"
                     className="btn-gradient"
-                    onClick={() => {
-                      setPreviewArtifact(art);
-                      setIsCanvasOpen(true);
-                    }}
+                    onClick={() => handleOpenCanvas(art)}
                     style={{
                       flex: 1,
                       padding: '7px 12px',
