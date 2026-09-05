@@ -217,7 +217,8 @@ def list_tenant_artifacts(
     db: Session = Depends(get_db)
 ):
     """List all artifacts for a specific tenant with search, type filter, and pagination."""
-    query = db.query(SessionArtifact).filter(SessionArtifact.tenant_id == tenant_id)
+    target_tenant_id = tenant_id if tenant_id else current_tenant.id
+    query = db.query(SessionArtifact).filter(SessionArtifact.tenant_id == target_tenant_id)
 
     if artifact_type and artifact_type != "all":
         if artifact_type in ("image", "images", "svg", "diagram_svg", "diagram", "vector"):
