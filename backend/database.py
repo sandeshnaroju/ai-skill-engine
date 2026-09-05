@@ -31,6 +31,8 @@ db_creation_status = {
 
 def init_db():
     global db_creation_status
+    if db_creation_status.get("ready"):
+        return
     import models
 
     # ── Encryption key guard ──────────────────────────────────────────────────
@@ -477,6 +479,10 @@ def _migrate_encryption():
         print(f"Encryption migration: re-encrypted {migrated_total} secret(s) from XOR → Fernet.")
     else:
         print("Encryption migration: all secrets already use Fernet. Nothing to migrate.")
+
+    db_creation_status["ready"] = True
+    db_creation_status["progress"] = 100
+    db_creation_status["details"] = "Database initialized successfully."
 
 
 def get_db():
