@@ -1,8 +1,29 @@
 import React from 'react';
 
 /**
+ * Extract YouTube Video ID from standard, short, embed, or shorts URLs
+ */
+export function getYouTubeVideoId(url) {
+  if (!url) return null;
+  const decoded = url.replace(/&amp;/g, '&');
+  const match = decoded.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?|shorts)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/i);
+  return match ? match[1] : null;
+}
+
+export function isAudioUrl(url) {
+  return /\.(mp3|wav|ogg|m4a|aac|flac)(\?.*)?$/i.test(url || '');
+}
+
+export function isVideoUrl(url) {
+  return /\.(mp4|webm|mov|mkv|ogv)(\?.*)?$/i.test(url || '');
+}
+
+/**
  * Universal Markdown Parser & Renderer
  * Converts GFM Markdown into clean, secure HTML with full support for:
+ * - Audio & Video players (.mp3, .wav, .mp4, .webm, etc.)
+ * - YouTube auto-embed responsive player
+ * - Images (![alt](url))
  * - Tables with delimiter alignments (:---:, ---:, :---)
  * - Code blocks (```lang ... ```) with syntax header
  * - Inline formatting (bold, italic, strikethrough, inline code, links)
@@ -16,6 +37,31 @@ export function parseMarkdownToHtml(src, options = {}) {
   if (!src) return '';
   const linkColor = options.linkColor || 'var(--primary-violet)';
 
+  // Helper to render responsive YouTube player
+  const renderYouTubeEmbed = (videoId) => {
+    return `<div class="media-embed media-youtube" style="position: relative; width: 100%; max-width: 680px; padding-bottom: 56.25%; height: 0; margin: 12px 0; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.3); background: #000;">
+      <iframe src="https://www.youtube-nocookie.com/embed/${videoId}" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen style="position: absolute; top:0; left: 0; width: 100%; height: 100%; border: none;"></iframe>
+    </div>`;
+  };
+
+  // Helper to render HTML5 Audio Player
+  const renderAudioPlayer = (url, label = '') => {
+    return `<div class="media-embed media-audio" style="margin: 10px 0; max-width: 540px; background: rgba(255,255,255,0.04); border: 1px solid var(--border-subtle, rgba(255,255,255,0.1)); border-radius: 10px; padding: 10px 14px;">
+      ${label ? `<div style="font-size: 11px; font-weight: 600; color: var(--text-secondary, #94a3b8); margin-bottom: 6px; display: flex; align-items: center; gap: 6px;"><span>🎵</span> <span>${label}</span></div>` : ''}
+      <audio controls src="${url}" preload="metadata" style="width: 100%; border-radius: 6px; outline: none; height: 36px;"></audio>
+    </div>`;
+  };
+
+  // Helper to render HTML5 Video Player
+  const renderVideoPlayer = (url, label = '') => {
+    return `<div class="media-embed media-video" style="margin: 12px 0; max-width: 680px; border-radius: 12px; overflow: hidden; background: #000; box-shadow: 0 4px 16px rgba(0,0,0,0.25); border: 1px solid var(--border-subtle, rgba(255,255,255,0.1));">
+      ${label ? `<div style="padding: 6px 12px; font-size: 11px; font-weight: 600; background: rgba(0,0,0,0.6); color: #cbd5e1;">🎬 ${label}</div>` : ''}
+      <video controls preload="metadata" style="width: 100%; max-height: 460px; display: block; background: #000;" src="${url}">
+        Your browser does not support the video tag.
+      </video>
+    </div>`;
+  };
+
   // 1. Escape HTML
   let html = String(src)
     .replace(/&/g, '&amp;')
@@ -26,11 +72,41 @@ export function parseMarkdownToHtml(src, options = {}) {
   const formatInline = (text) => {
     if (!text) return '';
     let s = text;
+
+    // 1. Images & Media: ![alt](url)
+    s = s.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (match, alt, url) => {
+      const cleanUrl = url.trim();
+      const ytId = getYouTubeVideoId(cleanUrl);
+      if (ytId) return renderYouTubeEmbed(ytId);
+      if (isAudioUrl(cleanUrl)) return renderAudioPlayer(cleanUrl, alt);
+      if (isVideoUrl(cleanUrl)) return renderVideoPlayer(cleanUrl, alt);
+      return `<img src="${cleanUrl}" alt="${alt}" style="max-width: 100%; height: auto; border-radius: 8px; margin: 8px 0; display: block;" loading="lazy" />`;
+    });
+
+    // 2. Inline Code
     s = s.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>');
+    
+    // 3. Bold, Strikethrough, Italic
     s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
     s = s.replace(/~~([^~]+)~~/g, '<del>$1</del>');
     s = s.replace(/\*([^*]+)\*/g, '<em>$1</em>');
-    s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, `<a href="$2" target="_blank" rel="noopener noreferrer" style="color: ${linkColor}; text-decoration: underline; font-weight: 500;">$1</a>`);
+
+    // 4. Standard Links [label](url) with media detection
+    s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, label, url) => {
+      const cleanUrl = url.trim();
+      const ytId = getYouTubeVideoId(cleanUrl);
+      if (ytId) {
+        return `<span style="display: block;">${renderYouTubeEmbed(ytId)}<a href="${cleanUrl}" target="_blank" rel="noopener noreferrer" style="color: ${linkColor}; font-size: 12px; text-decoration: underline;">${label} ↗</a></span>`;
+      }
+      if (isAudioUrl(cleanUrl)) {
+        return renderAudioPlayer(cleanUrl, label);
+      }
+      if (isVideoUrl(cleanUrl)) {
+        return renderVideoPlayer(cleanUrl, label);
+      }
+      return `<a href="${cleanUrl}" target="_blank" rel="noopener noreferrer" style="color: ${linkColor}; text-decoration: underline; font-weight: 500;">${label}</a>`;
+    });
+
     return s;
   };
 
@@ -203,6 +279,26 @@ export function parseMarkdownToHtml(src, options = {}) {
       inList = true;
       listItems.push(`<li>${formatInline(listMatch[1])}</li>`);
       continue;
+    }
+
+    // Standalone Raw Media URLs (e.g. YouTube, audio file, video file)
+    if (/^https?:\/\/[^\s]+$/.test(trimmed)) {
+      flushList();
+      flushBlockquote();
+      flushTable();
+      const ytId = getYouTubeVideoId(trimmed);
+      if (ytId) {
+        out.push(renderYouTubeEmbed(ytId));
+        continue;
+      }
+      if (isAudioUrl(trimmed)) {
+        out.push(renderAudioPlayer(trimmed));
+        continue;
+      }
+      if (isVideoUrl(trimmed)) {
+        out.push(renderVideoPlayer(trimmed));
+        continue;
+      }
     }
 
     // Normal paragraph line
