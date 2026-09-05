@@ -365,10 +365,11 @@ export default function MessageList({
                     {/* Collapsible Reasoning & Tools Pill */}
                     {hasReasoning && (
                       <div style={{
-                        background: 'rgba(255, 255, 255, 0.03)',
-                        border: '1px solid var(--border-subtle)',
-                        borderRadius: '10px',
-                        overflow: 'hidden'
+                        background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.05), rgba(99, 102, 241, 0.03))',
+                        border: '1px solid rgba(139, 92, 246, 0.22)',
+                        borderRadius: '12px',
+                        overflow: 'hidden',
+                        boxShadow: '0 2px 8px rgba(139, 92, 246, 0.04)'
                       }}>
                         <button
                           type="button"
@@ -378,41 +379,58 @@ export default function MessageList({
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'space-between',
-                            padding: '8px 12px',
+                            padding: '9px 14px',
                             background: 'transparent',
                             border: 'none',
                             cursor: 'pointer',
-                            color: 'var(--text-muted)',
-                            fontSize: '0.78rem'
+                            color: 'var(--text-main)',
+                            fontSize: '0.8rem'
                           }}
                         >
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <Brain size={14} color="var(--primary-violet)" />
-                            <span style={{ fontWeight: '600', color: 'var(--primary-violet)' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <div style={{
+                              background: 'rgba(139, 92, 246, 0.15)',
+                              borderRadius: '6px',
+                              padding: '4px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center'
+                            }}>
+                              <Brain size={14} color="var(--primary-violet)" />
+                            </div>
+                            <span style={{ fontWeight: '600', color: 'var(--primary-violet)', letterSpacing: '0.2px' }}>
                               Thought Process & Tool Execution
                             </span>
                           </div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                            <span style={{ fontSize: '0.72rem' }}>{isReasoningOpen ? 'Hide' : 'Show details'}</span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '5px', color: 'var(--primary-violet)', opacity: 0.85 }}>
+                            <span style={{ fontSize: '0.74rem', fontWeight: '500' }}>{isReasoningOpen ? 'Hide' : 'View traces'}</span>
                             {isReasoningOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                           </div>
                         </button>
 
                         {isReasoningOpen && (
                           <div style={{
-                            padding: '12px 14px',
-                            borderTop: '1px solid var(--border-subtle)',
-                            background: 'rgba(0, 0, 0, 0.2)',
+                            padding: '14px 16px',
+                            borderTop: '1px solid rgba(139, 92, 246, 0.15)',
+                            background: 'rgba(139, 92, 246, 0.02)',
                             display: 'flex',
                             flexDirection: 'column',
-                            gap: '10px'
+                            gap: '12px'
                           }}>
                             {parseReasoning(m.reasoning).map((step, sidx) => {
                               if (step.type === 'thought') {
                                 return (
-                                  <div key={sidx} style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
-                                    <Sparkles size={13} color="var(--primary-violet)" style={{ marginTop: '2px', flexShrink: 0 }} />
-                                    <div style={{ fontSize: '0.78rem', color: 'var(--text-sub)', lineHeight: '1.5' }}>
+                                  <div key={sidx} style={{
+                                    display: 'flex',
+                                    gap: '10px',
+                                    alignItems: 'flex-start',
+                                    padding: '8px 12px',
+                                    borderRadius: '8px',
+                                    background: 'rgba(139, 92, 246, 0.06)',
+                                    border: '1px solid rgba(139, 92, 246, 0.12)'
+                                  }}>
+                                    <Sparkles size={14} color="var(--primary-violet)" style={{ marginTop: '2px', flexShrink: 0 }} />
+                                    <div style={{ fontSize: '0.8rem', color: 'var(--text-main)', lineHeight: '1.55' }}>
                                       {step.content}
                                     </div>
                                   </div>
@@ -420,14 +438,32 @@ export default function MessageList({
                               }
                               if (step.type === 'tool_call') {
                                 return (
-                                  <div key={sidx} style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
-                                    <Terminal size={13} color="var(--primary-emerald)" style={{ marginTop: '2px', flexShrink: 0 }} />
+                                  <div key={sidx} style={{
+                                    display: 'flex',
+                                    gap: '10px',
+                                    alignItems: 'flex-start',
+                                    padding: '8px 12px',
+                                    borderRadius: '8px',
+                                    background: 'rgba(16, 185, 129, 0.06)',
+                                    border: '1px solid rgba(16, 185, 129, 0.18)'
+                                  }}>
+                                    <Terminal size={14} color="var(--primary-emerald)" style={{ marginTop: '2px', flexShrink: 0 }} />
                                     <div style={{ flex: 1, minWidth: 0 }}>
-                                      <span style={{ fontSize: '0.74rem', fontWeight: '700', color: 'var(--primary-emerald)' }}>
+                                      <span style={{ fontSize: '0.76rem', fontWeight: '700', color: 'var(--primary-emerald)' }}>
                                         {step.name}
                                       </span>
                                       {step.arguments && (
-                                        <pre style={{ margin: '4px 0 0 0', padding: '6px 10px', background: 'var(--bg-input)', borderRadius: '6px', fontSize: '0.72rem', color: 'var(--text-sub)', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                                        <pre style={{
+                                          margin: '6px 0 0 0',
+                                          padding: '8px 12px',
+                                          background: 'var(--bg-input)',
+                                          border: '1px solid var(--border-subtle)',
+                                          borderRadius: '8px',
+                                          fontSize: '0.74rem',
+                                          color: 'var(--text-main)',
+                                          whiteSpace: 'pre-wrap',
+                                          wordBreak: 'break-all'
+                                        }}>
                                           {step.arguments}
                                         </pre>
                                       )}
@@ -437,13 +473,33 @@ export default function MessageList({
                               }
                               if (step.type === 'tool_result') {
                                 return (
-                                  <div key={sidx} style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
-                                    <Code2 size={13} color="var(--primary-amber)" style={{ marginTop: '2px', flexShrink: 0 }} />
+                                  <div key={sidx} style={{
+                                    display: 'flex',
+                                    gap: '10px',
+                                    alignItems: 'flex-start',
+                                    padding: '8px 12px',
+                                    borderRadius: '8px',
+                                    background: 'rgba(245, 158, 11, 0.06)',
+                                    border: '1px solid rgba(245, 158, 11, 0.18)'
+                                  }}>
+                                    <Code2 size={14} color="var(--accent-amber)" style={{ marginTop: '2px', flexShrink: 0 }} />
                                     <div style={{ flex: 1, minWidth: 0 }}>
-                                      <span style={{ fontSize: '0.74rem', fontWeight: '700', color: 'var(--primary-amber)' }}>
+                                      <span style={{ fontSize: '0.76rem', fontWeight: '700', color: 'var(--accent-amber)' }}>
                                         {step.title}
                                       </span>
-                                      <pre style={{ margin: '4px 0 0 0', padding: '8px 10px', background: '#090d16', border: '1px solid #1e293b', borderRadius: '6px', fontSize: '0.72rem', color: '#38bdf8', maxHeight: '180px', overflowY: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                                      <pre style={{
+                                        margin: '6px 0 0 0',
+                                        padding: '10px 12px',
+                                        background: 'var(--bg-input)',
+                                        border: '1px solid rgba(245, 158, 11, 0.2)',
+                                        borderRadius: '8px',
+                                        fontSize: '0.74rem',
+                                        color: 'var(--text-main)',
+                                        maxHeight: '200px',
+                                        overflowY: 'auto',
+                                        whiteSpace: 'pre-wrap',
+                                        wordBreak: 'break-all'
+                                      }}>
                                         {step.output}
                                       </pre>
                                     </div>

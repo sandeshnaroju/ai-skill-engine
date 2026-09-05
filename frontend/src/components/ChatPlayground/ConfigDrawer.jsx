@@ -61,12 +61,13 @@ export default function ConfigDrawer({
 
       {/* Slide-out Drawer Box */}
       <div style={{
-        width: '420px',
+        width: '430px',
         maxWidth: '92vw',
         height: '100%',
-        background: 'var(--bg-panel)',
-        borderLeft: '1px solid var(--border-subtle)',
-        boxShadow: '-10px 0 30px rgba(0, 0, 0, 0.5)',
+        background: 'var(--bg-card)',
+        backdropFilter: 'blur(20px)',
+        borderLeft: '1px solid var(--border-glow)',
+        boxShadow: 'var(--shadow-card)',
         display: 'flex',
         flexDirection: 'column',
         zIndex: 1101,
@@ -74,29 +75,31 @@ export default function ConfigDrawer({
       }}>
         {/* Drawer Header */}
         <div style={{
-          padding: '16px 20px',
+          padding: '18px 22px',
           borderBottom: '1px solid var(--border-subtle)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          background: 'rgba(255, 255, 255, 0.02)'
+          background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.08), rgba(99, 102, 241, 0.04))'
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <div style={{
-              background: 'rgba(139, 92, 246, 0.15)',
-              padding: '7px',
-              borderRadius: '8px',
+              background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.2), rgba(99, 102, 241, 0.2))',
+              border: '1px solid rgba(139, 92, 246, 0.35)',
+              padding: '8px',
+              borderRadius: '10px',
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'center'
+              justifyContent: 'center',
+              boxShadow: '0 4px 12px rgba(139, 92, 246, 0.15)'
             }}>
               <Sliders size={18} color="var(--primary-violet)" />
             </div>
             <div>
-              <div style={{ fontSize: '0.96rem', fontWeight: '700', color: 'var(--text-main)' }}>
+              <div style={{ fontSize: '1rem', fontWeight: '700', color: 'var(--text-main)', letterSpacing: '-0.01em' }}>
                 Session Configuration
               </div>
-              <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
+              <div style={{ fontSize: '0.76rem', color: 'var(--primary-violet)', fontWeight: '500', opacity: 0.85 }}>
                 Model parameters, secrets & skills
               </div>
             </div>
@@ -115,8 +118,9 @@ export default function ConfigDrawer({
         <div style={{
           display: 'flex',
           borderBottom: '1px solid var(--border-subtle)',
-          background: 'rgba(0, 0, 0, 0.15)',
-          padding: '0 8px'
+          background: 'linear-gradient(180deg, rgba(139, 92, 246, 0.03), transparent)',
+          padding: '0 10px',
+          gap: '4px'
         }}>
           {[
             { id: 'agent', label: 'Agent & Model', icon: Cpu },
@@ -136,18 +140,19 @@ export default function ConfigDrawer({
                   alignItems: 'center',
                   justifyContent: 'center',
                   gap: '6px',
-                  padding: '11px 4px',
-                  fontSize: '0.74rem',
+                  padding: '12px 4px',
+                  fontSize: '0.76rem',
                   fontWeight: isActive ? '700' : '500',
-                  color: isActive ? 'var(--primary-violet)' : 'var(--text-muted)',
+                  color: isActive ? 'var(--primary-violet)' : 'var(--text-sub)',
                   border: 'none',
                   borderBottom: `2px solid ${isActive ? 'var(--primary-violet)' : 'transparent'}`,
-                  background: 'transparent',
+                  background: isActive ? 'rgba(139, 92, 246, 0.08)' : 'transparent',
+                  borderRadius: '6px 6px 0 0',
                   cursor: 'pointer',
-                  transition: 'all 0.15s'
+                  transition: 'all 0.15s ease'
                 }}
               >
-                <Icon size={13} />
+                <Icon size={14} color={isActive ? 'var(--primary-violet)' : 'inherit'} />
                 <span>{tab.label}</span>
               </button>
             );
@@ -491,7 +496,7 @@ export default function ConfigDrawer({
         <div style={{
           padding: '16px 20px',
           borderTop: '1px solid var(--border-subtle)',
-          background: 'rgba(0, 0, 0, 0.2)',
+          background: 'linear-gradient(180deg, transparent, rgba(139, 92, 246, 0.05))',
           display: 'flex',
           flexDirection: 'column',
           gap: '10px'
@@ -501,7 +506,13 @@ export default function ConfigDrawer({
               type="button"
               className="btn-outline"
               onClick={onOpenHistory}
-              style={{ justifyContent: 'center', fontSize: '0.78rem', padding: '8px' }}
+              style={{
+                justifyContent: 'center',
+                fontSize: '0.78rem',
+                padding: '8px',
+                borderColor: 'rgba(139, 92, 246, 0.25)',
+                color: 'var(--text-main)'
+              }}
             >
               <History size={14} color="var(--primary-violet)" /> History ({sessionsCount || 0})
             </button>
@@ -509,7 +520,13 @@ export default function ConfigDrawer({
               type="button"
               className="btn-outline"
               onClick={onOpenAudit}
-              style={{ justifyContent: 'center', fontSize: '0.78rem', padding: '8px' }}
+              style={{
+                justifyContent: 'center',
+                fontSize: '0.78rem',
+                padding: '8px',
+                borderColor: 'rgba(16, 185, 129, 0.25)',
+                color: 'var(--text-main)'
+              }}
             >
               <Terminal size={14} color="var(--primary-emerald)" /> Audit Logs ({executedToolsCount || 0})
             </button>
@@ -520,15 +537,27 @@ export default function ConfigDrawer({
               type="button"
               className="btn-outline"
               onClick={onExportTranscript}
-              style={{ justifyContent: 'center', fontSize: '0.78rem', padding: '8px' }}
+              style={{
+                justifyContent: 'center',
+                fontSize: '0.78rem',
+                padding: '8px',
+                borderColor: 'rgba(99, 102, 241, 0.25)',
+                color: 'var(--text-main)'
+              }}
             >
-              <Download size={14} /> Export
+              <Download size={14} color="var(--primary-indigo)" /> Export
             </button>
             <button
               type="button"
               className="btn-outline"
               onClick={onClearConsole}
-              style={{ justifyContent: 'center', fontSize: '0.78rem', padding: '8px', color: 'var(--accent-rose)' }}
+              style={{
+                justifyContent: 'center',
+                fontSize: '0.78rem',
+                padding: '8px',
+                borderColor: 'rgba(244, 63, 94, 0.25)',
+                color: 'var(--accent-rose)'
+              }}
             >
               <Trash2 size={14} /> Clear Chat
             </button>
