@@ -868,7 +868,7 @@ export default function ArtifactManager() {
                   Canvas Live Editor & Preview
                 </span>
                 <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>
-                  • {previewArtifact.title} (v{previewArtifact.current_version})
+                  • {typeof previewArtifact.title === 'object' && previewArtifact.title !== null ? (previewArtifact.title.name || previewArtifact.title.title || 'Document') : String(previewArtifact.title || 'Document')} (v{previewArtifact.current_version || 1})
                 </span>
               </div>
               <button

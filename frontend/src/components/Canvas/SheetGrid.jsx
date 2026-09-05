@@ -14,6 +14,43 @@ export default function SheetGrid({
   const [editingColIdx, setEditingColIdx] = useState(null);
   const [editingSheetIdx, setEditingSheetIdx] = useState(null);
 
+  const sanitizeCol = (c, i) => {
+    if (c === null || c === undefined) return `Col ${i + 1}`;
+    if (typeof c === 'string' || typeof c === 'number') return String(c);
+    if (typeof c === 'object') return c.name || c.title || c.label || c.header || `Col ${i + 1}`;
+    return String(c);
+  };
+
+  const sanitizeCell = (val) => {
+    if (val === null || val === undefined) return '';
+    if (typeof val === 'string' || typeof val === 'number' || typeof val === 'boolean') return String(val);
+    if (typeof val === 'object') {
+      if (val.value !== undefined) return String(val.value);
+      if (val.name !== undefined) return String(val.name);
+      if (val.text !== undefined) return String(val.text);
+      if (val.label !== undefined) return String(val.label);
+      return JSON.stringify(val);
+    }
+    return String(val);
+  };
+
+  const sanitizeRows = (rows, cols) => {
+    if (!Array.isArray(rows)) return [];
+    return rows.map((r) => {
+      if (Array.isArray(r)) {
+        return r.map(sanitizeCell);
+      }
+      if (typeof r === 'object' && r !== null) {
+        return cols.map((c) => {
+          const colKey = typeof c === 'string' ? c : (c.name || c.title || '');
+          const val = r[colKey] !== undefined ? r[colKey] : r[c] !== undefined ? r[c] : Object.values(r)[0];
+          return sanitizeCell(val);
+        });
+      }
+      return [sanitizeCell(r)];
+    });
+  };
+
   const parseBlockToSheet = (b) => {
     const raw = String(b.content || '').trim();
     // 1. Try parsing JSON format: { sheet_name, columns, rows } or { sheets: [...] }
@@ -21,18 +58,24 @@ export default function SheetGrid({
       const data = JSON.parse(raw);
       if (data && typeof data === 'object') {
         if (Array.isArray(data.sheets) && data.sheets.length > 0) {
-          return data.sheets.map((s, idx) => ({
-            block_key: b.block_key,
-            name: s.sheet_name || s.name || `Sheet ${idx + 1}`,
-            columns: Array.isArray(s.columns) && s.columns.length > 0 ? s.columns : ['Col A', 'Col B', 'Col C'],
-            rows: Array.isArray(s.rows) ? s.rows : []
-          }));
+          return data.sheets.map((s, idx) => {
+            const rawCols = Array.isArray(s.columns) && s.columns.length > 0 ? s.columns : ['Col A', 'Col B', 'Col C'];
+            const cols = rawCols.map(sanitizeCol);
+            return {
+              block_key: b.block_key,
+              name: s.sheet_name || s.name || `Sheet ${idx + 1}`,
+              columns: cols,
+              rows: sanitizeRows(s.rows, rawCols)
+            };
+          });
         }
+        const rawCols = Array.isArray(data.columns) && data.columns.length > 0 ? data.columns : ['Col A', 'Col B', 'Col C'];
+        const cols = rawCols.map(sanitizeCol);
         return [{
           block_key: b.block_key,
           name: data.sheet_name || data.name || b.title || 'Sheet 1',
-          columns: Array.isArray(data.columns) && data.columns.length > 0 ? data.columns : ['Col A', 'Col B', 'Col C'],
-          rows: Array.isArray(data.rows) ? data.rows : []
+          columns: cols,
+          rows: sanitizeRows(data.rows, rawCols)
         }];
       }
     } catch { }
@@ -45,11 +88,12 @@ export default function SheetGrid({
         const header = parseRow(lines[0]);
         const startIdx = lines[1].includes('---') ? 2 : 1;
         const rows = lines.slice(startIdx).map(parseRow);
+        const cols = (header.length > 0 ? header : ['Col A', 'Col B', 'Col C']).map(sanitizeCol);
         return [{
           block_key: b.block_key,
           name: b.title || 'Sheet 1',
-          columns: header.length > 0 ? header : ['Col A', 'Col B', 'Col C'],
-          rows: rows
+          columns: cols,
+          rows: rows.map(r => r.map(sanitizeCell))
         }];
       }
     }
@@ -59,8 +103,9 @@ export default function SheetGrid({
       if (l.includes('\t')) return l.split('\t').map(c => c.trim());
       return l.split(',').map(c => c.trim());
     });
-    const columns = lines[0] && lines[0].length > 0 ? lines[0] : ['Col A', 'Col B', 'Col C'];
-    const rows = lines.slice(1);
+    const rawColumns = lines[0] && lines[0].length > 0 ? lines[0] : ['Col A', 'Col B', 'Col C'];
+    const columns = rawColumns.map(sanitizeCol);
+    const rows = lines.slice(1).map(r => r.map(sanitizeCell));
     return [{
       block_key: b.block_key,
       name: b.title || 'Sheet 1',
@@ -369,7 +414,7 @@ export default function SheetGrid({
                         <input
                           type="text"
                           className="sheet-col-input"
-                          defaultValue={col}
+                          defaultValue={typeof col === 'object' && col !== null ? (col.name || col.title || col.label || '') : String(col || '')}
                           autoFocus
                           onBlur={(e) => {
                             handleRenameColumn(idx, e.target.value.trim());
@@ -388,7 +433,7 @@ export default function SheetGrid({
                           onDoubleClick={() => setEditingColIdx(idx)}
                           title="Double-click to rename column"
                         >
-                          {col}
+                          {typeof col === 'object' && col !== null ? (col.name || col.title || col.label || '') : String(col || '')}
                         </span>
                       )}
                     </div>
@@ -419,15 +464,21 @@ export default function SheetGrid({
                     <Trash2 size={11} />
                   </button>
                 </td>
-                {currentSheet.columns.map((_, colIdx) => (
-                  <td key={colIdx}>
-                    <input
-                      type="text"
-                      value={row[colIdx] !== undefined ? row[colIdx] : ''}
-                      onChange={(e) => handleCellChange(rowIdx, colIdx, e.target.value)}
-                    />
-                  </td>
-                ))}
+                {currentSheet.columns.map((_, colIdx) => {
+                  const cellVal = row && row[colIdx] !== undefined ? row[colIdx] : '';
+                  const displayVal = typeof cellVal === 'object' && cellVal !== null
+                    ? (cellVal.value !== undefined ? String(cellVal.value) : cellVal.name || cellVal.text || JSON.stringify(cellVal))
+                    : String(cellVal ?? '');
+                  return (
+                    <td key={colIdx}>
+                      <input
+                        type="text"
+                        value={displayVal}
+                        onChange={(e) => handleCellChange(rowIdx, colIdx, e.target.value)}
+                      />
+                    </td>
+                  );
+                })}
               </tr>
             ))}
           </tbody>

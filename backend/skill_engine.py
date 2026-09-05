@@ -51,6 +51,17 @@ def _build_messages(db, persist, session_obj, user_message, allowed_skills, user
             ChatMessage.session_id == session_obj.id
         ).order_by(ChatMessage.created_at.asc()).all()
 
+        # If client supplied full history and db is missing previous turns, backfill db
+        if len(db_messages) <= 1 and client_messages and len(client_messages) > 1:
+            for cm in client_messages[:-1]:
+                r = cm.get("role")
+                c = cm.get("content")
+                if r in ("user", "assistant") and c:
+                    save_message(db, session_obj, r, content=json.dumps(c) if not isinstance(c, str) else c)
+            db_messages = db.query(ChatMessage).filter(
+                ChatMessage.session_id == session_obj.id
+            ).order_by(ChatMessage.created_at.asc()).all()
+
         for msg in db_messages:
             if msg.role == "assistant" and msg.tool_calls:
                 item = {"role": "assistant", "content": msg.content if msg.content else None}

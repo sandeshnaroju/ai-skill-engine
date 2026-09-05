@@ -443,8 +443,11 @@ function CanvasInner({ isEmbed = false, artifactId: propArtifactId, token: propT
 
           {/* Clean Single-Line Document Title & Live Status */}
           <div className="canvas-title-group">
-            <span className="canvas-doc-title" title={artifact?.title || 'Document'}>
-              {artifact?.title || 'Untitled Document'}
+            <span
+              className="canvas-doc-title"
+              title={typeof artifact?.title === 'object' && artifact?.title !== null ? (artifact.title?.name || artifact.title?.title || 'Document') : String(artifact?.title || 'Document')}
+            >
+              {typeof artifact?.title === 'object' && artifact?.title !== null ? (artifact.title?.name || artifact.title?.title || 'Untitled Document') : String(artifact?.title || 'Untitled Document')}
             </span>
             <span className="canvas-version-pill">v{artifact?.current_version || 1}</span>
             {isLiveConnected && (
@@ -512,20 +515,25 @@ function CanvasInner({ isEmbed = false, artifactId: propArtifactId, token: propT
           </div>
 
           <div className="canvas-outline-list">
-            {blocks.map((b, idx) => (
-              <button
-                key={b.block_key}
-                className={`canvas-outline-item ${activeBlockKey === b.block_key ? 'active' : ''}`}
-                onClick={() => handleJumpToBlock(b.block_key)}
-              >
-                <span className="canvas-outline-title">
-                  {idx + 1}. {b.title || b.block_key}
-                </span>
-                <span className="canvas-outline-badge">
-                  {typeof b?.content === 'string' ? `${b.content.split(/\s+/).filter(Boolean).length}w` : '0w'}
-                </span>
-              </button>
-            ))}
+            {blocks.map((b, idx) => {
+              const blockTitle = typeof b.title === 'object' && b.title !== null
+                ? (b.title?.name || b.title?.title || b.block_key)
+                : (b.title || b.block_key);
+              return (
+                <button
+                  key={b.block_key}
+                  className={`canvas-outline-item ${activeBlockKey === b.block_key ? 'active' : ''}`}
+                  onClick={() => handleJumpToBlock(b.block_key)}
+                >
+                  <span className="canvas-outline-title">
+                    {idx + 1}. {blockTitle}
+                  </span>
+                  <span className="canvas-outline-badge">
+                    {typeof b?.content === 'string' ? `${b.content.split(/\s+/).filter(Boolean).length}w` : '0w'}
+                  </span>
+                </button>
+              );
+            })}
           </div>
         </aside>
 

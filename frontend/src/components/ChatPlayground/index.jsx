@@ -640,9 +640,18 @@ export default function ChatPlayground({ isSidebarOpen, toggleSidebar }) {
       let turnArtifacts = [];
       let turnGeneratedFiles = [];
 
+      // Build complete conversation history for the LLM
+      const historyToSend = messages
+        .filter(m => (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string' && m.content.trim())
+        .map(m => ({
+          role: m.role,
+          content: m.content
+        }));
+      historyToSend.push({ role: 'user', content: userContent });
+
       const payload = {
         model: selectedModel || 'default',
-        messages: [{ role: 'user', content: userContent }],
+        messages: historyToSend,
         stream: true,
         session_id: activeSessionId,
         app_id: selectedAppId || undefined,
@@ -663,6 +672,7 @@ export default function ChatPlayground({ isSidebarOpen, toggleSidebar }) {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'X-Request-Source': 'dashboard',
           ...(apiKey.trim() ? { 'X-API-Key': apiKey.trim() } : {}),
         },
         body: JSON.stringify(payload),

@@ -10,6 +10,9 @@ import { artifactsApi } from '../../api';
 // ── Lightweight Rich Inline Markdown Formatter ───────────────────────────────
 function formatInline(str) {
   if (str == null) return '';
+  if (typeof str === 'object') {
+    return str.name || str.title || str.label || str.text || str.value || JSON.stringify(str);
+  }
   const textStr = typeof str === 'string' ? str : String(str);
   if (!textStr) return '';
 
