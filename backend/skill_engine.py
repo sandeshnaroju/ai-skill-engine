@@ -457,21 +457,12 @@ class SkillEngine:
                     turn_msg = f"Processing tool outputs & synthesizing response (Turn {turn+1})..."
                 yield _chunk(session_id, model_name, reasoning=turn_msg)
 
-                # Enable Thinking/Reasoning across providers
+                # Enable Reasoning for models supporting standard reasoning_effort
                 m_lower = model_name.lower()
-                if "gemini" in m_lower:
-                    kwargs["extra_body"] = {
-                        "thinking_config": {
-                            "include_thoughts": True
-                        }
-                    }
-                elif any(k in m_lower for k in ["deepseek-r1", "deepseek-reasoner", "r1", "qwq"]):
-                    kwargs["extra_body"] = {
-                        "include_reasoning": True
-                    }
-                elif any(k in m_lower for k in ["o1", "o3", "o4"]):
-                    # OpenAI o-series thinking effort
+                if any(k in m_lower for k in ["o1", "o3", "o4"]):
                     kwargs["reasoning_effort"] = "medium"
+                elif any(k in m_lower for k in ["deepseek-r1", "deepseek-reasoner", "r1"]):
+                    kwargs["extra_body"] = {"include_reasoning": True}
 
                 try:
                     response_stream = llm.chat.completions.create(**kwargs)
