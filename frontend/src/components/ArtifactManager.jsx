@@ -13,8 +13,18 @@ import { useToast } from '../context/ToastContext';
 export default function ArtifactManager() {
   const { showSuccess, showError } = useToast();
 
+  // Initialize tenant ID from URL search params (?tenant_id=...) or localStorage
+  const getInitialTenantId = () => {
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      return urlParams.get('tenant_id') || urlParams.get('tenant') || localStorage.getItem('last_selected_tenant_id') || '';
+    } catch {
+      return '';
+    }
+  };
+
   const [tenants, setTenants] = useState([]);
-  const [selectedTenantId, setSelectedTenantId] = useState('');
+  const [selectedTenantId, setSelectedTenantId] = useState(getInitialTenantId);
   const [artifacts, setArtifacts] = useState([]);
   const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -37,6 +47,26 @@ export default function ArtifactManager() {
   // Copy Feedback
   const [copiedId, setCopiedId] = useState(null);
 
+  // Tenant change handler that syncs with browser URL & localStorage
+  const handleTenantChange = useCallback((tenantId) => {
+    setSelectedTenantId(tenantId);
+    setPage(1);
+    try {
+      if (tenantId) {
+        localStorage.setItem('last_selected_tenant_id', tenantId);
+      }
+      const url = new URL(window.location.href);
+      if (tenantId) {
+        url.searchParams.set('tenant_id', tenantId);
+      } else {
+        url.searchParams.delete('tenant_id');
+      }
+      window.history.replaceState({}, '', url.toString());
+    } catch (e) {
+      console.warn('Could not update tenant in URL:', e);
+    }
+  }, []);
+
   // Load initial tenants list
   useEffect(() => {
     async function loadTenants() {
@@ -44,15 +74,18 @@ export default function ArtifactManager() {
         const res = await tenantsApi.list({ page_size: 50, page: 1 });
         const list = res.items || (Array.isArray(res) ? res : []);
         setTenants(list);
-        if (list.length > 0 && !selectedTenantId) {
-          setSelectedTenantId(list[0].id);
+        if (list.length > 0) {
+          const currentCandidate = selectedTenantId || getInitialTenantId();
+          const valid = list.some(t => t.id === currentCandidate);
+          const effectiveTenant = valid ? currentCandidate : list[0].id;
+          handleTenantChange(effectiveTenant);
         }
       } catch (err) {
         console.error('Failed to load tenants:', err);
       }
     }
     loadTenants();
-  }, []);
+  }, [handleTenantChange]);
 
   // Fetch Artifacts for selected tenant
   const fetchArtifacts = useCallback(async () => {
@@ -164,17 +197,28 @@ export default function ArtifactManager() {
 
   // Type Icon and Color Mapper
   const getTypeInfo = (type) => {
-    switch (type) {
+    const t = (type || '').toLowerCase();
+    switch (t) {
       case 'document':
+      case 'doc':
+      case 'pdf':
         return { icon: FileText, label: 'Document', color: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.12)' };
       case 'code':
+      case 'html':
+      case 'script':
         return { icon: Code2, label: 'Code', color: '#10b981', bg: 'rgba(16, 185, 129, 0.12)' };
       case 'spreadsheet':
+      case 'sheet':
         return { icon: Table, label: 'Spreadsheet', color: '#06b6d4', bg: 'rgba(6, 182, 212, 0.12)' };
       case 'presentation':
+      case 'slides':
         return { icon: Presentation, label: 'Presentation', color: '#f59e0b', bg: 'rgba(245, 158, 11, 0.12)' };
       case 'svg':
-        return { icon: Image, label: 'Vector SVG', color: '#ec4899', bg: 'rgba(236, 72, 153, 0.12)' };
+      case 'diagram_svg':
+      case 'diagram':
+      case 'image':
+      case 'vector':
+        return { icon: Image, label: 'Image / SVG', color: '#ec4899', bg: 'rgba(236, 72, 153, 0.12)' };
       case 'video':
         return { icon: Video, label: 'Video', color: '#ef4444', bg: 'rgba(239, 68, 68, 0.12)' };
       case 'audio':
@@ -186,9 +230,12 @@ export default function ArtifactManager() {
 
   // Stats calculation
   const countsByType = artifacts.reduce((acc, art) => {
-    acc[art.artifact_type] = (acc[art.artifact_type] || 0) + 1;
+    const t = (art.artifact_type || '').toLowerCase();
+    acc[t] = (acc[t] || 0) + 1;
     return acc;
   }, {});
+
+  const imagesCount = (countsByType['diagram_svg'] || 0) + (countsByType['svg'] || 0) + (countsByType['image'] || 0) + (countsByType['vector'] || 0);
 
   return (
     <div style={{ padding: '24px 28px', maxWidth: '1600px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '24px' }}>
@@ -239,10 +286,7 @@ export default function ArtifactManager() {
           <div style={{ flex: 1 }}>
             <AsyncSearchableDropdown
               value={selectedTenantId}
-              onChange={(val) => {
-                setSelectedTenantId(val);
-                setPage(1);
-              }}
+              onChange={(val) => handleTenantChange(val)}
               initialLabel={tenants.find(t => t.id === selectedTenantId)?.name ? `🔑 ${tenants.find(t => t.id === selectedTenantId).name}` : ''}
               fetchOptions={async (search) => {
                 const res = await tenantsApi.list({ search: search || '', page_size: 20, page: 1 });
@@ -272,15 +316,16 @@ export default function ArtifactManager() {
       {/* ───────────────────────────────────────────────────────────── */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
         gap: '14px'
       }}>
         {[
           { label: 'Total Artifacts', count: totalCount, icon: Layers, color: '#8b5cf6' },
           { label: 'Documents', count: countsByType['document'] || 0, icon: FileText, color: '#a855f7' },
-          { label: 'Code & Scripts', count: countsByType['code'] || 0, icon: Code2, color: '#10b981' },
+          { label: 'Images & SVGs', count: imagesCount, icon: Image, color: '#ec4899' },
           { label: 'Presentations', count: countsByType['presentation'] || 0, icon: Presentation, color: '#f59e0b' },
-          { label: 'Spreadsheets', count: countsByType['spreadsheet'] || 0, icon: Table, color: '#06b6d4' }
+          { label: 'Spreadsheets', count: countsByType['spreadsheet'] || 0, icon: Table, color: '#06b6d4' },
+          { label: 'Code & Scripts', count: countsByType['code'] || 0, icon: Code2, color: '#10b981' }
         ].map((stat, idx) => {
           const Icon = stat.icon;
           return (
@@ -372,9 +417,10 @@ export default function ArtifactManager() {
           {[
             { id: 'all', label: 'All Types' },
             { id: 'document', label: 'Documents', icon: FileText },
-            { id: 'code', label: 'Code', icon: Code2 },
+            { id: 'images', label: 'Images & SVGs', icon: Image },
             { id: 'presentation', label: 'Slides', icon: Presentation },
-            { id: 'spreadsheet', label: 'Sheets', icon: Table }
+            { id: 'spreadsheet', label: 'Sheets', icon: Table },
+            { id: 'code', label: 'Code & Web', icon: Code2 }
           ].map((tab) => {
             const isActive = selectedType === tab.id;
             return (
@@ -400,6 +446,7 @@ export default function ArtifactManager() {
                   gap: '6px'
                 }}
               >
+                {tab.icon && <tab.icon size={13} />}
                 {tab.icon && <tab.icon size={13} />}
                 <span>{tab.label}</span>
               </button>

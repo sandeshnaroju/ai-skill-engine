@@ -217,11 +217,50 @@ def list_tenant_artifacts(
     db: Session = Depends(get_db)
 ):
     """List all artifacts for a specific tenant with search, type filter, and pagination."""
-    target_tenant_id = tenant_id if tenant_id else current_tenant.id
-    query = db.query(SessionArtifact).filter(SessionArtifact.tenant_id == target_tenant_id)
-
     if artifact_type and artifact_type != "all":
-        query = query.filter(SessionArtifact.artifact_type == artifact_type)
+        if artifact_type in ("image", "images", "svg", "diagram_svg", "diagram", "vector"):
+            query = query.filter(
+                (SessionArtifact.artifact_type.in_(["diagram_svg", "svg", "image", "diagram", "vector"])) |
+                (SessionArtifact.filename.ilike("%.svg")) |
+                (SessionArtifact.filename.ilike("%.png")) |
+                (SessionArtifact.filename.ilike("%.jpg")) |
+                (SessionArtifact.filename.ilike("%.jpeg")) |
+                (SessionArtifact.filename.ilike("%.webp")) |
+                (SessionArtifact.filename.ilike("%.gif"))
+            )
+        elif artifact_type in ("doc", "document", "documents"):
+            query = query.filter(
+                (SessionArtifact.artifact_type.in_(["document", "doc"])) |
+                (SessionArtifact.filename.ilike("%.md")) |
+                (SessionArtifact.filename.ilike("%.docx")) |
+                (SessionArtifact.filename.ilike("%.doc")) |
+                (SessionArtifact.filename.ilike("%.pdf"))
+            )
+        elif artifact_type in ("spreadsheet", "sheet", "sheets"):
+            query = query.filter(
+                (SessionArtifact.artifact_type.in_(["spreadsheet", "sheet", "table"])) |
+                (SessionArtifact.filename.ilike("%.xlsx")) |
+                (SessionArtifact.filename.ilike("%.xls")) |
+                (SessionArtifact.filename.ilike("%.csv")) |
+                (SessionArtifact.filename.ilike("%.tsv"))
+            )
+        elif artifact_type in ("presentation", "slides", "deck"):
+            query = query.filter(
+                (SessionArtifact.artifact_type.in_(["presentation", "slides", "deck"])) |
+                (SessionArtifact.filename.ilike("%.pptx")) |
+                (SessionArtifact.filename.ilike("%.key"))
+            )
+        elif artifact_type in ("code", "script"):
+            query = query.filter(
+                (SessionArtifact.artifact_type.in_(["code", "script", "html"])) |
+                (SessionArtifact.filename.ilike("%.py")) |
+                (SessionArtifact.filename.ilike("%.js")) |
+                (SessionArtifact.filename.ilike("%.ts")) |
+                (SessionArtifact.filename.ilike("%.html")) |
+                (SessionArtifact.filename.ilike("%.json"))
+            )
+        else:
+            query = query.filter(SessionArtifact.artifact_type == artifact_type)
 
     if session_id:
         query = query.filter(SessionArtifact.session_id == session_id)
