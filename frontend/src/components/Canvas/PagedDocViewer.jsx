@@ -6,6 +6,7 @@ import {
   Quote, AlertCircle, Palette, Minus, ExternalLink
 } from 'lucide-react';
 import { artifactsApi } from '../../api';
+import { replaceMathAndSymbols } from '../MarkdownViewer';
 
 // ── Lightweight Rich Inline Markdown Formatter ───────────────────────────────
 function formatInline(str) {
@@ -13,7 +14,8 @@ function formatInline(str) {
   if (typeof str === 'object') {
     return str.name || str.title || str.label || str.text || str.value || JSON.stringify(str);
   }
-  const textStr = typeof str === 'string' ? str : String(str);
+  const processedStr = replaceMathAndSymbols(String(str));
+  const textStr = processedStr;
   if (!textStr) return '';
 
   // Regex capturing:

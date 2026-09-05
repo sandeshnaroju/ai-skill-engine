@@ -18,20 +18,60 @@ export function isVideoUrl(url) {
   return /\.(mp4|webm|mov|mkv|ogv)(\?.*)?$/i.test(url || '');
 }
 
+export function replaceMathAndSymbols(text) {
+  if (!text) return '';
+  let s = String(text);
+
+  const latexMap = [
+    [/\$?(\\rightarrow|\\to|\\longrightarrow)\$?/g, ' → '],
+    [/\$?(\\leftarrow|\\gets|\\longleftarrow)\$?/g, ' ← '],
+    [/\$?(\\Rightarrow|\\Longrightarrow)\$?/g, ' ⇒ '],
+    [/\$?(\\Leftarrow|\\Longleftarrow)\$?/g, ' ⇐ '],
+    [/\$?(\\leftrightarrow|\\longleftrightarrow)\$?/g, ' ↔ '],
+    [/\$?(\\Leftrightarrow|\\Longleftrightarrow)\$?/g, ' ⇔ '],
+    [/\$?(\\uparrow)\$?/g, ' ↑ '],
+    [/\$?(\\downarrow)\$?/g, ' ↓ '],
+    [/\$?(\\times)\$?/g, ' × '],
+    [/\$?(\\cdot)\$?/g, ' · '],
+    [/\$?(\\pm)\$?/g, ' ± '],
+    [/\$?(\\mp)\$?/g, ' ∓ '],
+    [/\$?(\\approx)\$?/g, ' ≈ '],
+    [/\$?(\\neq|\\ne)\$?/g, ' ≠ '],
+    [/\$?(\\leq|\\le)\$?/g, ' ≤ '],
+    [/\$?(\\geq|\\ge)\$?/g, ' ≥ '],
+    [/\$?(\\infty)\$?/g, ' ∞ '],
+    [/\$?(\\degree|\\circ)\$?/g, '°'],
+    [/\$?(\\Delta)\$?/g, 'Δ'],
+    [/\$?(\\alpha)\$?/g, 'α'],
+    [/\$?(\\beta)\$?/g, 'β'],
+    [/\$?(\\gamma)\$?/g, 'γ'],
+    [/\$?(\\theta)\$?/g, 'θ'],
+    [/\$?(\\lambda)\$?/g, 'λ'],
+    [/\$?(\\mu)\$?/g, 'μ'],
+    [/\$?(\\pi)\$?/g, 'π'],
+    [/\$?(\\sigma)\$?/g, 'σ'],
+    [/\$?(\\omega)\$?/g, 'ω'],
+    [/\$?(\\Omega)\$?/g, 'Ω'],
+    [/\$?(\\sum)\$?/g, '∑'],
+    [/\$?(\\prod)\$?/g, '∏'],
+    [/\$?(\\int)\$?/g, '∫'],
+    [/\$?(\\sqrt\{([^}]+)\})\$?/g, '√($2)'],
+    [/\$?(\\frac\{([^}]+)\}\{([^}]+)\})\$?/g, '($2 / $3)'],
+    [/\$([^$\n]+)\$/g, '$1'],
+    [/\s*->\s*/g, ' → '],
+    [/\s*=>\s*/g, ' ⇒ '],
+    [/\s*<-\s*/g, ' ← ']
+  ];
+
+  for (const [regex, replacement] of latexMap) {
+    s = s.replace(regex, replacement);
+  }
+
+  return s;
+}
+
 /**
  * Universal Markdown Parser & Renderer
- * Converts GFM Markdown into clean, secure HTML with full support for:
- * - Audio & Video players (.mp3, .wav, .mp4, .webm, etc.)
- * - YouTube auto-embed responsive player
- * - Images (![alt](url))
- * - Tables with delimiter alignments (:---:, ---:, :---)
- * - Code blocks (```lang ... ```) with syntax header
- * - Inline formatting (bold, italic, strikethrough, inline code, links)
- * - Headings (H1 to H6)
- * - Horizontal rules (---, ***, ___)
- * - Blockquotes (> quote)
- * - Task lists (- [ ] / - [x]) and bullet/ordered lists
- * - Paragraphs with clean spacing
  */
 export function parseMarkdownToHtml(src, options = {}) {
   if (!src) return '';
@@ -62,8 +102,11 @@ export function parseMarkdownToHtml(src, options = {}) {
     </div>`;
   };
 
+  // Pre-process LaTeX and math symbols
+  const processedSrc = replaceMathAndSymbols(src);
+
   // 1. Escape HTML
-  let html = String(src)
+  let html = String(processedSrc)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
@@ -71,7 +114,7 @@ export function parseMarkdownToHtml(src, options = {}) {
   // Inline formatting helper
   const formatInline = (text) => {
     if (!text) return '';
-    let s = text;
+    let s = replaceMathAndSymbols(text);
 
     // 1. Images & Media: ![alt](url)
     s = s.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (match, alt, url) => {
@@ -91,7 +134,10 @@ export function parseMarkdownToHtml(src, options = {}) {
     s = s.replace(/~~([^~]+)~~/g, '<del>$1</del>');
     s = s.replace(/\*([^*]+)\*/g, '<em>$1</em>');
 
-    // 4. Standard Links [label](url) with media detection
+    // 4. Highlight Arrows (→, ⇒, ←, ↔) with high-contrast accent badge
+    s = s.replace(/\s*([→⇒←↔])\s*/g, ' <span style="color: var(--primary-cyan, #06b6d4); font-weight: 700; display: inline-block; padding: 0 4px;">$1</span> ');
+
+    // 5. Standard Links [label](url) with media detection
     s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, label, url) => {
       const cleanUrl = url.trim();
       const ytId = getYouTubeVideoId(cleanUrl);
