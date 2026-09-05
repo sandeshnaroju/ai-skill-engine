@@ -505,7 +505,14 @@ class SkillEngine:
                     if not chunk.choices:
                         continue
                     choice = chunk.choices[0]
-                    delta = choice.delta
+                    # Extract native LLM reasoning / thought process (Gemini 2.5/3 Thinking, DeepSeek-R1, OpenRouter)
+                    thought_chunk = (
+                        getattr(delta, "reasoning_content", None) or
+                        getattr(delta, "reasoning", None) or
+                        getattr(delta, "thought", None)
+                    )
+                    if thought_chunk:
+                        yield _chunk(session_id, model_name, reasoning=thought_chunk)
 
                     if delta.content:
                         full_text += delta.content
