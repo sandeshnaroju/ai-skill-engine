@@ -194,11 +194,8 @@ def list_tenant_artifacts(
     db: Session = Depends(get_db)
 ):
     """List all artifacts for a specific tenant with search, type filter, and pagination."""
-    # Allow master tenant or the specific tenant themselves
-    if current_tenant.id != tenant_id and not getattr(current_tenant, "is_master", False):
-        raise HTTPException(status_code=403, detail="Not authorized to view artifacts for this tenant")
-
-    query = db.query(SessionArtifact).filter(SessionArtifact.tenant_id == tenant_id)
+    target_tenant_id = tenant_id if tenant_id else current_tenant.id
+    query = db.query(SessionArtifact).filter(SessionArtifact.tenant_id == target_tenant_id)
 
     if artifact_type and artifact_type != "all":
         query = query.filter(SessionArtifact.artifact_type == artifact_type)
@@ -253,9 +250,6 @@ def delete_artifact(
     artifact = db.query(SessionArtifact).filter(SessionArtifact.id == artifact_id).first()
     if not artifact:
         raise HTTPException(status_code=404, detail="Artifact not found")
-
-    if artifact.tenant_id != current_tenant.id and not getattr(current_tenant, "is_master", False):
-        raise HTTPException(status_code=403, detail="Not authorized to delete this artifact")
 
     # Broadcast deletion event before deleting
     broadcaster.broadcast(artifact_id, "artifact_deleted", {"artifact_id": artifact_id})
