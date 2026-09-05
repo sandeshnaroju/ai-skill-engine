@@ -239,7 +239,7 @@ export default function ArtifactManager() {
 
   return (
     <div style={{ padding: '24px 28px', maxWidth: '1600px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '24px' }}>
-      
+
       {/* ───────────────────────────────────────────────────────────── */}
       {/* 1. HEADER & TENANT SELECTOR                                   */}
       {/* ───────────────────────────────────────────────────────────── */}
@@ -446,7 +446,6 @@ export default function ArtifactManager() {
                   gap: '6px'
                 }}
               >
-                {tab.icon && <tab.icon size={13} />}
                 {tab.icon && <tab.icon size={13} />}
                 <span>{tab.label}</span>
               </button>
