@@ -3,7 +3,7 @@ import {
   FileText, Code2, Table, Presentation, Image, Video, Music,
   Layers, Search, Filter, Trash2, Eye, Download, Copy, Check,
   RefreshCw, ExternalLink, Sparkles, Plus, AlertTriangle, X,
-  Clock, GitCommit, FileCode, CheckCircle2, ChevronRight, Key, Cpu
+  Clock, GitCommit, FileCode, CheckCircle2, ChevronRight, ChevronLeft, Key, Cpu
 } from 'lucide-react';
 import AsyncSearchableDropdown from './AsyncSearchableDropdown';
 import Canvas from './Canvas';
@@ -19,10 +19,11 @@ export default function ArtifactManager() {
   const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(false);
 
-  // Filters
+  // Filters & Pagination
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedType, setSelectedType] = useState('all');
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(12);
   const [totalPages, setTotalPages] = useState(1);
 
   // Active Preview in Canvas
@@ -62,7 +63,7 @@ export default function ArtifactManager() {
         search: searchTerm,
         artifact_type: selectedType,
         page,
-        page_size: 18
+        page_size: pageSize
       });
       setArtifacts(data.items || []);
       setTotalCount(data.total || 0);
@@ -72,7 +73,7 @@ export default function ArtifactManager() {
     } finally {
       setLoading(false);
     }
-  }, [selectedTenantId, searchTerm, selectedType, page, showError]);
+  }, [selectedTenantId, searchTerm, selectedType, page, pageSize, showError]);
 
   useEffect(() => {
     fetchArtifacts();
@@ -645,7 +646,95 @@ export default function ArtifactManager() {
       )}
 
       {/* ───────────────────────────────────────────────────────────── */}
-      {/* 5. FULL CANVAS PREVIEW & EDIT MODAL DRAWER                    */}
+      {/* 5. PAGINATION CONTROLS                                         */}
+      {/* ───────────────────────────────────────────────────────────── */}
+      {totalCount > 0 && (
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          padding: '16px 20px',
+          borderRadius: '14px',
+          background: 'var(--bg-panel)',
+          border: '1px solid var(--border-subtle)',
+          marginTop: '8px',
+          flexWrap: 'wrap',
+          gap: '12px'
+        }}>
+          {/* Left: Total counts & page info */}
+          <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+            Showing <strong style={{ color: 'var(--text-main)' }}>{Math.min(totalCount, (page - 1) * pageSize + 1)} - {Math.min(totalCount, page * pageSize)}</strong> of <strong style={{ color: 'var(--text-main)' }}>{totalCount}</strong> artifacts
+          </div>
+
+          {/* Right: Page navigation buttons & Page size selector */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            {/* Page Size Selector */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+              <span>Per page:</span>
+              <select
+                value={pageSize}
+                onChange={(e) => {
+                  setPageSize(Number(e.target.value));
+                  setPage(1);
+                }}
+                style={{
+                  padding: '4px 8px',
+                  borderRadius: '6px',
+                  fontSize: '0.78rem',
+                  width: 'auto',
+                  background: 'var(--bg-input)',
+                  border: '1px solid var(--border-subtle)',
+                  color: 'var(--text-main)'
+                }}
+              >
+                <option value={12}>12</option>
+                <option value={24}>24</option>
+                <option value={48}>48</option>
+              </select>
+            </div>
+
+            {/* Prev / Next & Page indicator */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <button
+                type="button"
+                className="btn-outline"
+                onClick={() => setPage(p => Math.max(1, p - 1))}
+                disabled={page <= 1}
+                style={{
+                  padding: '6px 12px',
+                  fontSize: '0.78rem',
+                  opacity: page <= 1 ? 0.4 : 1,
+                  cursor: page <= 1 ? 'not-allowed' : 'pointer'
+                }}
+              >
+                <ChevronLeft size={14} /> <span>Prev</span>
+              </button>
+
+              <span style={{ fontSize: '0.8rem', color: 'var(--text-main)', padding: '0 8px', fontWeight: '600' }}>
+                {page} / {totalPages}
+              </span>
+
+              <button
+                type="button"
+                className="btn-outline"
+                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                disabled={page >= totalPages}
+                style={{
+                  padding: '6px 12px',
+                  fontSize: '0.78rem',
+                  opacity: page >= totalPages ? 0.4 : 1,
+                  cursor: page >= totalPages ? 'not-allowed' : 'pointer'
+                }}
+              >
+                <span>Next</span> <ChevronRight size={14} />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ───────────────────────────────────────────────────────────── */}
+      {/* 6. FULL CANVAS PREVIEW & EDIT MODAL DRAWER                    */}
       {/* ───────────────────────────────────────────────────────────── */}
       {isCanvasOpen && previewArtifact && (
         <div style={{
