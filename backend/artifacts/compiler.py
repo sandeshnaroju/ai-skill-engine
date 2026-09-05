@@ -1040,8 +1040,8 @@ def compile_to_pptx(artifact: SessionArtifact) -> io.BytesIO:
                             space_before=Pt(6)
                         )
 
-            # ── CARDS / GRID LAYOUT ──
-            elif layout == "grid" and (cards or bullets):
+            # ── CARDS / GRID / COMPARISON LAYOUT ──
+            elif layout in ("grid", "cards", "comparison", "matrix") and (cards or bullets):
                 items = cards if cards else [{"title": f"Feature {b_i+1}", "desc": str(b)} for b_i, b in enumerate(bullets)]
                 num_items = min(len(items), 4)
                 card_w = (11.333 - (0.4 * (num_items - 1))) / num_items
@@ -1073,7 +1073,7 @@ def compile_to_pptx(artifact: SessionArtifact) -> io.BytesIO:
                     )
 
             # ── TIMELINE / STEPS LAYOUT ──
-            elif layout == "timeline" and (steps or bullets):
+            elif layout in ("timeline", "steps", "roadmap", "process") and (steps or bullets):
                 items = steps if steps else [{"title": f"Step {s_i+1}", "desc": str(b)} for s_i, b in enumerate(bullets)]
                 num_items = min(len(items), 4)
                 step_w = (11.333 - (0.4 * (num_items - 1))) / num_items
@@ -1211,21 +1211,6 @@ def compile_to_pptx(artifact: SessionArtifact) -> io.BytesIO:
                         font_size=Pt(15),
                         font_color=text_slate
                     )
-
-        # ── SPEAKER NOTES ──
-        notes = slide_info.get("notes", "")
-        if notes:
-            try:
-                notes_slide = slide.notes_slide
-                notes_tf = notes_slide.notes_text_frame
-                _add_clean_multiline_text(
-                    notes_tf,
-                    str(notes),
-                    font_size=Pt(12),
-                    font_color=RGBColor(0, 0, 0)
-                )
-            except Exception:
-                pass
 
     output = io.BytesIO()
     prs.save(output)
