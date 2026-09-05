@@ -371,42 +371,107 @@ export default function MessageList({
                         overflow: 'hidden',
                         boxShadow: '0 2px 8px rgba(139, 92, 246, 0.04)'
                       }}>
-                        <button
-                          type="button"
-                          onClick={() => setExpandedReasoning(prev => ({ ...prev, [idx]: !prev[idx] }))}
-                          style={{
-                            width: '100%',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            padding: '9px 14px',
-                            background: 'transparent',
-                            border: 'none',
-                            cursor: 'pointer',
-                            color: 'var(--text-main)',
-                            fontSize: '0.8rem'
-                          }}
-                        >
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <div style={{
-                              background: 'rgba(139, 92, 246, 0.15)',
-                              borderRadius: '6px',
-                              padding: '4px',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center'
-                            }}>
-                              <Brain size={14} color="var(--primary-violet)" />
-                            </div>
-                            <span style={{ fontWeight: '600', color: 'var(--primary-violet)', letterSpacing: '0.2px' }}>
-                              Thought Process & Tool Execution
-                            </span>
-                          </div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '5px', color: 'var(--primary-violet)', opacity: 0.85 }}>
-                            <span style={{ fontSize: '0.74rem', fontWeight: '500' }}>{isReasoningOpen ? 'Hide' : 'View traces'}</span>
-                            {isReasoningOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                          </div>
-                        </button>
+                        {(() => {
+                          const steps = parseReasoning(m.reasoning);
+                          const toolSteps = steps.filter(s => s.type === 'tool_call' || s.type === 'tool_result');
+                          const lastTool = toolSteps.length > 0 ? toolSteps[toolSteps.length - 1] : null;
+                          const lastThought = steps.filter(s => s.type === 'thought').slice(-1)[0];
+
+                          let headerTitle = 'Thought Process & Tool Execution';
+                          let latestStatusBadge = null;
+
+                          if (m.isStreaming) {
+                            if (lastTool?.type === 'tool_call') {
+                              headerTitle = `Running: ${lastTool.name}`;
+                              latestStatusBadge = 'Running';
+                            } else if (lastTool?.type === 'tool_result') {
+                              headerTitle = `Executed: ${lastTool.title}`;
+                              latestStatusBadge = 'Executed';
+                            } else if (lastThought?.content) {
+                              const snippet = lastThought.content.length > 40 ? lastThought.content.substring(0, 40) + '...' : lastThought.content;
+                              headerTitle = `Thinking: ${snippet}`;
+                              latestStatusBadge = 'Thinking';
+                            } else {
+                              headerTitle = 'Analyzing & Executing Tools...';
+                              latestStatusBadge = 'Active';
+                            }
+                          } else if (lastTool) {
+                            const lastToolName = lastTool.name || lastTool.title;
+                            headerTitle = `Used: ${lastToolName}`;
+                            if (toolSteps.length > 1) {
+                              latestStatusBadge = `${Math.ceil(toolSteps.length / 2)} tools used`;
+                            }
+                          }
+
+                          return (
+                            <button
+                              type="button"
+                              onClick={() => setExpandedReasoning(prev => ({ ...prev, [idx]: !prev[idx] }))}
+                              style={{
+                                width: '100%',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                padding: '9px 14px',
+                                background: 'transparent',
+                                border: 'none',
+                                cursor: 'pointer',
+                                color: 'var(--text-main)',
+                                fontSize: '0.8rem',
+                                gap: '10px'
+                              }}
+                            >
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '9px', minWidth: 0, flex: 1 }}>
+                                <div className={m.isStreaming ? 'brain-badge-active' : ''} style={{
+                                  background: 'rgba(139, 92, 246, 0.15)',
+                                  borderRadius: '7px',
+                                  padding: '5px',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  flexShrink: 0
+                                }}>
+                                  <Brain
+                                    size={15}
+                                    color="var(--primary-violet)"
+                                    className={m.isStreaming ? 'brain-anim-active' : ''}
+                                  />
+                                </div>
+                                <span style={{
+                                  fontWeight: '600',
+                                  color: 'var(--primary-violet)',
+                                  letterSpacing: '0.2px',
+                                  whiteSpace: 'nowrap',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  textAlign: 'left'
+                                }}>
+                                  {headerTitle}
+                                </span>
+                                {latestStatusBadge && (
+                                  <span style={{
+                                    fontSize: '0.68rem',
+                                    fontWeight: '700',
+                                    padding: '2px 7px',
+                                    borderRadius: '10px',
+                                    background: m.isStreaming ? 'rgba(16, 185, 129, 0.18)' : 'rgba(139, 92, 246, 0.14)',
+                                    color: m.isStreaming ? 'var(--primary-emerald)' : 'var(--primary-violet)',
+                                    border: `1px solid ${m.isStreaming ? 'rgba(16, 185, 129, 0.35)' : 'rgba(139, 92, 246, 0.25)'}`,
+                                    textTransform: 'uppercase',
+                                    letterSpacing: '0.5px',
+                                    flexShrink: 0
+                                  }}>
+                                    {latestStatusBadge}
+                                  </span>
+                                )}
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '5px', color: 'var(--primary-violet)', opacity: 0.85, flexShrink: 0 }}>
+                                <span style={{ fontSize: '0.74rem', fontWeight: '500' }}>{isReasoningOpen ? 'Hide' : 'View traces'}</span>
+                                {isReasoningOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                              </div>
+                            </button>
+                          );
+                        })()}
 
                         {isReasoningOpen && (
                           <div style={{

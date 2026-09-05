@@ -1186,3 +1186,39 @@ code.inline-code {
     transform: translateY(0) scale(1);
   }
 }
+
+/* Brain Animated Pulse & Glow */
+@keyframes brainPulse {
+  0% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 2px rgba(139, 92, 246, 0.4));
+  }
+  50% {
+    transform: scale(1.16) rotate(3deg);
+    filter: drop-shadow(0 0 10px rgba(168, 85, 247, 0.85));
+  }
+  100% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 2px rgba(139, 92, 246, 0.4));
+  }
+}
+
+@keyframes brainBadgeGlow {
+  0%, 100% {
+    background: rgba(139, 92, 246, 0.15);
+    box-shadow: 0 0 0 0 rgba(139, 92, 246, 0.4);
+  }
+  50% {
+    background: rgba(139, 92, 246, 0.28);
+    box-shadow: 0 0 12px 3px rgba(168, 85, 247, 0.35);
+  }
+}
+
+.brain-anim-active {
+  animation: brainPulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.brain-badge-active {
+  animation: brainBadgeGlow 2.5s ease-in-out infinite;
+}
+
