@@ -44,16 +44,6 @@ def run_open_or_update_artifact(db, args: dict, tenant, session_id: str) -> dict
             artifact_type = "audio"
         elif fn.endswith((".mp4", ".webm", ".mov")):
             artifact_type = "video"
-        elif fn.endswith((".dwg", ".dxf")):
-            artifact_type = "cad_2d"
-        elif fn.endswith((".step", ".stp", ".iges", ".igs", ".ifc", ".stl", ".obj", ".glb", ".gltf")):
-            artifact_type = "cad_3d"
-        elif fn.endswith((".geojson", ".kml", ".kmz", ".shp")):
-            artifact_type = "gis"
-        elif fn.endswith((".vsdx",)):
-            artifact_type = "diagram"
-        elif fn.endswith((".l5x", ".l5k", ".s7p", ".xer", ".m", ".slx")):
-            artifact_type = "engineering_data"
         elif fn.endswith((".py", ".js", ".jsx", ".ts", ".tsx", ".html", ".css", ".json", ".sql", ".sh")):
             artifact_type = "code"
         else:

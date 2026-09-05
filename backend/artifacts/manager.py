@@ -227,6 +227,53 @@ def decompose_content(content: str, artifact_type: str) -> List[Dict]:
         except Exception:
             pass
 
+    elif artifact_type == "cad_2d" and content:
+        # Decompose DXF sections if present
+        if "SECTION" in content:
+            sections = re.split(r'(0\s*\n\s*SECTION\s*\n\s*2\s*\n\s*[^\n]+)', content, flags=re.IGNORECASE)
+            if len(sections) > 1:
+                idx = 0
+                for s_i in range(1, len(sections), 2):
+                    sec_hdr = sections[s_i].strip()
+                    sec_name_match = re.search(r'2\s*\n\s*([^\n]+)', sec_hdr)
+                    sec_name = sec_name_match.group(1).strip() if sec_name_match else f"Section {idx + 1}"
+                    sec_body = sections[s_i + 1].strip() if s_i + 1 < len(sections) else ""
+                    blocks.append({
+                        "block_key": f"sec_{sec_name.lower()}",
+                        "title": f"CAD {sec_name.upper()}",
+                        "content": f"{sec_hdr}\n{sec_body}".strip(),
+                        "order_index": idx
+                    })
+                    idx += 1
+
+    elif artifact_type == "engineering_data" and content:
+        # P6 XER Table Decomposition
+        if "%T" in content:
+            table_splits = re.split(r'(%T\s+[^\n]+)', content)
+            if len(table_splits) > 1:
+                idx = 0
+                for t_i in range(1, len(table_splits), 2):
+                    t_hdr = table_splits[t_i].strip()
+                    t_name = t_hdr.replace("%T", "").strip()
+                    t_body = table_splits[t_i + 1].strip() if t_i + 1 < len(table_splits) else ""
+                    blocks.append({
+                        "block_key": f"table_{t_name.lower()}",
+                        "title": f"P6 Table {t_name}",
+                        "content": f"{t_hdr}\n{t_body}".strip(),
+                        "order_index": idx
+                    })
+                    idx += 1
+        elif "<Rung" in content:
+            # Rockwell L5X Rungs
+            rungs = re.findall(r'(<Rung\s+Number="(\d+)"[^>]*>[\s\S]*?<\/Rung>)', content, flags=re.IGNORECASE)
+            for idx, (rung_block, r_num) in enumerate(rungs):
+                blocks.append({
+                    "block_key": f"rung_{r_num}",
+                    "title": f"Ladder Rung {r_num}",
+                    "content": rung_block.strip(),
+                    "order_index": idx
+                })
+
     if not blocks:
         blocks.append({
             "block_key": "main_block",

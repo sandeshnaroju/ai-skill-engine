@@ -3,7 +3,8 @@ import {
   FileText, Code2, Table, Presentation, Image, Video, Music,
   Layers, Search, Filter, Trash2, Eye, Download, Copy, Check,
   RefreshCw, ExternalLink, Sparkles, Plus, AlertTriangle, X,
-  Clock, GitCommit, FileCode, CheckCircle2, ChevronRight, ChevronLeft, Key, Cpu
+  Clock, GitCommit, FileCode, CheckCircle2, ChevronRight, ChevronLeft, Key, Cpu,
+  Compass, Box, MapPin
 } from 'lucide-react';
 import AsyncSearchableDropdown from './AsyncSearchableDropdown';
 import Canvas from './Canvas';
@@ -199,6 +200,18 @@ export default function ArtifactManager() {
   const getTypeInfo = (type) => {
     const t = (type || '').toLowerCase();
     switch (t) {
+      case 'cad_2d':
+        return { icon: Compass, label: '2D CAD', color: '#38bdf8', bg: 'rgba(56, 189, 248, 0.12)' };
+      case 'cad_3d':
+      case 'cad':
+        return { icon: Box, label: '3D Solid / Mesh', color: '#c084fc', bg: 'rgba(192, 132, 252, 0.12)' };
+      case 'gis':
+      case 'geo':
+        return { icon: MapPin, label: 'GIS & Maps', color: '#34d399', bg: 'rgba(52, 211, 153, 0.12)' };
+      case 'engineering_data':
+      case 'engineering':
+      case 'logic':
+        return { icon: Cpu, label: 'Industrial / P6', color: '#fb923c', bg: 'rgba(251, 146, 60, 0.12)' };
       case 'document':
       case 'doc':
       case 'pdf':
@@ -416,6 +429,10 @@ export default function ArtifactManager() {
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
           {[
             { id: 'all', label: 'All Types' },
+            { id: 'cad_2d', label: '2D CAD', icon: Compass },
+            { id: 'cad_3d', label: '3D CAD / Mesh', icon: Box },
+            { id: 'gis', label: 'GIS Maps', icon: MapPin },
+            { id: 'engineering_data', label: 'Industrial & P6', icon: Cpu },
             { id: 'document', label: 'Documents', icon: FileText },
             { id: 'images', label: 'Images & SVGs', icon: Image },
             { id: 'presentation', label: 'Slides', icon: Presentation },

@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import {
   FileText, Code, Table, Presentation, Image, Music, Video, Globe,
   Download, History, RefreshCw, CheckCircle2,
-  Sun, Moon, BookOpen, X
+  Sun, Moon, BookOpen, X, Compass, Box, MapPin, Cpu
 } from 'lucide-react';
 import { artifactsApi } from '../../api';
 import PagedDocViewer from './PagedDocViewer';
@@ -13,6 +13,10 @@ import SheetGrid from './SheetGrid';
 import SvgViewer from './SvgViewer';
 import HtmlViewer from './HtmlViewer';
 import MediaViewer from './MediaViewer';
+import Cad2DViewer from './Cad2DViewer';
+import Cad3DViewer from './Cad3DViewer';
+import GisViewer from './GisViewer';
+import LogicViewer from './LogicViewer';
 import BlockHistoryModal from './BlockHistoryModal';
 import './canvas.css';
 
@@ -335,6 +339,41 @@ function CanvasInner({ isEmbed = false, artifactId: propArtifactId, token: propT
     }
 
     if (
+      type === 'cad_2d' ||
+      /\.(dwg|dxf)$/i.test(filename)
+    ) {
+      return 'cad_2d';
+    }
+
+    if (
+      type === 'cad_3d' ||
+      type === 'cad' ||
+      type === 'step' ||
+      type === 'stl' ||
+      /\.(step|stp|iges|igs|ifc|stl|obj|glb|gltf)$/i.test(filename)
+    ) {
+      return 'cad_3d';
+    }
+
+    if (
+      type === 'gis' ||
+      type === 'geo' ||
+      type === 'map' ||
+      /\.(geojson|kml|kmz|shp)$/i.test(filename)
+    ) {
+      return 'gis';
+    }
+
+    if (
+      type === 'engineering_data' ||
+      type === 'engineering' ||
+      type === 'logic' ||
+      /\.(l5x|l5k|s7p|xer|m|slx)$/i.test(filename)
+    ) {
+      return 'engineering_data';
+    }
+
+    if (
       type === 'code' ||
       type === 'script' ||
       ['python', 'javascript', 'typescript', 'css', 'json', 'sql', 'bash', 'sh', 'c', 'cpp', 'rust', 'go', 'jsx', 'tsx'].includes(lang) ||
@@ -360,6 +399,14 @@ function CanvasInner({ isEmbed = false, artifactId: propArtifactId, token: propT
 
   const getTypeIcon = (type) => {
     switch (type) {
+      case 'cad_2d':
+        return <Compass size={15} />;
+      case 'cad_3d':
+        return <Box size={15} />;
+      case 'gis':
+        return <MapPin size={15} />;
+      case 'engineering_data':
+        return <Cpu size={15} />;
       case 'document':
       case 'pdf':
         return <FileText size={15} />;
@@ -603,6 +650,39 @@ function CanvasInner({ isEmbed = false, artifactId: propArtifactId, token: propT
             <SvgViewer
               fullContent={artifact?.full_content || (blocks && blocks.length ? blocks.map(b => b.content || '').join('\n') : '')}
               blocks={blocks}
+            />
+          )}
+
+          {artType === 'cad_2d' && (
+            <Cad2DViewer
+              fullContent={artifact?.full_content || (blocks && blocks.length ? blocks.map(b => b.content || '').join('\n') : '')}
+              artifact={artifact}
+              token={currentToken}
+              filename={artifact?.filename || 'drawing.dxf'}
+            />
+          )}
+
+          {artType === 'cad_3d' && (
+            <Cad3DViewer
+              fullContent={artifact?.full_content || (blocks && blocks.length ? blocks.map(b => b.content || '').join('\n') : '')}
+              artifact={artifact}
+              filename={artifact?.filename || 'model.step'}
+            />
+          )}
+
+          {artType === 'gis' && (
+            <GisViewer
+              fullContent={artifact?.full_content || (blocks && blocks.length ? blocks.map(b => b.content || '').join('\n') : '')}
+              artifact={artifact}
+              filename={artifact?.filename || 'map.geojson'}
+            />
+          )}
+
+          {artType === 'engineering_data' && (
+            <LogicViewer
+              fullContent={artifact?.full_content || (blocks && blocks.length ? blocks.map(b => b.content || '').join('\n') : '')}
+              artifact={artifact}
+              filename={artifact?.filename || 'program.l5x'}
             />
           )}
 

@@ -1562,6 +1562,34 @@ def export_artifact(artifact: SessionArtifact, target_format: str = None) -> Tup
         mime = "image/svg+xml"
     elif ext == "html":
         mime = "text/html"
+    elif ext == "dxf":
+        mime = "image/vnd.dxf"
+    elif ext == "dwg":
+        mime = "image/vnd.dwg"
+    elif ext in ("step", "stp"):
+        mime = "model/step"
+    elif ext in ("iges", "igs"):
+        mime = "model/iges"
+    elif ext == "stl":
+        mime = "model/stl"
+    elif ext == "obj":
+        mime = "model/obj"
+    elif ext in ("gltf", "glb"):
+        mime = "model/gltf+json" if ext == "gltf" else "model/gltf-binary"
+    elif ext == "ifc":
+        mime = "application/x-step"
+    elif ext == "geojson":
+        mime = "application/geo+json"
+    elif ext in ("kml", "kmz"):
+        mime = "application/vnd.google-earth.kml+xml" if ext == "kml" else "application/vnd.google-earth.kmz"
+    elif ext == "vsdx":
+        mime = "application/vnd.visio"
+    elif ext in ("l5x", "l5k"):
+        mime = "application/xml"
+    elif ext == "m":
+        mime = "text/x-matlab"
+    elif ext == "xer":
+        mime = "text/plain"
 
     out_name = f"{base_name}.{ext}" if not artifact.filename.endswith(f".{ext}") else artifact.filename
     return full_text.encode("utf-8"), mime, out_name
