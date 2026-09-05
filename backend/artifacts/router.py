@@ -182,6 +182,53 @@ async def stream_artifact_updates(
     )
 
 
+@router.get("/tenant/{tenant_id}")
+def list_tenant_artifacts(
+    tenant_id: str,
+    search: Optional[str] = Query(None),
+    artifact_type: Optional[str] = Query(None),
+    session_id: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: Session = Depends(get_db)
+):
+    """List all artifacts for a specific tenant with search, type filter, and pagination."""
+    # Allow master tenant or the specific tenant themselves
+    if current_tenant.id != tenant_id and not getattr(current_tenant, "is_master", False):
+        raise HTTPException(status_code=403, detail="Not authorized to view artifacts for this tenant")
+
+    query = db.query(SessionArtifact).filter(SessionArtifact.tenant_id == tenant_id)
+
+    if artifact_type and artifact_type != "all":
+        query = query.filter(SessionArtifact.artifact_type == artifact_type)
+
+    if session_id:
+        query = query.filter(SessionArtifact.session_id == session_id)
+
+    if search:
+        s = f"%{search.strip()}%"
+        query = query.filter((SessionArtifact.title.ilike(s)) | (SessionArtifact.filename.ilike(s)))
+
+    total = query.count()
+    artifacts = query.order_by(SessionArtifact.updated_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
+
+    items = []
+    for art in artifacts:
+        summary = serialize_artifact_summary(art)
+        # Add quick block count
+        summary["blocks_count"] = len(art.blocks) if art.blocks else 0
+        items.append(summary)
+
+    return {
+        "items": items,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": max(1, (total + page_size - 1) // page_size)
+    }
+
+
 @router.get("/session/{session_id}")
 def list_session_artifacts(
     session_id: str,
@@ -194,6 +241,29 @@ def list_session_artifacts(
     ).order_by(SessionArtifact.created_at.desc()).all()
 
     return [serialize_artifact_summary(a) for a in artifacts]
+
+
+@router.delete("/{artifact_id}")
+def delete_artifact(
+    artifact_id: str,
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: Session = Depends(get_db)
+):
+    """Delete an artifact and its associated blocks, commits, and broadcaster subscribers."""
+    artifact = db.query(SessionArtifact).filter(SessionArtifact.id == artifact_id).first()
+    if not artifact:
+        raise HTTPException(status_code=404, detail="Artifact not found")
+
+    if artifact.tenant_id != current_tenant.id and not getattr(current_tenant, "is_master", False):
+        raise HTTPException(status_code=403, detail="Not authorized to delete this artifact")
+
+    # Broadcast deletion event before deleting
+    broadcaster.broadcast(artifact_id, "artifact_deleted", {"artifact_id": artifact_id})
+
+    db.delete(artifact)
+    db.commit()
+
+    return {"success": True, "deleted_id": artifact_id, "message": "Artifact deleted successfully"}
 
 
 @router.get("/{artifact_id}")

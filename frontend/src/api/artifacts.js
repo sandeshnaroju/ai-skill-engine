@@ -60,6 +60,23 @@ export const artifactsApi = {
     return res?.data !== undefined ? res.data : res;
   },
 
+  listByTenant: async (tenantId, params = {}) => {
+    const qs = new URLSearchParams();
+    if (params.search) qs.set('search', params.search);
+    if (params.artifact_type && params.artifact_type !== 'all') qs.set('artifact_type', params.artifact_type);
+    if (params.session_id) qs.set('session_id', params.session_id);
+    if (params.page) qs.set('page', params.page);
+    if (params.page_size) qs.set('page_size', params.page_size);
+    const qStr = qs.toString() ? `?${qs.toString()}` : '';
+    const res = await apiClient.get(`/api/v1/artifacts/tenant/${tenantId}${qStr}`);
+    return res?.data !== undefined ? res.data : res;
+  },
+
+  deleteArtifact: async (artifactId) => {
+    const res = await apiClient.delete(`/api/v1/artifacts/${artifactId}`);
+    return res?.data !== undefined ? res.data : res;
+  },
+
   getSessionArtifacts: async (sessionId) => {
     const res = await apiClient.get(`/api/v1/artifacts/session/${sessionId}`);
     return res?.data !== undefined ? res.data : res;

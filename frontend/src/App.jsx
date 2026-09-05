@@ -18,6 +18,7 @@ import SandboxSettings from './components/SandboxSettings';
 import UserDataTemplates from './components/UserDataTemplates';
 import EmailSettings from './components/EmailSettings';
 import Canvas from './components/Canvas';
+import ArtifactManager from './components/ArtifactManager';
 import { authApi, skillsApi, tenantsApi, logsApi, apiClient } from './api';
 import { ToastProvider, useToast } from './context/ToastContext';
 
@@ -40,6 +41,7 @@ function AppContent() {
     { id: 'tester', label: 'API Tester', icon: Terminal, order: 20 },
     { id: 'apps', label: 'Apps & Groups', icon: Box, order: 30 },
     { id: 'skills', label: 'Skills Catalog', icon: Layers, order: 40 },
+    { id: 'artifacts', label: 'Canvas Artifacts', icon: FileText, order: 45 },
     { id: 'mcp', label: 'MCP Servers', icon: Cpu, order: 50 },
     { id: 'user-data', label: 'User Data Profiles', icon: Layers, order: 60 },
     { id: 'tenants', label: 'Tenants & Keys', icon: Key, order: 70 },
@@ -70,6 +72,7 @@ function AppContent() {
       items: [
         { id: 'apps', label: 'Apps & Groups', icon: Box, order: 10 },
         { id: 'skills', label: 'Skills Catalog', icon: Layers, order: 20 },
+        { id: 'artifacts', label: 'Canvas Artifacts', icon: FileText, order: 25 },
         { id: 'mcp', label: 'MCP Servers', icon: Cpu, order: 30 },
         { id: 'user-data', label: 'User Data Profiles', icon: Layers, order: 40 },
       ]
@@ -868,6 +871,7 @@ function AppContent() {
             <Route path="/playground" element={<ChatPlayground isSidebarOpen={isSidebarOpen} toggleSidebar={toggleSidebar} />} />
             <Route path="/apps" element={<AppManager />} />
             <Route path="/skills" element={<SkillCatalog />} />
+            <Route path="/artifacts" element={<ArtifactManager />} />
             <Route path="/mcp" element={<McpServerManager />} />
             <Route path="/user-data" element={<UserDataTemplates />} />
             <Route path="/tenants" element={<TenantManager />} />
