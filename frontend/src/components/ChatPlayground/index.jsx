@@ -811,6 +811,14 @@ export default function ChatPlayground({ isSidebarOpen, toggleSidebar }) {
                   }
                   if (delta.content) {
                     finalContent += delta.content;
+                    // Auto-close reasoning accordion as soon as final response text begins streaming
+                    setExpandedReasoning((prev) => {
+                      const assistantIdx = messages.length + 1; // [..., userMsg, assistantMsg]
+                      if (prev[assistantIdx] !== false) {
+                        return { ...prev, [assistantIdx]: false };
+                      }
+                      return prev;
+                    });
                     stateChanged = true;
                   }
                   if (delta.json) {
@@ -882,6 +890,12 @@ export default function ChatPlayground({ isSidebarOpen, toggleSidebar }) {
         }
         return next;
       });
+
+      // Ensure reasoning accordion is closed once response is finalized
+      setExpandedReasoning((prev) => ({
+        ...prev,
+        [messages.length + 1]: false
+      }));
 
       fetchSessionsList();
     } catch (err) {
