@@ -28,6 +28,7 @@ export default function ChatPlayground() {
   const [messages, setMessages] = useState([]);
   const [canvasArtifact, setCanvasArtifact] = useState(null);
   const [isCanvasOpen, setIsCanvasOpen] = useState(false);
+  const [canvasWidthPercent, setCanvasWidthPercent] = useState(64);
 
   // Auto-detect if current session already has an artifact and make it available
   useEffect(() => {
@@ -1177,13 +1178,15 @@ export default function ChatPlayground() {
           {/* CENTER/RIGHT SECTION: Interactive Document & Artifact Canvas */}
           {canvasArtifact && isCanvasOpen && (
             <div style={{
-              width: isSettingsOpen ? '48%' : '52%',
-              minWidth: '420px',
+              width: isSettingsOpen ? `${Math.min(canvasWidthPercent, 58)}%` : `${canvasWidthPercent}%`,
+              minWidth: '520px',
+              maxWidth: '85%',
               borderLeft: '1px solid var(--border-subtle)',
               display: 'flex',
               flexDirection: 'column',
               height: '100%',
-              position: 'relative'
+              position: 'relative',
+              transition: 'width 0.2s cubic-bezier(0.16, 1, 0.3, 1)'
             }}>
               <Canvas
                 key={`${canvasArtifact.id}-${canvasArtifact.token || 'notoken'}`}

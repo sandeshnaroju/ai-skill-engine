@@ -532,7 +532,7 @@
 
 .doc-paper-sheet {
   width: 100%;
-  max-width: 800px;
+  max-width: 940px;
   box-sizing: border-box;
   overflow-wrap: break-word;
   word-break: break-word;
@@ -1241,7 +1241,7 @@
 /* ── Code Viewer ── */
 .code-viewer-container {
   width: 100%;
-  max-width: 960px;
+  max-width: 1200px;
   margin: 0 auto;
   background: var(--code-container-bg);
   border-radius: 10px;
@@ -1305,7 +1305,7 @@
 /* ── Slide Player & Dynamic Presentation Engine ── */
 .slide-player-container {
   width: 100%;
-  max-width: 960px;
+  max-width: 1180px;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
@@ -1825,7 +1825,7 @@
 /* ── Sheet Grid ── */
 .sheet-container {
   width: 100%;
-  max-width: 1100px;
+  max-width: 1280px;
   margin: 0 auto;
   background: var(--sheet-bg);
   border-radius: 8px;
@@ -2171,7 +2171,7 @@
 /* ── HTML Viewer & Live Sandbox Stage ── */
 .html-viewer-container {
   width: 100%;
-  max-width: 1000px;
+  max-width: 1200px;
   margin: 0 auto;
   background: var(--code-container-bg);
   border-radius: 10px;
