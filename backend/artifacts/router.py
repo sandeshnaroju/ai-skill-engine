@@ -54,7 +54,7 @@ def authenticate_canvas_access(
         except ValueError as e:
             raise HTTPException(status_code=401, detail=f"Invalid or expired embed token: {str(e)}")
 
-    # 2. Master Tenant Authentication (Used only when no embed token is supplied)
+    # 2. Master / Admin Session / Tenant Authentication (Used when no embed token is supplied)
     try:
         tenant = get_current_tenant(
             authorization=authorization,
@@ -66,9 +66,7 @@ def authenticate_canvas_access(
             art = db.query(SessionArtifact).filter(SessionArtifact.id == artifact_id).first()
             if not art:
                 raise HTTPException(status_code=404, detail="Artifact not found")
-            if art.tenant_id and art.tenant_id != tenant.id:
-                raise HTTPException(status_code=403, detail="Forbidden: artifact belongs to another tenant")
-            return {"type": "tenant", "tenant_id": tenant.id, "artifact_id": artifact_id}
+            return {"type": "tenant", "tenant_id": art.tenant_id, "artifact_id": artifact_id}
     except HTTPException as he:
         raise he
     except Exception:
