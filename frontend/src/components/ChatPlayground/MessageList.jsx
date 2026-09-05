@@ -59,6 +59,80 @@ export default function MessageList({
     return traces;
   };
 
+  const renderUserMessage = (content) => {
+    let textStr = '';
+    let attachments = [];
+
+    if (typeof content === 'string') {
+      textStr = content;
+    } else if (Array.isArray(content)) {
+      const textBlock = content.find(block => block.type === 'text');
+      if (textBlock) {
+        textStr = textBlock.text;
+      }
+    }
+
+    if (textStr) {
+      const attachmentRegex = /\[Attached File:\s*([^\]]+?)\s*\(URL:\s*([^\)]+)\)\]/g;
+      let match;
+      while ((match = attachmentRegex.exec(textStr)) !== null) {
+        attachments.push({
+          name: match[1],
+          url: match[2]
+        });
+      }
+      textStr = textStr.replace(attachmentRegex, '').trim();
+    }
+
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        {attachments.length > 0 && (
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: textStr ? '4px' : '0' }}>
+            {attachments.map((file, idx) => {
+              const isImage = /\.(png|jpe?g|gif|webp|svg)/i.test(file.name);
+              return (
+                <a
+                  key={idx}
+                  href={file.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    background: 'rgba(255, 255, 255, 0.18)',
+                    backdropFilter: 'blur(8px)',
+                    border: '1px solid rgba(255, 255, 255, 0.3)',
+                    borderRadius: '10px',
+                    padding: '6px 12px',
+                    fontSize: '0.8rem',
+                    color: '#ffffff',
+                    textDecoration: 'none',
+                    boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
+                    transition: 'all 0.15s ease'
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.28)'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.18)'}
+                >
+                  {isImage ? (
+                    <img src={file.url} alt={file.name} style={{ width: '22px', height: '22px', borderRadius: '4px', objectFit: 'cover' }} />
+                  ) : (
+                    <FileText size={15} color="#ffffff" />
+                  )}
+                  <span style={{ maxWidth: '240px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: '600' }}>
+                    {file.name}
+                  </span>
+                  <ExternalLink size={12} style={{ opacity: 0.8 }} />
+                </a>
+              );
+            })}
+          </div>
+        )}
+        {textStr && <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{textStr}</div>}
+      </div>
+    );
+  };
+
   const defaultPresets = [
     {
       label: 'Dynamic Slides Presentation',
@@ -275,10 +349,9 @@ export default function MessageList({
                     fontSize: '0.92rem',
                     lineHeight: '1.6',
                     boxShadow: '0 4px 14px rgba(139, 92, 246, 0.25)',
-                    whiteSpace: 'pre-wrap',
                     wordBreak: 'break-word'
                   }}>
-                    {m.content}
+                    {renderUserMessage(m.content)}
                   </div>
                 ) : (
                   /* ASSISTANT CARD */
