@@ -4,7 +4,8 @@ import {
   Send, Bot, User, Terminal, Sparkles, Trash2, Check, Copy, Activity,
   Code2, Globe, Plus, MessageSquare, Brain, ChevronDown, ChevronUp, Cpu,
   ShieldCheck, Box, Key, Download, X, History, FileText, Sparkle, Sliders,
-  Paperclip, Maximize2, Minimize2, Loader, LayoutDashboard, Settings, PanelLeftOpen
+  Paperclip, Maximize2, Minimize2, Loader, LayoutDashboard, Settings, PanelLeftOpen,
+  Sun, Moon
 } from 'lucide-react';
 import AsyncSearchableDropdown from '../AsyncSearchableDropdown';
 import { chatApi, tenantsApi, appsApi, userDataApi, skillsApi, apiClient, artifactsApi } from '../../api';
@@ -15,6 +16,24 @@ import Canvas from '../Canvas';
 import ProChat from 'prochat';
 
 export default function ChatPlayground({ isSidebarOpen, toggleSidebar }) {
+  const [theme, setTheme] = useState(() => localStorage.getItem('app_theme') || 'dark');
+
+  useEffect(() => {
+    const handleThemeChange = (e) => {
+      if (e.detail?.theme) setTheme(e.detail.theme);
+    };
+    window.addEventListener('app-theme-change', handleThemeChange);
+    return () => window.removeEventListener('app-theme-change', handleThemeChange);
+  }, []);
+
+  const toggleTheme = () => {
+    const nextTheme = theme === 'dark' ? 'light' : 'dark';
+    setTheme(nextTheme);
+    document.documentElement.setAttribute('data-theme', nextTheme);
+    localStorage.setItem('app_theme', nextTheme);
+    window.dispatchEvent(new CustomEvent('app-theme-change', { detail: { theme: nextTheme } }));
+  };
+
   const [searchParams, setSearchParams] = useSearchParams();
   const [initialSessionId] = useState(() => `session_${Math.floor(1000 + Math.random() * 9000)}`);
   const [sessions, setSessions] = useState([]);
@@ -1027,8 +1046,27 @@ export default function ChatPlayground({ isSidebarOpen, toggleSidebar }) {
           )}
         </div>
 
-        {/* Right: Config Drawer Toggle, Fullscreen */}
+        {/* Right: Theme Toggle, Config Drawer Toggle, Fullscreen */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {/* Day / Night Theme Toggle */}
+          <button
+            type="button"
+            className="btn-outline"
+            onClick={toggleTheme}
+            style={{
+              padding: '6px 9px',
+              borderRadius: '8px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              border: '1px solid var(--border-subtle)',
+              color: theme === 'dark' ? '#fbbf24' : '#6366f1'
+            }}
+            title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+          >
+            {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
+          </button>
+
           {/* Slide-over Config Trigger */}
           <button
             type="button"

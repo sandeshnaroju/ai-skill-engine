@@ -937,6 +937,22 @@ input:focus, select:focus, textarea:focus {
   white-space: pre;
 }
 
+[data-theme="light"] .code-block {
+  background: #f8fafc;
+  border-color: rgba(0, 0, 0, 0.12);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+}
+
+[data-theme="light"] .code-header {
+  background: #f1f5f9;
+  border-bottom-color: rgba(0, 0, 0, 0.08);
+  color: #64748b;
+}
+
+[data-theme="light"] .code-block code {
+  color: #0f172a;
+}
+
 /* Inline code styles */
 code.inline-code {
   background: rgba(255, 255, 255, 0.06);
@@ -949,9 +965,21 @@ code.inline-code {
 }
 
 [data-theme="light"] code.inline-code {
-  background: rgba(0, 0, 0, 0.04);
-  border-color: rgba(0, 0, 0, 0.06);
-  color: #7c3aed;
+  background: rgba(124, 58, 237, 0.08);
+  border-color: rgba(124, 58, 237, 0.15);
+  color: #6d28d9;
+}
+
+/* Media Embeds in Light Mode */
+[data-theme="light"] .media-embed.media-audio {
+  background: #ffffff !important;
+  border-color: rgba(0, 0, 0, 0.1) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06) !important;
+}
+
+[data-theme="light"] .media-embed.media-video {
+  border-color: rgba(0, 0, 0, 0.12) !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1) !important;
 }
 
 /* Markdown Tables */
