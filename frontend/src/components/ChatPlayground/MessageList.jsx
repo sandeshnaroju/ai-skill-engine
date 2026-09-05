@@ -36,9 +36,9 @@ export default function MessageList({
 
     blocks.forEach(block => {
       const trimmed = block.trim();
-      if (trimmed.startsWith('💭')) {
-        traces.push({ type: 'thought', content: trimmed.replace(/^💭\s*/, '') });
-      } else if (trimmed.startsWith('🛠️')) {
+      if (!trimmed) return;
+
+      if (trimmed.startsWith('🛠️')) {
         const lines = trimmed.split('\n');
         const title = lines[0].replace(/^🛠️\s*/, '');
         const argsLine = lines.slice(1).join('\n').replace(/^Args:\s*/, '');
@@ -51,8 +51,14 @@ export default function MessageList({
           outputContent = outputContent.substring(7).trim();
         }
         traces.push({ type: 'tool_result', title: title, output: outputContent || 'No stdout/stderr was produced.' });
-      } else if (trimmed) {
-        traces.push({ type: 'text', content: trimmed });
+      } else {
+        const textContent = trimmed.replace(/^💭\s*/, '').trim();
+        const isTurnNotice = /turn\s*\d+|analyzing|synthesizing|invoking|planning|processing tool|query execution|active skills/i.test(textContent);
+        if (isTurnNotice) {
+          traces.push({ type: 'phase_notice', content: textContent });
+        } else {
+          traces.push({ type: 'thought', content: textContent });
+        }
       }
     });
 
@@ -377,7 +383,9 @@ export default function MessageList({
                         {(() => {
                           const steps = parseReasoning(m.reasoning);
                           const toolSteps = steps.filter(s => s.type === 'tool_call' || s.type === 'tool_result');
+                          const phaseSteps = steps.filter(s => s.type === 'phase_notice');
                           const lastTool = toolSteps.length > 0 ? toolSteps[toolSteps.length - 1] : null;
+                          const lastPhase = phaseSteps.length > 0 ? phaseSteps[phaseSteps.length - 1] : null;
                           const lastThought = steps.filter(s => s.type === 'thought').slice(-1)[0];
 
                           let headerTitle = 'Thought Process & Tool Execution';
@@ -390,17 +398,27 @@ export default function MessageList({
                             } else if (lastTool?.type === 'tool_result') {
                               headerTitle = `Executed: ${lastTool.title}`;
                               latestStatusBadge = 'Executed';
+                            } else if (lastPhase?.content) {
+                              headerTitle = lastPhase.content;
+                              latestStatusBadge = 'Planning';
                             } else if (lastThought?.content) {
                               const snippet = lastThought.content.length > 55 ? lastThought.content.substring(0, 55) + '...' : lastThought.content;
                               headerTitle = snippet;
                             } else {
                               headerTitle = 'Analyzing & Executing Tools...';
                             }
-                          } else if (lastTool) {
-                            const lastToolName = lastTool.name || lastTool.title;
-                            headerTitle = `Used: ${lastToolName}`;
-                            if (toolSteps.length > 1) {
-                              latestStatusBadge = `${Math.ceil(toolSteps.length / 2)} tools used`;
+                          } else {
+                            if (lastTool) {
+                              const lastToolName = lastTool.name || lastTool.title;
+                              headerTitle = `Executed: ${lastToolName}`;
+                              if (toolSteps.length > 1) {
+                                latestStatusBadge = `${Math.ceil(toolSteps.length / 2)} tools used`;
+                              }
+                            } else if (lastPhase?.content) {
+                              headerTitle = lastPhase.content;
+                              latestStatusBadge = 'Complete';
+                            } else {
+                              headerTitle = 'Thought Process & Synthesis Complete';
                             }
                           }
 
@@ -484,20 +502,38 @@ export default function MessageList({
                             gap: '12px'
                           }}>
                             {parseReasoning(m.reasoning).map((step, sidx) => {
+                              if (step.type === 'phase_notice') {
+                                return (
+                                  <div key={sidx} style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '10px',
+                                    padding: '9px 14px',
+                                    borderRadius: '9px',
+                                    background: 'linear-gradient(90deg, rgba(99, 102, 241, 0.12), rgba(6, 182, 212, 0.05))',
+                                    border: '1px solid rgba(99, 102, 241, 0.28)',
+                                    boxShadow: '0 2px 6px rgba(0, 0, 0, 0.06)'
+                                  }}>
+                                    <Sparkles size={14} color="var(--primary-cyan, #06b6d4)" style={{ flexShrink: 0 }} />
+                                    <div style={{ fontSize: '0.82rem', fontWeight: '650', color: 'var(--text-main)', letterSpacing: '0.15px' }}>
+                                      {step.content}
+                                    </div>
+                                  </div>
+                                );
+                              }
                               if (step.type === 'thought' || step.type === 'text') {
-                                const isTurnNotice = step.content.includes('Turn ') || step.content.includes('Analyzing conversation') || step.content.includes('Synthesizing');
                                 return (
                                   <div key={sidx} style={{
                                     display: 'flex',
                                     gap: '10px',
                                     alignItems: 'flex-start',
-                                    padding: '8px 12px',
-                                    borderRadius: '8px',
-                                    background: isTurnNotice ? 'rgba(99, 102, 241, 0.08)' : 'rgba(139, 92, 246, 0.06)',
-                                    border: isTurnNotice ? '1px solid rgba(99, 102, 241, 0.2)' : '1px solid rgba(139, 92, 246, 0.12)'
+                                    padding: '9px 14px',
+                                    borderRadius: '9px',
+                                    background: 'rgba(139, 92, 246, 0.05)',
+                                    border: '1px solid rgba(139, 92, 246, 0.14)'
                                   }}>
-                                    <Sparkles size={14} color={isTurnNotice ? 'var(--primary-indigo)' : 'var(--primary-violet)'} style={{ marginTop: '2px', flexShrink: 0 }} />
-                                    <div style={{ fontSize: '0.8rem', color: 'var(--text-main)', lineHeight: '1.55', fontWeight: isTurnNotice ? '500' : 'normal' }}>
+                                    <Brain size={14} color="var(--primary-violet)" style={{ marginTop: '2px', flexShrink: 0 }} />
+                                    <div style={{ fontSize: '0.8rem', color: 'var(--text-main)', lineHeight: '1.55', whiteSpace: 'pre-wrap', fontStyle: 'italic' }}>
                                       {step.content}
                                     </div>
                                   </div>
