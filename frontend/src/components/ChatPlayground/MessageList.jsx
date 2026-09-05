@@ -19,21 +19,84 @@ export default function MessageList({
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;');
 
+    // 1. Code blocks ```lang ... ```
     const codeBlockRegex = /```(\w*)\n([\s\S]*?)```/g;
     html = html.replace(codeBlockRegex, (match, lang, code) => {
       return `<pre class="code-block"><div class="code-header">${lang || 'code'}</div><code>${code.trim()}</code></pre>`;
     });
 
+    // 2. Markdown Tables
+    const tableRegex = /((?:^[ \t]*\|.+?\|[ \t]*\r?\n)+(?:^[ \t]*\|[-:\s|]+?\|[ \t]*\r?\n)(?:^[ \t]*\|.+?\|[ \t]*\r?\n?)*)/gm;
+    html = html.replace(tableRegex, (fullTable) => {
+      const rows = fullTable.trim().split('\n').map(r => r.trim()).filter(Boolean);
+      if (rows.length < 2) return fullTable;
+
+      const parseCells = (rowStr) => {
+        return rowStr
+          .replace(/^\|/, '')
+          .replace(/\|$/, '')
+          .split('|')
+          .map(c => c.trim());
+      };
+
+      const headerCells = parseCells(rows[0]);
+      // rows[1] is the separator (|---|---|)
+      const alignRow = parseCells(rows[1]);
+      const alignments = alignRow.map(a => {
+        if (/^:-+:$/.test(a)) return 'center';
+        if (/^-+:$/.test(a)) return 'right';
+        return 'left';
+      });
+
+      let thead = '<thead><tr>';
+      headerCells.forEach((c, idx) => {
+        const align = alignments[idx] || 'left';
+        thead += `<th style="text-align: ${align}">${c}</th>`;
+      });
+      thead += '</tr></thead>';
+
+      let tbody = '<tbody>';
+      const dataRows = rows.slice(2);
+      dataRows.forEach(r => {
+        if (!r.includes('|')) return;
+        const cells = parseCells(r);
+        tbody += '<tr>';
+        cells.forEach((c, idx) => {
+          const align = alignments[idx] || 'left';
+          tbody += `<td style="text-align: ${align}">${c}</td>`;
+        });
+        tbody += '</tr>';
+      });
+      tbody += '</tbody>';
+
+      return `<div class="table-container"><table>${thead}${tbody}</table></div>`;
+    });
+
+    // 3. Inline formatting
     html = html.replace(/`([^`\n]+)`/g, '<code class="inline-code">$1</code>');
     html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    html = html.replace(/~~([^~]+)~~/g, '<del>$1</del>');
     html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
     html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" style="color: var(--primary-violet); text-decoration: underline; font-weight: 500;">$1</a>');
 
+    // 4. Headings
     html = html.replace(/^# (.*?)$/gm, '<h1>$1</h1>');
     html = html.replace(/^## (.*?)$/gm, '<h2>$1</h2>');
     html = html.replace(/^### (.*?)$/gm, '<h3>$1</h3>');
     html = html.replace(/^#### (.*?)$/gm, '<h4>$1</h4>');
 
+    // 5. Horizontal rules
+    html = html.replace(/^---$/gm, '<hr />');
+
+    // 6. Blockquotes
+    html = html.replace(/^>\s*(.*?)$/gm, '<blockquote>$1</blockquote>');
+    html = html.replace(/<\/blockquote>\s*<blockquote>/g, '<br />');
+
+    // 7. Checklists & Task items
+    html = html.replace(/^\s*[-*+]\s+\[ \]\s+(.*?)$/gm, '<li style="list-style: none;"><input type="checkbox" disabled style="width: auto; margin-right: 6px; display: inline-block;" />$1</li>');
+    html = html.replace(/^\s*[-*+]\s+\[[xX]\]\s+(.*?)$/gm, '<li style="list-style: none;"><input type="checkbox" checked disabled style="width: auto; margin-right: 6px; display: inline-block;" />$1</li>');
+
+    // 8. Bullet & Ordered lists
     html = html.replace(/^\s*[-*+]\s+(.*?)$/gm, '<li>$1</li>');
     html = html.replace(/(<li>[\s\S]*?<\/li>)/g, '<ul>$1</ul>');
     html = html.replace(/<\/ul>\s*<ul>/g, '');
@@ -41,7 +104,16 @@ export default function MessageList({
     const paragraphs = html.split('\n\n').map(p => {
       const trimmed = p.trim();
       if (!trimmed) return '';
-      if (trimmed.startsWith('<h') || trimmed.startsWith('<pre') || trimmed.startsWith('<ul') || trimmed.startsWith('<li')) {
+      if (
+        trimmed.startsWith('<h') ||
+        trimmed.startsWith('<pre') ||
+        trimmed.startsWith('<ul') ||
+        trimmed.startsWith('<ol') ||
+        trimmed.startsWith('<li') ||
+        trimmed.startsWith('<div') ||
+        trimmed.startsWith('<blockquote') ||
+        trimmed.startsWith('<hr')
+      ) {
         return trimmed;
       }
       return `<p>${trimmed.replace(/\n/g, '<br />')}</p>`;

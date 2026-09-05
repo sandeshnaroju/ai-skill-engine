@@ -954,6 +954,101 @@ code.inline-code {
   color: #7c3aed;
 }
 
+/* Markdown Tables */
+.markdown-body .table-container,
+.markdown-table-wrapper {
+  width: 100%;
+  overflow-x: auto;
+  margin: 14px 0;
+  border-radius: 8px;
+  border: 1px solid var(--border-subtle);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.markdown-body table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.86rem;
+  text-align: left;
+}
+
+.markdown-body th {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-main);
+  font-weight: 650;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border-subtle);
+  border-right: 1px solid var(--border-subtle);
+  white-space: nowrap;
+}
+
+.markdown-body th:last-child {
+  border-right: none;
+}
+
+.markdown-body td {
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border-subtle);
+  border-right: 1px solid var(--border-subtle);
+  color: var(--text-main);
+}
+
+.markdown-body td:last-child {
+  border-right: none;
+}
+
+.markdown-body tr:last-child td {
+  border-bottom: none;
+}
+
+.markdown-body tr:hover td {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+[data-theme="light"] .markdown-body .table-container,
+[data-theme="light"] .markdown-table-wrapper {
+  background: #ffffff;
+  border-color: rgba(0, 0, 0, 0.12);
+}
+
+[data-theme="light"] .markdown-body th {
+  background: #f1f5f9;
+  border-color: rgba(0, 0, 0, 0.1);
+  color: #0f172a;
+}
+
+[data-theme="light"] .markdown-body td {
+  border-color: rgba(0, 0, 0, 0.08);
+  color: #1e293b;
+}
+
+[data-theme="light"] .markdown-body tr:hover td {
+  background: #f8fafc;
+}
+
+/* Markdown Blockquote & Divider */
+.markdown-body blockquote {
+  border-left: 3px solid var(--primary-violet);
+  margin: 12px 0;
+  padding: 8px 14px;
+  background: rgba(139, 92, 246, 0.06);
+  border-radius: 0 6px 6px 0;
+  color: var(--text-sub);
+  font-style: italic;
+}
+
+[data-theme="light"] .markdown-body blockquote {
+  background: rgba(124, 58, 237, 0.05);
+  border-color: #7c3aed;
+  color: #475569;
+}
+
+.markdown-body hr {
+  border: none;
+  border-top: 1px solid var(--border-subtle);
+  margin: 16px 0;
+}
+
 /* Centralized Toast Notifications System */
 .toast-container {
   position: fixed;

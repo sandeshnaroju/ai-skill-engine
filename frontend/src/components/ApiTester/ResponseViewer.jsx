@@ -243,7 +243,7 @@ export default function ResponseViewer({
                   <div style={{ fontSize: '0.7rem', color: msg.role === 'user' ? 'var(--primary-violet)' : 'var(--primary-cyan)', fontWeight: '600', marginBottom: '4px', textTransform: 'uppercase' }}>
                     {msg.role}
                   </div>
-                  <div dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }} />
+                  <div className="markdown-body" dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }} />
 
                   {/* Artifact Pin Card(s) */}
                   {Array.isArray(msg.artifacts) && msg.artifacts.length > 0 ? (
