@@ -179,6 +179,9 @@ class SkillEngine:
         user_data: dict = None,
         skill_names: list = None,
         client_messages: list = None,
+        reasoning_effort: str = None,
+        thinking_budget: int = None,
+        extra_body: dict = None,
     ) -> dict:
         start_time = time.time()
         persist = (request_source == "dashboard")
@@ -229,6 +232,23 @@ class SkillEngine:
                     kwargs["tools"] = available_tools
                 if turn == max_turns - 1:
                     messages.append({"role": "user", "content": "[System Notice: Maximum tool execution turns reached. You can no longer call any tools. Please summarize the tool outputs and provide your final response to the user.]"})
+
+                # Handle reasoning / thinking configs
+                m_lower = model_name.lower()
+                if reasoning_effort:
+                    kwargs["reasoning_effort"] = reasoning_effort
+                elif any(k in m_lower for k in ["o1", "o3", "o4"]):
+                    kwargs["reasoning_effort"] = "medium"
+
+                if extra_body:
+                    kwargs["extra_body"] = extra_body
+                elif any(k in m_lower for k in ["deepseek-r1", "deepseek-reasoner", "r1"]):
+                    kwargs["extra_body"] = {"include_reasoning": True}
+
+                if thinking_budget is not None:
+                    if "extra_body" not in kwargs:
+                        kwargs["extra_body"] = {}
+                    kwargs["extra_body"]["thinking"] = {"budget_tokens": thinking_budget}
 
                 try:
                     response = llm.chat.completions.create(**kwargs)
@@ -384,6 +404,9 @@ class SkillEngine:
         user_data: dict = None,
         skill_names: list = None,
         client_messages: list = None,
+        reasoning_effort: str = None,
+        thinking_budget: int = None,
+        extra_body: dict = None,
     ):
         start_time = time.time()
 
@@ -457,12 +480,22 @@ class SkillEngine:
                     turn_msg = f"Processing tool outputs & synthesizing response (Turn {turn+1})..."
                 yield _chunk(session_id, model_name, reasoning=turn_msg)
 
-                # Enable Reasoning for models supporting standard reasoning_effort
+                # Handle reasoning / thinking configs
                 m_lower = model_name.lower()
-                if any(k in m_lower for k in ["o1", "o3", "o4"]):
+                if reasoning_effort:
+                    kwargs["reasoning_effort"] = reasoning_effort
+                elif any(k in m_lower for k in ["o1", "o3", "o4"]):
                     kwargs["reasoning_effort"] = "medium"
+
+                if extra_body:
+                    kwargs["extra_body"] = extra_body
                 elif any(k in m_lower for k in ["deepseek-r1", "deepseek-reasoner", "r1"]):
                     kwargs["extra_body"] = {"include_reasoning": True}
+
+                if thinking_budget is not None:
+                    if "extra_body" not in kwargs:
+                        kwargs["extra_body"] = {}
+                    kwargs["extra_body"]["thinking"] = {"budget_tokens": thinking_budget}
 
                 try:
                     response_stream = llm.chat.completions.create(**kwargs)

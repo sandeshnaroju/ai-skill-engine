@@ -7,6 +7,9 @@ class PlaygroundChatRequest(BaseModel):
     prochat_model: Optional[str] = None
     user_data: Optional[dict] = None
     skill_names: Optional[List[str]] = None
+    reasoning_effort: Optional[str] = None
+    thinking_budget: Optional[int] = None
+    extra_body: Optional[dict] = None
 
 class OpenAIStyleMessage(BaseModel):
     role: str
@@ -21,6 +24,9 @@ class OpenAIChatRequest(BaseModel):
     prochat_model: Optional[str] = None
     user_data: Optional[dict] = None
     skill_names: Optional[List[str]] = None
+    reasoning_effort: Optional[str] = None
+    thinking_budget: Optional[int] = None
+    extra_body: Optional[dict] = None
 
 class TenantCreate(BaseModel):
     name: str
