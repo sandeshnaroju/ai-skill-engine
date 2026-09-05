@@ -753,9 +753,11 @@ export default function ChatPlayground({ isSidebarOpen, toggleSidebar }) {
 
                 if (dataJson && dataJson.choices && dataJson.choices[0] && dataJson.choices[0].delta) {
                   const delta = dataJson.choices[0].delta;
-                  if (delta.reasoning) {
+                  if (delta.reasoning && !delta.tool_call && !delta.tool_result) {
                     setLiveThought(delta.reasoning);
-                    reasoningTraces.push(`💭 ${delta.reasoning}`);
+                    if (!reasoningTraces.some(t => t.includes(delta.reasoning))) {
+                      reasoningTraces.push(`💭 ${delta.reasoning}`);
+                    }
                     stateChanged = true;
                   }
                   if (delta.artifact) {
