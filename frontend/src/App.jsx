@@ -790,58 +790,82 @@ function AppContent() {
       {/* ---------------------------------------------------------------- */}
       {/* MAIN VIEWPORT CONTENT AREA                                      */}
       {/* ---------------------------------------------------------------- */}
-      <div className="app-main-content" style={{ padding: '12px 18px', overflowX: 'hidden' }}>
-        {/* Top View Header */}
-        <header className="glass-box" style={{ padding: '12px 20px', marginBottom: '14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            {!isSidebarOpen && (
-              <button
-                className="btn-outline"
-                onClick={toggleSidebar}
-                style={{ padding: '6px', borderRadius: '8px' }}
-                title="Expand Left Sidebar"
-              >
-                <PanelLeftOpen size={18} />
-              </button>
-            )}
-            {React.createElement(activeNavItem.icon, { size: 20, color: 'var(--primary-violet)' })}
-            <h2 style={{ fontSize: '1.1rem', fontWeight: '700', color: 'var(--text-main)' }}>
-              {activeNavItem.label}
-            </h2>
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-            <div className="header-badge" style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-              Enterprise Skill Execution Gateway & MCP Hub
+      <div
+        className="app-main-content"
+        style={{
+          padding: activeTab === 'playground' ? '0' : '12px 18px',
+          height: '100vh',
+          maxHeight: '100vh',
+          overflow: activeTab === 'playground' ? 'hidden' : 'auto',
+          display: 'flex',
+          flexDirection: 'column',
+          boxSizing: 'border-box'
+        }}
+      >
+        {/* Top View Header (Hidden on Playground since Playground has its own contextual bar) */}
+        {activeTab !== 'playground' && (
+          <header className="glass-box" style={{ padding: '12px 20px', marginBottom: '14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              {!isSidebarOpen && (
+                <button
+                  className="btn-outline"
+                  onClick={toggleSidebar}
+                  style={{ padding: '6px', borderRadius: '8px' }}
+                  title="Expand Left Sidebar"
+                >
+                  <PanelLeftOpen size={18} />
+                </button>
+              )}
+              {React.createElement(activeNavItem.icon, { size: 20, color: 'var(--primary-violet)' })}
+              <h2 style={{ fontSize: '1.1rem', fontWeight: '700', color: 'var(--text-main)' }}>
+                {activeNavItem.label}
+              </h2>
             </div>
-            <button
-              onClick={() => handleTabChange('profile')}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                width: '36px',
-                height: '36px',
-                borderRadius: '50%',
-                border: activeTab === 'profile' ? '1px solid var(--primary-violet)' : '1px solid var(--border-subtle)',
-                background: activeTab === 'profile' ? 'rgba(139, 92, 246, 0.15)' : 'var(--bg-input)',
-                color: activeTab === 'profile' ? 'var(--primary-violet)' : 'var(--text-sub)',
-                cursor: 'pointer',
-                transition: 'all 0.2s ease',
-                boxShadow: activeTab === 'profile' ? '0 0 10px rgba(139, 92, 246, 0.2)' : 'none'
-              }}
-              title={`View User Profile (${userEmail})`}
-            >
-              <UserIcon size={18} />
-            </button>
-          </div>
-        </header>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+              <div className="header-badge" style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                Enterprise Skill Execution Gateway & MCP Hub
+              </div>
+              <button
+                onClick={() => handleTabChange('profile')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '50%',
+                  border: activeTab === 'profile' ? '1px solid var(--primary-violet)' : '1px solid var(--border-subtle)',
+                  background: activeTab === 'profile' ? 'rgba(139, 92, 246, 0.15)' : 'var(--bg-input)',
+                  color: activeTab === 'profile' ? 'var(--primary-violet)' : 'var(--text-sub)',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                  boxShadow: activeTab === 'profile' ? '0 0 10px rgba(139, 92, 246, 0.2)' : 'none'
+                }}
+                title={`View User Profile (${userEmail})`}
+              >
+                <UserIcon size={18} />
+              </button>
+            </div>
+          </header>
+        )}
 
         {/* Main Content Component */}
-        <main style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
+        <main style={{
+          flex: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          minWidth: 0,
+          width: '100%',
+          maxWidth: '100%',
+          height: activeTab === 'playground' ? '100%' : 'auto',
+          maxHeight: activeTab === 'playground' ? '100%' : 'none',
+          overflow: activeTab === 'playground' ? 'hidden' : 'visible',
+          boxSizing: 'border-box'
+        }}>
           <Routes>
             <Route path="/embed/canvas" element={<Canvas isEmbed={true} />} />
-            <Route path="/playground" element={<ChatPlayground />} />
+            <Route path="/playground" element={<ChatPlayground isSidebarOpen={isSidebarOpen} toggleSidebar={toggleSidebar} />} />
             <Route path="/apps" element={<AppManager />} />
             <Route path="/skills" element={<SkillCatalog />} />
             <Route path="/mcp" element={<McpServerManager />} />

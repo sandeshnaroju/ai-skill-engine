@@ -4,7 +4,7 @@ import {
   Send, Bot, User, Terminal, Sparkles, Trash2, Check, Copy, Activity,
   Code2, Globe, Plus, MessageSquare, Brain, ChevronDown, ChevronUp, Cpu,
   ShieldCheck, Box, Key, Download, X, History, FileText, Sparkle, Sliders,
-  Paperclip, Maximize2, Minimize2, Loader, LayoutDashboard, Settings
+  Paperclip, Maximize2, Minimize2, Loader, LayoutDashboard, Settings, PanelLeftOpen
 } from 'lucide-react';
 import AsyncSearchableDropdown from '../AsyncSearchableDropdown';
 import { chatApi, tenantsApi, appsApi, userDataApi, skillsApi, apiClient, artifactsApi } from '../../api';
@@ -14,7 +14,7 @@ import ConfigDrawer from './ConfigDrawer';
 import Canvas from '../Canvas';
 import ProChat from 'prochat';
 
-export default function ChatPlayground() {
+export default function ChatPlayground({ isSidebarOpen, toggleSidebar }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const [initialSessionId] = useState(() => `session_${Math.floor(1000 + Math.random() * 9000)}`);
   const [sessions, setSessions] = useState([]);
@@ -922,8 +922,20 @@ export default function ChatPlayground() {
         flexShrink: 0,
         zIndex: 20
       }}>
-        {/* Left: Active Session Indicator & History Trigger */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        {/* Left: Sidebar Toggle, Active Session Indicator & History Trigger */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {toggleSidebar && !isSidebarOpen && (
+            <button
+              type="button"
+              className="btn-outline"
+              onClick={toggleSidebar}
+              style={{ padding: '6px 8px', borderRadius: '8px', border: '1px solid var(--border-subtle)' }}
+              title="Expand Left Sidebar"
+            >
+              <PanelLeftOpen size={16} color="var(--primary-violet)" />
+            </button>
+          )}
+
           <button
             type="button"
             onClick={handleNewSession}

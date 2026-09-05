@@ -95,11 +95,12 @@ export default function MessageList({
     return (
       <div style={{
         flex: 1,
+        minHeight: 0,
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
-        padding: '40px 24px',
+        padding: '24px 20px',
         overflowY: 'auto'
       }}>
         <div style={{ maxWidth: '820px', width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '32px' }}>
@@ -205,6 +206,7 @@ export default function MessageList({
   return (
     <div style={{
       flex: 1,
+      minHeight: 0,
       overflowY: 'auto',
       padding: '24px 20px',
       display: 'flex',
