@@ -388,12 +388,10 @@ export default function MessageList({
                               headerTitle = `Executed: ${lastTool.title}`;
                               latestStatusBadge = 'Executed';
                             } else if (lastThought?.content) {
-                              const snippet = lastThought.content.length > 40 ? lastThought.content.substring(0, 40) + '...' : lastThought.content;
-                              headerTitle = `Thinking: ${snippet}`;
-                              latestStatusBadge = 'Thinking';
+                              const snippet = lastThought.content.length > 55 ? lastThought.content.substring(0, 55) + '...' : lastThought.content;
+                              headerTitle = snippet;
                             } else {
                               headerTitle = 'Analyzing & Executing Tools...';
-                              latestStatusBadge = 'Active';
                             }
                           } else if (lastTool) {
                             const lastToolName = lastTool.name || lastTool.title;
@@ -483,7 +481,8 @@ export default function MessageList({
                             gap: '12px'
                           }}>
                             {parseReasoning(m.reasoning).map((step, sidx) => {
-                              if (step.type === 'thought') {
+                              if (step.type === 'thought' || step.type === 'text') {
+                                const isTurnNotice = step.content.includes('Turn ') || step.content.includes('Analyzing conversation') || step.content.includes('Synthesizing');
                                 return (
                                   <div key={sidx} style={{
                                     display: 'flex',
@@ -491,11 +490,11 @@ export default function MessageList({
                                     alignItems: 'flex-start',
                                     padding: '8px 12px',
                                     borderRadius: '8px',
-                                    background: 'rgba(139, 92, 246, 0.06)',
-                                    border: '1px solid rgba(139, 92, 246, 0.12)'
+                                    background: isTurnNotice ? 'rgba(99, 102, 241, 0.08)' : 'rgba(139, 92, 246, 0.06)',
+                                    border: isTurnNotice ? '1px solid rgba(99, 102, 241, 0.2)' : '1px solid rgba(139, 92, 246, 0.12)'
                                   }}>
-                                    <Sparkles size={14} color="var(--primary-violet)" style={{ marginTop: '2px', flexShrink: 0 }} />
-                                    <div style={{ fontSize: '0.8rem', color: 'var(--text-main)', lineHeight: '1.55' }}>
+                                    <Sparkles size={14} color={isTurnNotice ? 'var(--primary-indigo)' : 'var(--primary-violet)'} style={{ marginTop: '2px', flexShrink: 0 }} />
+                                    <div style={{ fontSize: '0.8rem', color: 'var(--text-main)', lineHeight: '1.55', fontWeight: isTurnNotice ? '500' : 'normal' }}>
                                       {step.content}
                                     </div>
                                   </div>
