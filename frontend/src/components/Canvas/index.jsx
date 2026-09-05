@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   FileText, Code, Table, Presentation, Image, Music, Video, Globe,
   Download, History, RefreshCw, CheckCircle2,
-  Sun, Moon, BookOpen, X, Compass, Box, MapPin, Cpu
+  Sun, Moon, BookOpen, X, Compass, Box, MapPin, Cpu,
+  Maximize2, Minimize2, ChevronDown, FileDown
 } from 'lucide-react';
 import { artifactsApi } from '../../api';
 import PagedDocViewer from './PagedDocViewer';
@@ -59,6 +60,184 @@ function CanvasInner({ isEmbed = false, artifactId: propArtifactId, token: propT
   const [updatedBlockKey, setUpdatedBlockKey] = useState(null);
   const [historyModal, setHistoryModal] = useState(null); // { blockKey, blockTitle }
   const [isLiveConnected, setIsLiveConnected] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [showDownloadMenu, setShowDownloadMenu] = useState(false);
+  const canvasRootRef = useRef(null);
+  const downloadMenuRef = useRef(null);
+
+  // Compute available download formats based on artifact type & filename
+  const downloadFormats = useMemo(() => {
+    const fn = (artifact?.filename || '').toLowerCase();
+    const type = (artifact?.artifact_type || '').toLowerCase();
+
+    if (
+      type === 'document' ||
+      type === 'doc' ||
+      type === 'pdf' ||
+      fn.endsWith('.md') ||
+      fn.endsWith('.docx') ||
+      fn.endsWith('.doc') ||
+      fn.endsWith('.txt')
+    ) {
+      return [
+        {
+          label: 'Word Document (.docx)',
+          format: 'docx',
+          icon: FileText,
+          desc: 'Styled Word document with headings & tables',
+          color: '#3b82f6',
+          bg: 'rgba(59, 130, 246, 0.15)'
+        },
+        {
+          label: 'PDF Document (.pdf)',
+          format: 'pdf',
+          icon: FileDown,
+          desc: 'Printable vector PDF document',
+          color: '#ef4444',
+          bg: 'rgba(239, 68, 68, 0.15)'
+        },
+        {
+          label: 'Markdown File (.md)',
+          format: 'md',
+          icon: Code,
+          desc: 'Raw source markdown with headings',
+          color: '#10b981',
+          bg: 'rgba(16, 185, 129, 0.15)'
+        },
+        {
+          label: 'Plain Text (.txt)',
+          format: 'txt',
+          icon: FileText,
+          desc: 'Clean unformatted plain text',
+          color: '#94a3b8',
+          bg: 'rgba(148, 163, 184, 0.15)'
+        }
+      ];
+    }
+
+    if (type === 'spreadsheet' || type === 'sheet' || fn.endsWith('.xlsx') || fn.endsWith('.csv')) {
+      return [
+        {
+          label: 'Excel Workbook (.xlsx)',
+          format: 'xlsx',
+          icon: Table,
+          desc: 'Formatted Microsoft Excel sheet',
+          color: '#10b981',
+          bg: 'rgba(16, 185, 129, 0.15)'
+        },
+        {
+          label: 'CSV Spreadsheet (.csv)',
+          format: 'csv',
+          icon: Table,
+          desc: 'Raw comma-separated values',
+          color: '#06b6d4',
+          bg: 'rgba(6, 182, 212, 0.15)'
+        }
+      ];
+    }
+
+    if (type === 'presentation' || type === 'slides' || fn.endsWith('.pptx')) {
+      return [
+        {
+          label: 'PowerPoint Deck (.pptx)',
+          format: 'pptx',
+          icon: Presentation,
+          desc: 'Editable PowerPoint presentation',
+          color: '#f59e0b',
+          bg: 'rgba(245, 158, 11, 0.15)'
+        },
+        {
+          label: 'PDF Slides (.pdf)',
+          format: 'pdf',
+          icon: FileDown,
+          desc: 'Printable vector slide deck',
+          color: '#ef4444',
+          bg: 'rgba(239, 68, 68, 0.15)'
+        }
+      ];
+    }
+
+    if (type === 'cad_2d' || fn.endsWith('.dxf') || fn.endsWith('.dwg')) {
+      return [
+        {
+          label: 'AutoCAD DXF (.dxf)',
+          format: 'dxf',
+          icon: Compass,
+          desc: 'ASCII AutoCAD DXF blueprint',
+          color: '#38bdf8',
+          bg: 'rgba(56, 189, 248, 0.15)'
+        }
+      ];
+    }
+
+    if (type === 'cad_3d' || fn.endsWith('.step') || fn.endsWith('.stp') || fn.endsWith('.stl') || fn.endsWith('.obj')) {
+      const ext = fn.split('.').pop() || 'step';
+      return [
+        {
+          label: `3D Model (.${ext})`,
+          format: ext,
+          icon: Box,
+          desc: `Standard 3D ${ext.toUpperCase()} solid`,
+          color: '#c084fc',
+          bg: 'rgba(192, 132, 252, 0.15)'
+        }
+      ];
+    }
+
+    if (type === 'gis' || fn.endsWith('.geojson') || fn.endsWith('.kml')) {
+      const ext = fn.split('.').pop() || 'geojson';
+      return [
+        {
+          label: `GIS Map (.${ext})`,
+          format: ext,
+          icon: MapPin,
+          desc: 'Geographic vector dataset',
+          color: '#34d399',
+          bg: 'rgba(52, 211, 153, 0.15)'
+        }
+      ];
+    }
+
+    const curExt = fn.includes('.') ? fn.split('.').pop() : 'txt';
+    return [
+      {
+        label: `Source File (.${curExt})`,
+        format: curExt,
+        icon: Download,
+        desc: 'Original raw format',
+        color: '#818cf8',
+        bg: 'rgba(129, 140, 248, 0.15)'
+      }
+    ];
+  }, [artifact]);
+
+  // Close dropdown on click outside
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (downloadMenuRef.current && !downloadMenuRef.current.contains(e.target)) {
+        setShowDownloadMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // DOM-level Fullscreen toggle handler (expands to fill the entire application viewport)
+  const toggleFullscreen = useCallback(() => {
+    setIsFullscreen((prev) => !prev);
+  }, []);
+
+  // Keyboard Escape listener to exit fullscreen or close dropdown
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        if (isFullscreen) setIsFullscreen(false);
+        if (showDownloadMenu) setShowDownloadMenu(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isFullscreen, showDownloadMenu]);
 
   // Sync theme with document element and localStorage
   useEffect(() => {
@@ -465,7 +644,11 @@ function CanvasInner({ isEmbed = false, artifactId: propArtifactId, token: propT
   })();
 
   return (
-    <div className={`canvas-root ${inIframe ? 'is-embed' : ''} is-compact`} data-theme={theme}>
+    <div
+      ref={canvasRootRef}
+      className={`canvas-root ${inIframe ? 'is-embed' : ''} ${isFullscreen ? 'is-fullscreen' : ''} is-compact`}
+      data-theme={theme}
+    >
       {/* ── Top Navigation Bar (Sleek, Minimal & Space-Saving) ── */}
       <header className="canvas-header">
         <div className="canvas-header-left">
@@ -528,16 +711,111 @@ function CanvasInner({ isEmbed = false, artifactId: propArtifactId, token: propT
             <History size={14} />
           </button>
 
-          {/* Download Button */}
-          <a
-            href={artifactsApi.getExportUrl(artifact?.id, currentToken)}
-            download={artifact?.filename}
-            className="canvas-btn-icon canvas-btn-primary-icon"
-            style={{ textDecoration: 'none' }}
-            title="Download Document"
+          {/* Fullscreen Toggle Button */}
+          <button
+            className="canvas-btn-icon"
+            title={isFullscreen ? 'Exit Fullscreen (Esc)' : 'Enter Fullscreen'}
+            onClick={toggleFullscreen}
           >
-            <Download size={14} />
-          </a>
+            {isFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+          </button>
+
+          {/* Download Button with Multi-Format Dropdown Menu */}
+          <div style={{ position: 'relative' }} ref={downloadMenuRef}>
+            <button
+              className="canvas-btn-icon canvas-btn-primary-icon"
+              onClick={() => setShowDownloadMenu(!showDownloadMenu)}
+              title="Download Document (Select Format)"
+            >
+              <Download size={14} />
+            </button>
+
+            {showDownloadMenu && (
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 'calc(100% + 6px)',
+                  right: 0,
+                  width: '260px',
+                  background: 'var(--canvas-header-bg, #0f172a)',
+                  backdropFilter: 'blur(16px)',
+                  border: '1px solid var(--canvas-border, rgba(255,255,255,0.12))',
+                  borderRadius: '10px',
+                  boxShadow: '0 12px 32px rgba(0,0,0,0.5)',
+                  padding: '6px',
+                  zIndex: 99999,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '4px'
+                }}
+              >
+                <div
+                  style={{
+                    padding: '6px 10px 4px 10px',
+                    fontSize: '0.72rem',
+                    fontWeight: 700,
+                    color: 'var(--doc-text-muted, #94a3b8)',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.04em'
+                  }}
+                >
+                  Select Export Format
+                </div>
+
+                {downloadFormats.map((fmt) => {
+                  const IconComponent = fmt.icon || FileText;
+                  const exportUrl = artifactsApi.getExportUrl(artifact?.id, currentToken, fmt.format);
+                  const baseName = (artifact?.filename || 'document').replace(/\.[^/.]+$/, '');
+                  const dlFilename = `${baseName}.${fmt.format}`;
+
+                  return (
+                    <a
+                      key={fmt.format}
+                      href={exportUrl}
+                      download={dlFilename}
+                      onClick={() => setShowDownloadMenu(false)}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '10px',
+                        padding: '8px 10px',
+                        borderRadius: '6px',
+                        textDecoration: 'none',
+                        color: 'inherit',
+                        background: 'transparent',
+                        transition: 'all 0.15s ease'
+                      }}
+                      className="canvas-download-option-item"
+                    >
+                      <div
+                        style={{
+                          width: '28px',
+                          height: '28px',
+                          borderRadius: '6px',
+                          background: fmt.bg || 'rgba(99, 102, 241, 0.12)',
+                          color: fmt.color || '#818cf8',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          flexShrink: 0
+                        }}
+                      >
+                        <IconComponent size={15} />
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0 }}>
+                        <span style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--doc-title-color, #f8fafc)' }}>
+                          {fmt.label}
+                        </span>
+                        <span style={{ fontSize: '0.72rem', color: 'var(--doc-text-muted, #94a3b8)', lineHeight: 1.2 }}>
+                          {fmt.desc}
+                        </span>
+                      </div>
+                    </a>
+                  );
+                })}
+              </div>
+            )}
+          </div>
 
           {/* Close Button */}
           {onClose && (

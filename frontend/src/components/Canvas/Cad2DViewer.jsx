@@ -21,55 +21,48 @@ import {
 } from 'lucide-react';
 
 /**
- * Standard AutoCAD Color Index (ACI) lookup table (first 10 common colors)
+ * Standard AutoCAD Color Index (ACI) lookup table
  */
 const ACI_COLORS = {
-  1: '#ff0000', // Red
-  2: '#ffff00', // Yellow
-  3: '#00ff00', // Green
-  4: '#00ffff', // Cyan
-  5: '#0000ff', // Blue
-  6: '#ff00ff', // Magenta
-  7: '#ffffff', // White / Black depending on bg
-  8: '#808080', // Dark Gray
-  9: '#c0c0c0', // Light Gray
+  1: '#ef4444', // Red
+  2: '#eab308', // Yellow
+  3: '#22c55e', // Green
+  4: '#06b6d4', // Cyan
+  5: '#3b82f6', // Blue
+  6: '#ec4899', // Magenta
+  7: '#f8fafc', // White
+  8: '#64748b', // Dark Gray
+  9: '#94a3b8', // Light Gray
 };
 
 /**
- * Robust lightweight ASCII DXF Parser for browser rendering
+ * Robust ASCII DXF Parser for CAD drawings
  */
 function parseDxfContent(dxfText) {
-  const lines = dxfText.split(/\r?\n/);
+  if (!dxfText) return { entities: [], layers: [] };
+
+  const lines = dxfText
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0);
+
   const entities = [];
   const layers = new Map();
-  const blocks = new Map();
 
   let i = 0;
   const n = lines.length;
-
   let currentSection = null;
-  let currentLayer = '0';
-  let currentColor = null;
-
-  function getCodeVal() {
-    if (i + 1 >= n) return null;
-    const code = parseInt(lines[i].trim(), 10);
-    const val = lines[i + 1].trim();
-    i += 2;
-    return { code, val };
-  }
 
   while (i < n - 1) {
-    const pair = getCodeVal();
-    if (!pair) break;
-
-    const { code, val } = pair;
+    const code = parseInt(lines[i], 10);
+    const val = lines[i + 1];
+    i += 2;
 
     if (code === 0) {
       if (val === 'SECTION') {
-        const next = getCodeVal();
-        if (next && next.code === 2) {
-          currentSection = next.val.toUpperCase();
+        if (i < n - 1 && parseInt(lines[i], 10) === 2) {
+          currentSection = lines[i + 1].toUpperCase();
+          i += 2;
         }
         continue;
       }
@@ -81,39 +74,49 @@ function parseDxfContent(dxfText) {
         break;
       }
 
-      // ENTITIES section parsing
+      // 1. TABLES SECTION -> Parse Layer definitions & colors
+      if (currentSection === 'TABLES') {
+        if (val === 'LAYER') {
+          let layerName = '0';
+          let layerColor = '#38bdf8';
+          while (i < n - 1) {
+            const lCode = parseInt(lines[i], 10);
+            const lVal = lines[i + 1];
+            if (lCode === 0) break;
+            i += 2;
+            if (lCode === 2) layerName = lVal;
+            else if (lCode === 62) {
+              const aci = parseInt(lVal, 10);
+              layerColor = ACI_COLORS[Math.abs(aci)] || '#38bdf8';
+            }
+          }
+          layers.set(layerName, { name: layerName, color: layerColor, visible: true, count: 0 });
+        }
+      }
+
+      // 2. ENTITIES SECTION -> Parse Drawing Entities
       if (currentSection === 'ENTITIES' || !currentSection) {
         const entityType = val.toUpperCase();
         const entity = { type: entityType, layer: '0', color: null, vertices: [] };
-        let entityEnded = false;
 
         while (i < n - 1) {
-          const eCode = parseInt(lines[i].trim(), 10);
-          const eVal = lines[i + 1].trim();
-
-          if (eCode === 0) {
-            // New entity starts
-            break;
-          }
+          const eCode = parseInt(lines[i], 10);
+          const eVal = lines[i + 1];
+          if (eCode === 0) break;
           i += 2;
 
           if (eCode === 8) {
             entity.layer = eVal;
-            if (!layers.has(eVal)) {
-              layers.set(eVal, { name: eVal, visible: true, color: '#00ffff', count: 0 });
-            }
           } else if (eCode === 62) {
             const aci = parseInt(eVal, 10);
-            entity.color = ACI_COLORS[Math.abs(aci)] || '#38bdf8';
+            entity.color = ACI_COLORS[Math.abs(aci)] || null;
           } else if (eCode === 10) {
             entity.x = parseFloat(eVal);
             if (!entity.vertices) entity.vertices = [];
             entity.currentVertex = { x: parseFloat(eVal), y: 0, z: 0 };
           } else if (eCode === 20) {
             entity.y = parseFloat(eVal);
-            if (entity.currentVertex) {
-              entity.currentVertex.y = parseFloat(eVal);
-            }
+            if (entity.currentVertex) entity.currentVertex.y = parseFloat(eVal);
           } else if (eCode === 30) {
             entity.z = parseFloat(eVal);
             if (entity.currentVertex) {
@@ -142,14 +145,13 @@ function parseDxfContent(dxfText) {
           }
         }
 
-        if (entity.currentVertex) {
-          entity.vertices.push(entity.currentVertex);
-        }
+        if (entity.currentVertex) entity.vertices.push(entity.currentVertex);
 
         if (!layers.has(entity.layer)) {
-          layers.set(entity.layer, { name: entity.layer, visible: true, color: '#38bdf8', count: 0 });
+          layers.set(entity.layer, { name: entity.layer, color: '#38bdf8', visible: true, count: 0 });
         }
         layers.get(entity.layer).count += 1;
+        if (!entity.color) entity.color = layers.get(entity.layer).color;
 
         entities.push(entity);
       }
@@ -158,7 +160,7 @@ function parseDxfContent(dxfText) {
 
   // Fallback default layer if none registered
   if (layers.size === 0) {
-    layers.set('0', { name: '0', visible: true, color: '#38bdf8', count: entities.length });
+    layers.set('0', { name: '0', color: '#38bdf8', visible: true, count: entities.length });
   }
 
   return { entities, layers: Array.from(layers.values()) };
@@ -180,25 +182,24 @@ export default function Cad2DViewer({ fullContent, artifact, token, filename = '
   const [measuringMode, setMeasuringMode] = useState(false);
   const [measurePoints, setMeasurePoints] = useState([]);
   const [measuredDistance, setMeasuredDistance] = useState(null);
-  const [cursorCoords, setCursorCoords] = useState({ x: 0, y: 0 });
-  const [stats, setStats] = useState({ entities: 0, bounds: { minX: 0, maxX: 0, minY: 0, maxY: 0 } });
+  const [cursorCoords, setCursorCoords] = useState({ x: '0.00', y: '0.00' });
+  const [stats, setStats] = useState({ entities: 0, bounds: { minX: -50, maxX: 50, minY: -50, maxY: 50 } });
   const [zoomLevel, setZoomLevel] = useState(100);
-  const [isLoading, setIsLoading] = useState(true);
 
   // Parse raw text
   const parsedData = useMemo(() => {
-    if (!fullContent) return null;
+    if (!fullContent) return { entities: [], layers: [] };
     try {
       return parseDxfContent(fullContent);
     } catch (e) {
       console.error('Failed to parse DXF:', e);
-      return null;
+      return { entities: [], layers: [] };
     }
   }, [fullContent]);
 
   // Sync layers list
   useEffect(() => {
-    if (parsedData && parsedData.layers) {
+    if (parsedData && parsedData.layers && parsedData.layers.length > 0) {
       setLayers(parsedData.layers);
       setActiveLayerNames(new Set(parsedData.layers.map((l) => l.name)));
       setStats((prev) => ({ ...prev, entities: parsedData.entities.length }));
@@ -237,7 +238,6 @@ export default function Cad2DViewer({ fullContent, artifact, token, filename = '
     container.innerHTML = '';
     container.appendChild(renderer.domElement);
 
-    // Render loop
     let animId;
     const animate = () => {
       animId = requestAnimationFrame(animate);
@@ -272,7 +272,7 @@ export default function Cad2DViewer({ fullContent, artifact, token, filename = '
     };
   }, []);
 
-  // Build Geometry when parsed data or active layers change
+  // Build Geometry when parsed data, active layers, or theme changes
   useEffect(() => {
     const scene = sceneRef.current;
     if (!scene || !parsedData) return;
@@ -281,7 +281,7 @@ export default function Cad2DViewer({ fullContent, artifact, token, filename = '
     layerGroupsRef.current.forEach((group) => scene.remove(group));
     layerGroupsRef.current.clear();
 
-    const { entities, layers: layerList } = parsedData;
+    const { entities } = parsedData;
 
     let minX = Infinity;
     let maxX = -Infinity;
@@ -318,7 +318,11 @@ export default function Cad2DViewer({ fullContent, artifact, token, filename = '
       const lineColors = [];
 
       layerEntities.forEach((ent) => {
-        const entColor = ent.color ? new THREE.Color(ent.color) : new THREE.Color(defaultStrokeColor);
+        let entColor = ent.color ? new THREE.Color(ent.color) : new THREE.Color(defaultStrokeColor);
+        // Adjust pure white/black contrast for theme
+        if (!isDark && (ent.color === '#ffffff' || ent.color === '#f8fafc')) {
+          entColor = new THREE.Color(0x0f172a);
+        }
 
         if (ent.type === 'LINE') {
           const x1 = ent.x ?? 0;
@@ -340,7 +344,6 @@ export default function Cad2DViewer({ fullContent, artifact, token, filename = '
               updateBounds(v2.x, v2.y);
             }
             if ((ent.flags & 1) === 1) {
-              // Closed polyline
               const first = ent.vertices[0];
               const last = ent.vertices[ent.vertices.length - 1];
               linePositions.push(last.x, last.y, 0, first.x, first.y, 0);
@@ -351,7 +354,7 @@ export default function Cad2DViewer({ fullContent, artifact, token, filename = '
           const cx = ent.x ?? 0;
           const cy = ent.y ?? 0;
           const r = ent.radius || 5;
-          const segments = 36;
+          const segments = 48;
           for (let s = 0; s < segments; s++) {
             const theta1 = (s / segments) * Math.PI * 2;
             const theta2 = ((s + 1) / segments) * Math.PI * 2;
@@ -372,7 +375,7 @@ export default function Cad2DViewer({ fullContent, artifact, token, filename = '
           const eDeg = ent.endAngle || 360;
           let span = eDeg - sDeg;
           if (span < 0) span += 360;
-          const segments = Math.max(12, Math.floor(span / 10));
+          const segments = Math.max(16, Math.floor(span / 8));
           for (let s = 0; s < segments; s++) {
             const theta1 = THREE.MathUtils.degToRad(sDeg + (s / segments) * span);
             const theta2 = THREE.MathUtils.degToRad(sDeg + ((s + 1) / segments) * span);
@@ -394,7 +397,7 @@ export default function Cad2DViewer({ fullContent, artifact, token, filename = '
         geometry.setAttribute('color', new THREE.Float32BufferAttribute(lineColors, 3));
         const material = new THREE.LineBasicMaterial({
           vertexColors: true,
-          linewidth: 1.5,
+          linewidth: 2,
           transparent: true,
           opacity: 0.95
         });
@@ -414,14 +417,13 @@ export default function Cad2DViewer({ fullContent, artifact, token, filename = '
       maxY = 50;
     }
 
-    setStats((prev) => ({
-      ...prev,
+    setStats({
+      entities: entities.length,
       bounds: { minX, maxX, minY, maxY }
-    }));
+    });
 
-    // Auto zoom to fit on initial load
+    // Auto fit view on load
     fitView(minX, maxX, minY, maxY);
-    setIsLoading(false);
   }, [parsedData, activeLayerNames, theme]);
 
   // Fit View / Zoom to Extents
@@ -437,8 +439,8 @@ export default function Cad2DViewer({ fullContent, artifact, token, filename = '
 
     const centerX = (bMinX + bMaxX) / 2;
     const centerY = (bMinY + bMaxY) / 2;
-    const spanX = Math.max(bMaxX - bMinX, 10) * 1.2;
-    const spanY = Math.max(bMaxY - bMinY, 10) * 1.2;
+    const spanX = Math.max(bMaxX - bMinX, 20) * 1.35;
+    const spanY = Math.max(bMaxY - bMinY, 20) * 1.35;
 
     const containerAspect = (container.clientWidth || 800) / (container.clientHeight || 600);
     let viewH = spanY;
@@ -465,7 +467,6 @@ export default function Cad2DViewer({ fullContent, artifact, token, filename = '
 
   const handleMouseDown = (e) => {
     if (e.button === 0 || e.button === 1) {
-      // Left or Middle drag
       if (measuringMode && e.button === 0) {
         handleMeasureClick(e);
         return;
@@ -490,7 +491,6 @@ export default function Cad2DViewer({ fullContent, artifact, token, filename = '
     const mouseX = e.clientX - rect.left;
     const mouseY = e.clientY - rect.top;
 
-    // Convert screen mouse coords to CAD World coords
     const normX = (mouseX / rect.width) * 2 - 1;
     const normY = -(mouseY / rect.height) * 2 + 1;
 
@@ -519,9 +519,6 @@ export default function Cad2DViewer({ fullContent, artifact, token, filename = '
     if (!cam) return;
 
     const zoomFactor = e.deltaY < 0 ? 0.85 : 1.18;
-    const curW = cam.right - cam.left;
-    const curH = cam.top - cam.bottom;
-
     cam.left *= zoomFactor;
     cam.right *= zoomFactor;
     cam.top *= zoomFactor;
@@ -557,7 +554,7 @@ export default function Cad2DViewer({ fullContent, artifact, token, filename = '
     });
   };
 
-  const handleMeasureClick = (e) => {
+  const handleMeasureClick = () => {
     const pt = { x: parseFloat(cursorCoords.x), y: parseFloat(cursorCoords.y) };
     if (measurePoints.length === 0) {
       setMeasurePoints([pt]);

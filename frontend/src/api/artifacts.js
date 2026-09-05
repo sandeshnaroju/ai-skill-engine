@@ -82,8 +82,12 @@ export const artifactsApi = {
     return res?.data !== undefined ? res.data : res;
   },
 
-  getExportUrl: (artifactId, token = null) => {
-    return `/api/v1/artifacts/${artifactId}/export${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+  getExportUrl: (artifactId, token = null, format = null) => {
+    const params = new URLSearchParams();
+    if (token) params.set('token', token);
+    if (format) params.set('format', format);
+    const qs = params.toString();
+    return `/api/v1/artifacts/${artifactId}/export${qs ? `?${qs}` : ''}`;
   },
 
   getStreamUrl: (artifactId, token = null) => {
