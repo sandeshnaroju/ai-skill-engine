@@ -202,7 +202,7 @@ function AppContent() {
       document.querySelectorAll('iframe').forEach((frame) => {
         frame.contentWindow?.postMessage({ type: 'THEME_CHANGE', theme }, '*');
       });
-    } catch {}
+    } catch { }
   }, [theme]);
 
   // Synchronize when theme changes from within an iframe or another tab
@@ -231,10 +231,10 @@ function AppContent() {
         setIsSidebarOpen(false);
       }
     };
-    
+
     // Initial check on mount
     handleResize();
-    
+
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
@@ -545,7 +545,9 @@ function AppContent() {
                   alignItems: 'center',
                   justifyContent: 'center',
                   cursor: 'pointer',
-                  width: '100%'
+                  width: '100%',
+                  marginRight: '28px',
+                  paddingLeft: '4px'
                 }}
                 onClick={() => navigate('/playground')}
               >
@@ -553,7 +555,7 @@ function AppContent() {
                   src="/logo_navbar.svg"
                   alt="AI Skill Engine"
                   style={{
-                    height: '38px',
+                    height: '48px',
                     maxWidth: '170px',
                     width: 'auto',
                     display: 'block',
@@ -586,7 +588,7 @@ function AppContent() {
                   position: 'absolute',
                   right: 0,
                   top: '50%',
-                  transform: 'translateY(-50%)',
+                  transform: 'translateY(-60%)',
                   padding: '6px',
                   borderRadius: '8px',
                   display: 'flex',

@@ -129,33 +129,96 @@ Supports TLS (STARTTLS) and SSL, configurable username, sender address, and encr
 
 ---
 
-## 📸 Screenshots
+## 📸 Screenshots & Visual Tour
+
+<div align="center">
+  <h3>💬 Interactive Chat Playground & Live Canvas</h3>
+  <img src="screenshots/chat_playground.png" alt="Chat Playground" width="100%" />
+</div>
+
+<br/>
+
+### 🎨 Live Canvas & Artifact Previews
 
 <table width="100%">
   <tr>
     <td width="50%" align="center">
-      <b>💬 Chat Playground</b><br/>
-      <img src="screenshots/playground.png" alt="Chat Playground" width="100%"/>
+      <b>📄 Interactive Document Viewer</b><br/>
+      <img src="screenshots/document_viewer.png" alt="Document Viewer" width="100%"/>
     </td>
     <td width="50%" align="center">
-      <b>🛠️ Skills Catalog & Editor</b><br/>
-      <img src="screenshots/skills.png" alt="Skills Catalog" width="100%"/>
+      <b>📊 Spreadsheet & Data Analysis Viewer</b><br/>
+      <img src="screenshots/spreadsheet_viewer.png" alt="Spreadsheet Viewer" width="100%"/>
     </td>
   </tr>
   <tr>
     <td width="50%" align="center">
-      <b>📦 App Groups & Packaging</b><br/>
-      <img src="screenshots/App%20groups.png" alt="App Groups" width="100%"/>
+      <b>📽️ Dynamic Presentation Slides</b><br/>
+      <img src="screenshots/presentation.png" alt="Presentation Viewer" width="100%"/>
     </td>
     <td width="50%" align="center">
-      <b>📊 Cost & Usage Analytics</b><br/>
-      <img src="screenshots/usage.png" alt="Usage Summary" width="100%"/>
+      <b>📐 AutoCAD & 3D Model Viewer</b><br/>
+      <img src="screenshots/cad_3d_viewer.png" alt="AutoCAD 3D Viewer" width="100%"/>
+    </td>
+  </tr>
+</table>
+
+<br/>
+
+### 🏢 Multi-Tenant Gateway & Skill Management
+
+<table width="100%">
+  <tr>
+    <td width="50%" align="center">
+      <b>🏢 Tenants & API Keys Setup</b><br/>
+      <img src="screenshots/tenants_setup.png" alt="Tenants Setup" width="100%"/>
+    </td>
+    <td width="50%" align="center">
+      <b>🧩 Skills Catalog & Custom Tools</b><br/>
+      <img src="screenshots/skills_setup.png" alt="Skills Setup" width="100%"/>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center">
+      <b>📦 App & Skill Group Packaging</b><br/>
+      <img src="screenshots/app_skill_group_setup.png" alt="App & Skill Groups" width="100%"/>
+    </td>
+    <td width="50%" align="center">
+      <b>🔌 Model Context Protocol (MCP) Setup</b><br/>
+      <img src="screenshots/mcp_setup.png" alt="MCP Setup" width="100%"/>
+    </td>
+  </tr>
+</table>
+
+<br/>
+
+### ⚙️ Execution Infrastructure, Storage & Monitoring
+
+<table width="100%">
+  <tr>
+    <td width="50%" align="center">
+      <b>🛡️ Isolated Code Sandbox Environments</b><br/>
+      <img src="screenshots/sandbox_setup.png" alt="Sandbox Setup" width="100%"/>
+    </td>
+    <td width="50%" align="center">
+      <b>💾 Cloud & Local Storage Providers</b><br/>
+      <img src="screenshots/storage_setup.png" alt="Storage Setup" width="100%"/>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center">
+      <b>🧪 Interactive API Tester & Request Builder</b><br/>
+      <img src="screenshots/api_tester.png" alt="API Tester" width="100%"/>
+    </td>
+    <td width="50%" align="center">
+      <b>💰 LLM Token & Cost Tracking</b><br/>
+      <img src="screenshots/llm_costs_viewer.png" alt="LLM Costs Viewer" width="100%"/>
     </td>
   </tr>
   <tr>
     <td colspan="2" align="center">
-      <b>🔌 Built-in API Tester</b><br/>
-      <img src="screenshots/Api%20tester.png" alt="API Tester" width="80%"/>
+      <b>📜 Real-Time Audit & Tool Execution Logs</b><br/>
+      <img src="screenshots/logs_viewer.png" alt="Logs Viewer" width="85%"/>
     </td>
   </tr>
 </table>
