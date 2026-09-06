@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate, Routes, Route, Navigate } from 'react-router-dom';
-import { Key, Layers, MessageSquare, Database, ShieldCheck, Cpu, BookOpen, Sun, Moon, Activity, Box, PanelLeftClose, PanelLeftOpen, Zap, Terminal, FileText, DollarSign, LogOut, User as UserIcon, HardDrive, Mail, ChevronDown, ChevronUp } from 'lucide-react';
+import { Key, Layers, MessageSquare, Database, ShieldCheck, Cpu, BookOpen, Sun, Moon, Activity, Box, PanelLeftClose, PanelLeftOpen, Zap, Terminal, FileText, DollarSign, LogOut, User as UserIcon, HardDrive, Mail, ChevronDown, ChevronUp, ExternalLink } from 'lucide-react';
 import TenantManager from './components/TenantManager';
 import SkillCatalog from './components/SkillCatalog';
 import ChatPlayground from './components/ChatPlayground';
@@ -27,6 +27,18 @@ function ApiErrorListenerBridge() {
 
   useEffect(() => {
     const unsubscribe = apiClient.onError((error) => {
+      // Do not popup a disruptive 401 error toast on public pages (/api-docs, /docs, /embed)
+      // or for silent unauthenticated session checks
+      const isPublicPath = typeof window !== 'undefined' && (
+        window.location.pathname === '/api-docs' ||
+        window.location.pathname === '/docs' ||
+        window.location.pathname.startsWith('/embed')
+      );
+
+      if (error.status === 401 && (isPublicPath || error.message?.includes('Authentication required') || error.message?.includes('Invalid session'))) {
+        return;
+      }
+
       showError(error.message || 'An unexpected API error occurred', error.status || null);
     });
     return unsubscribe;
@@ -244,7 +256,7 @@ function AppContent() {
   };
 
   const loadStats = async () => {
-    if (!dbStatus.ready) return;
+    if (!dbStatus.ready || !isAuthenticated) return;
     try {
       const [skillsData, tenantsData, logsData] = await Promise.all([
         skillsApi.list(),
@@ -267,8 +279,10 @@ function AppContent() {
   };
 
   useEffect(() => {
-    loadStats();
-  }, [activeTab, dbStatus.ready]);
+    if (isAuthenticated) {
+      loadStats();
+    }
+  }, [activeTab, dbStatus.ready, isAuthenticated]);
 
   const activeNavItem = activeTab === 'profile'
     ? { id: 'profile', label: 'User Profile', icon: UserIcon }
@@ -278,6 +292,18 @@ function AppContent() {
   // If iframe embed canvas view, render directly without dashboard shell
   if (location.pathname.startsWith('/embed/canvas')) {
     return <Canvas isEmbed={true} initialTheme={theme} />;
+  }
+
+  // If public API documentation page, render directly outside the dashboard shell
+  if (location.pathname === '/api-docs' || location.pathname === '/docs') {
+    return (
+      <ApiDocs
+        isStandalone={true}
+        theme={theme}
+        toggleTheme={toggleTheme}
+        isAuthenticated={isAuthenticated}
+      />
+    );
   }
 
   // Render database creation loader screen if DB is not ready (includes encryption key error state)
@@ -503,27 +529,38 @@ function AppContent() {
       >
         <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, flex: 1 }}>
           {/* Top Brand & Sidebar Toggle */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: isSidebarOpen ? 'space-between' : 'center', marginBottom: '20px', flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: isSidebarOpen ? 'space-between' : 'center', marginBottom: '22px', flexShrink: 0, gap: '8px' }}>
             {isSidebarOpen ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <div style={{ background: 'linear-gradient(135deg, var(--primary-violet), var(--primary-emerald))', padding: '9px', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: 'var(--shadow-glow)' }}>
-                  <Zap size={22} color="#ffffff" />
-                </div>
-                <div>
-                  <h1 style={{ fontSize: '1.1rem', fontWeight: '800', letterSpacing: '-0.3px', color: 'var(--text-main)' }}>
-                    AI Skill Engine
-                  </h1>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
-                    <span className="pulse-dot" />
-                    <span style={{ fontSize: '0.72rem', color: 'var(--primary-emerald)', fontWeight: '700' }}>
-                      Online
-                    </span>
-                  </div>
-                </div>
+              <div
+                style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', flex: 1, minWidth: 0 }}
+                onClick={() => navigate('/playground')}
+              >
+                <img
+                  src="/logo_navbar.svg"
+                  alt="AI Skill Engine"
+                  style={{
+                    height: '54px',
+                    maxWidth: '100%',
+                    width: 'auto',
+                    display: 'block',
+                    filter: 'drop-shadow(0 2px 12px rgba(0, 242, 254, 0.3))'
+                  }}
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none';
+                  }}
+                />
               </div>
             ) : (
-              <div style={{ background: 'linear-gradient(135deg, var(--primary-violet), var(--primary-emerald))', padding: '9px', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Zap size={22} color="#ffffff" />
+              <div
+                style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '4px' }}
+                onClick={() => setIsSidebarOpen(true)}
+                title="Expand Sidebar"
+              >
+                <img
+                  src="/favicon.svg"
+                  alt="AI Skill Engine"
+                  style={{ width: '42px', height: '42px', filter: 'drop-shadow(0 2px 12px rgba(0, 242, 254, 0.4))' }}
+                />
               </div>
             )}
 
@@ -648,6 +685,7 @@ function AppContent() {
                 {[...bottomNavItems].sort((a, b) => a.order - b.order).map((item) => {
                   const Icon = item.icon;
                   const isActive = activeTab === item.id;
+                  const isApiDocs = item.id === 'api-docs';
                   return (
                     <button
                       key={item.id}
@@ -655,7 +693,7 @@ function AppContent() {
                       style={{
                         display: 'flex',
                         alignItems: 'center',
-                        justifyContent: 'flex-start',
+                        justifyContent: 'space-between',
                         gap: '12px',
                         padding: '10px 14px',
                         borderRadius: '11px',
@@ -673,8 +711,13 @@ function AppContent() {
                         marginTop: item.id === 'tester' ? '12px' : '0' // divider margin
                       }}
                     >
-                      <Icon size={18} color={isActive ? '#ffffff' : 'var(--text-sub)'} />
-                      <span>{item.label}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <Icon size={18} color={isActive ? '#ffffff' : 'var(--text-sub)'} />
+                        <span>{item.label}</span>
+                      </div>
+                      {isApiDocs && (
+                        <ExternalLink size={13} style={{ opacity: 0.6, flexShrink: 0 }} />
+                      )}
                     </button>
                   );
                 })}

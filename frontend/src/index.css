@@ -576,8 +576,8 @@ input:focus, select:focus, textarea:focus {
 }
 
 .app-sidebar {
-  width: 260px;
-  min-width: 260px;
+  width: 275px;
+  min-width: 275px;
   height: calc(100vh - 24px);
   position: sticky;
   top: 12px;

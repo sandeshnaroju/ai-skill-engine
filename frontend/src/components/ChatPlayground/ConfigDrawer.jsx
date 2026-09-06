@@ -39,9 +39,44 @@ export default function ConfigDrawer({
   onExportTranscript,
   onClearConsole,
   sessionsCount,
-  executedToolsCount
+  executedToolsCount,
+  // Completion parameters props
+  temperature,
+  setTemperature,
+  topP,
+  setTopP,
+  topK,
+  setTopK,
+  maxTokens,
+  setMaxTokens,
+  presencePenalty,
+  setPresencePenalty,
+  frequencyPenalty,
+  setFrequencyPenalty,
+  stopSequences,
+  setStopSequences,
+  seed,
+  setSeed,
+  responseFormat,
+  setResponseFormat,
+  toolChoice,
+  setToolChoice,
+  userParam,
+  setUserParam,
+  reasoningEffort,
+  setReasoningEffort,
+  thinkingBudget,
+  setThinkingBudget,
+  openrouterOrder,
+  setOpenrouterOrder,
+  openrouterDataCollection,
+  setOpenrouterDataCollection,
+  openrouterModels,
+  setOpenrouterModels,
+  extraBodyJson,
+  setExtraBodyJson
 }) {
-  const [activeTab, setActiveTab] = useState('agent'); // 'agent' | 'userdata' | 'skills' | 'system'
+  const [activeTab, setActiveTab] = useState('agent'); // 'agent' | 'params' | 'userdata' | 'skills' | 'system'
 
   if (!isOpen) return null;
 
@@ -124,6 +159,7 @@ export default function ConfigDrawer({
         }}>
           {[
             { id: 'agent', label: 'Agent & Model', icon: Cpu },
+            { id: 'params', label: 'Parameters', icon: Sliders },
             { id: 'userdata', label: 'User Data', icon: Database },
             { id: 'skills', label: 'Skills Filter', icon: Zap },
             { id: 'system', label: 'System Prompt', icon: FileText }
@@ -290,6 +326,339 @@ export default function ConfigDrawer({
               </div>
             </div>
           )}
+
+          {/* TAB: Parameters (OpenAI & Provider Specification) */}
+          {activeTab === 'params' && (() => {
+            const activeModelObj = tenantModels?.find(m => m.model_name === selectedModel);
+            const rawProvider = (activeModelObj?.provider || '').toLowerCase();
+            const mLower = (selectedModel || '').toLowerCase();
+            const isGemini = rawProvider === 'gemini' || mLower.includes('gemini') || rawProvider === 'google';
+            const isProChat = rawProvider === 'prochat' || mLower.includes('prochat') || mLower.startsWith('genui');
+            const isOpenRouter = rawProvider === 'openrouter' || mLower.includes('openrouter') || selectedModel?.includes('/');
+            const isOpenAiReasoning = mLower.includes('o1') || mLower.includes('o3') || mLower.includes('o4');
+            const isAnthropic = rawProvider === 'anthropic' || mLower.includes('claude');
+
+            return (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+                
+                {/* Active Mode Banner */}
+                <div style={{
+                  padding: '10px 14px',
+                  borderRadius: '10px',
+                  fontSize: '0.74rem',
+                  lineHeight: '1.4',
+                  background: isGemini || isProChat ? 'rgba(59, 130, 246, 0.08)' : (isOpenRouter ? 'rgba(16, 185, 129, 0.08)' : 'rgba(139, 92, 246, 0.08)'),
+                  border: `1px solid ${isGemini || isProChat ? 'rgba(59, 130, 246, 0.25)' : (isOpenRouter ? 'rgba(16, 185, 129, 0.25)' : 'rgba(139, 92, 246, 0.25)')}`,
+                  color: 'var(--text-sub)'
+                }}>
+                  <div style={{ fontWeight: '700', marginBottom: '2px', color: isGemini || isProChat ? '#60a5fa' : (isOpenRouter ? '#34d399' : 'var(--primary-violet)') }}>
+                    {isGemini || isProChat ? 'Google Gemini & ProChat Mode' : (isOpenRouter ? 'OpenRouter Routing Mode' : (isOpenAiReasoning ? 'OpenAI Reasoning Mode' : 'Standard OpenAI Mode'))}
+                  </div>
+                  <div>
+                    {isGemini || isProChat ? (
+                      <span><code>temperature</code>, <code>top_p</code>, <code>max_tokens</code>, <code>stop</code>, <code>response_format</code>, and <code>reasoning_effort</code> (Gemini 3.x / 2.5: <code>none</code>, <code>low</code>, <code>medium</code>, <code>high</code>) are supported. Incompatible params (penalties, seed) are stripped to guarantee <code>200 OK</code>.</span>
+                    ) : isOpenRouter ? (
+                      <span>Includes <code>top_k</code>, provider routing preferences, fallback models, and thinking tokens.</span>
+                    ) : (
+                      <span>All parameter fields map directly into standard OpenAI completion requests.</span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Temperature */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.74rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted)' }}>
+                    <span>Temperature</span>
+                    <span style={{ color: 'var(--primary-violet)' }}>{temperature !== '' ? temperature : 'default'}</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <input
+                      type="range"
+                      min="0"
+                      max="2"
+                      step="0.05"
+                      value={temperature !== '' ? temperature : 0.7}
+                      disabled={isOpenAiReasoning}
+                      onChange={(e) => setTemperature(e.target.value)}
+                      style={{ flex: 1, accentColor: 'var(--primary-violet)' }}
+                    />
+                    <input
+                      type="number"
+                      min="0"
+                      max="2"
+                      step="0.1"
+                      placeholder="default"
+                      value={temperature}
+                      disabled={isOpenAiReasoning}
+                      onChange={(e) => setTemperature(e.target.value)}
+                      style={{ width: '65px', padding: '6px 8px', fontSize: '0.78rem', borderRadius: '8px', background: 'var(--bg-input)', border: '1px solid var(--border-subtle)', color: 'var(--text-main)', textAlign: 'center' }}
+                    />
+                  </div>
+                  {isOpenAiReasoning && <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Fixed by reasoning model</span>}
+                </div>
+
+                {/* Top P */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.74rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted)' }}>
+                    <span>Top P (Nucleus Sampling)</span>
+                    <span style={{ color: 'var(--primary-violet)' }}>{topP !== '' ? topP : 'default'}</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <input
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.05"
+                      value={topP !== '' ? topP : 1.0}
+                      onChange={(e) => setTopP(e.target.value)}
+                      style={{ flex: 1, accentColor: 'var(--primary-violet)' }}
+                    />
+                    <input
+                      type="number"
+                      min="0"
+                      max="1"
+                      step="0.05"
+                      placeholder="default"
+                      value={topP}
+                      onChange={(e) => setTopP(e.target.value)}
+                      style={{ width: '65px', padding: '6px 8px', fontSize: '0.78rem', borderRadius: '8px', background: 'var(--bg-input)', border: '1px solid var(--border-subtle)', color: 'var(--text-main)', textAlign: 'center' }}
+                    />
+                  </div>
+                </div>
+
+                {/* Max Tokens & Response Format */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '6px' }}>
+                      {isOpenAiReasoning ? 'Max Completion' : 'Max Tokens'}
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      placeholder="e.g. 4096"
+                      value={maxTokens}
+                      onChange={(e) => setMaxTokens(e.target.value)}
+                      style={{ width: '100%', padding: '8px 10px', fontSize: '0.8rem', borderRadius: '8px', background: 'var(--bg-input)', border: '1px solid var(--border-subtle)', color: 'var(--text-main)' }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '6px' }}>
+                      Response Format
+                    </label>
+                    <select
+                      value={responseFormat}
+                      onChange={(e) => setResponseFormat(e.target.value)}
+                      style={{ width: '100%', padding: '8px 10px', fontSize: '0.8rem', borderRadius: '8px', background: 'var(--bg-input)', border: '1px solid var(--border-subtle)', color: 'var(--text-main)', cursor: 'pointer' }}
+                    >
+                      <option value="text">Default (Text)</option>
+                      <option value="json_object">JSON Object</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Reasoning Effort & Thinking Budget */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                      <label style={{ fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted)' }}>
+                        Reasoning Effort
+                      </label>
+                      {(isGemini || isProChat) && (
+                        <span style={{ fontSize: '0.64rem', color: '#60a5fa' }}>Gemini 3.x / 2.5</span>
+                      )}
+                    </div>
+                    <select
+                      value={reasoningEffort}
+                      onChange={(e) => setReasoningEffort(e.target.value)}
+                      style={{ width: '100%', padding: '8px 10px', fontSize: '0.8rem', borderRadius: '8px', background: 'var(--bg-input)', border: '1px solid var(--border-subtle)', color: 'var(--text-main)', cursor: 'pointer' }}
+                    >
+                      <option value="">Default</option>
+                      <option value="none">None (Off)</option>
+                      <option value="minimal">Minimal</option>
+                      <option value="low">Low</option>
+                      <option value="medium">Medium</option>
+                      <option value="high">High</option>
+                      <option value="xhigh">Extra High (xAI / OpenAI)</option>
+                      <option value="max">Max</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '6px' }}>
+                      Thinking Budget
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder="e.g. 2000"
+                      value={thinkingBudget}
+                      onChange={(e) => setThinkingBudget(e.target.value)}
+                      style={{ width: '100%', padding: '8px 10px', fontSize: '0.8rem', borderRadius: '8px', background: 'var(--bg-input)', border: '1px solid var(--border-subtle)', color: 'var(--text-main)' }}
+                    />
+                  </div>
+                </div>
+
+                {/* Penalties (Presence & Frequency) */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', opacity: (isGemini || isProChat) ? 0.5 : 1 }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '6px' }}>
+                      Presence Penalty
+                    </label>
+                    <input
+                      type="number"
+                      min="-2"
+                      max="2"
+                      step="0.1"
+                      placeholder="0.0"
+                      value={presencePenalty}
+                      disabled={isGemini || isProChat}
+                      onChange={(e) => setPresencePenalty(e.target.value)}
+                      style={{ width: '100%', padding: '8px 10px', fontSize: '0.8rem', borderRadius: '8px', background: 'var(--bg-input)', border: '1px solid var(--border-subtle)', color: 'var(--text-main)' }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '6px' }}>
+                      Frequency Penalty
+                    </label>
+                    <input
+                      type="number"
+                      min="-2"
+                      max="2"
+                      step="0.1"
+                      placeholder="0.0"
+                      value={frequencyPenalty}
+                      disabled={isGemini || isProChat}
+                      onChange={(e) => setFrequencyPenalty(e.target.value)}
+                      style={{ width: '100%', padding: '8px 10px', fontSize: '0.8rem', borderRadius: '8px', background: 'var(--bg-input)', border: '1px solid var(--border-subtle)', color: 'var(--text-main)' }}
+                    />
+                  </div>
+                </div>
+
+                {/* Seed & Tool Choice */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '6px' }}>
+                      Seed
+                    </label>
+                    <input
+                      type="number"
+                      placeholder="e.g. 42"
+                      value={seed}
+                      onChange={(e) => setSeed(e.target.value)}
+                      style={{ width: '100%', padding: '8px 10px', fontSize: '0.8rem', borderRadius: '8px', background: 'var(--bg-input)', border: '1px solid var(--border-subtle)', color: 'var(--text-main)' }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '6px' }}>
+                      Tool Choice
+                    </label>
+                    <select
+                      value={toolChoice}
+                      onChange={(e) => setToolChoice(e.target.value)}
+                      style={{ width: '100%', padding: '8px 10px', fontSize: '0.8rem', borderRadius: '8px', background: 'var(--bg-input)', border: '1px solid var(--border-subtle)', color: 'var(--text-main)', cursor: 'pointer' }}
+                    >
+                      <option value="auto">auto</option>
+                      <option value="required">required</option>
+                      <option value="none">none</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Stop Sequences & User ID */}
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '6px' }}>
+                    Stop Sequences (comma-separated)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. ###, END_CONV, STOP"
+                    value={stopSequences}
+                    onChange={(e) => setStopSequences(e.target.value)}
+                    style={{ width: '100%', padding: '8px 10px', fontSize: '0.8rem', borderRadius: '8px', background: 'var(--bg-input)', border: '1px solid var(--border-subtle)', color: 'var(--text-main)' }}
+                  />
+                </div>
+
+                {/* OpenRouter options */}
+                {(isOpenRouter || isAnthropic) && (
+                  <div style={{ padding: '12px', borderRadius: '10px', background: 'rgba(16, 185, 129, 0.04)', border: '1px solid rgba(16, 185, 129, 0.2)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    <div style={{ fontSize: '0.76rem', fontWeight: '700', color: 'var(--primary-emerald)' }}>
+                      ⚡ {isOpenRouter ? 'OpenRouter Routing & Sampling' : 'Anthropic Sampling'}
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.7rem', color: 'var(--text-sub)', fontWeight: '600', marginBottom: '4px' }}>Top K</label>
+                        <input
+                          type="number"
+                          placeholder="e.g. 40"
+                          value={topK}
+                          onChange={(e) => setTopK(e.target.value)}
+                          style={{ width: '100%', padding: '6px 8px', fontSize: '0.78rem', borderRadius: '6px', background: 'var(--bg-input)', border: '1px solid var(--border-subtle)', color: 'var(--text-main)' }}
+                        />
+                      </div>
+
+                      {isOpenRouter && (
+                        <>
+                          <div>
+                            <label style={{ display: 'block', fontSize: '0.7rem', color: 'var(--text-sub)', fontWeight: '600', marginBottom: '4px' }}>Data Collection</label>
+                            <select
+                              value={openrouterDataCollection}
+                              onChange={(e) => setOpenrouterDataCollection(e.target.value)}
+                              style={{ width: '100%', padding: '6px 8px', fontSize: '0.78rem', borderRadius: '6px', background: 'var(--bg-input)', border: '1px solid var(--border-subtle)', color: 'var(--text-main)' }}
+                            >
+                              <option value="">Default (Provider policy)</option>
+                              <option value="allow">Allow data collection</option>
+                              <option value="deny">Deny data collection</option>
+                            </select>
+                          </div>
+
+                          <div>
+                            <label style={{ display: 'block', fontSize: '0.7rem', color: 'var(--text-sub)', fontWeight: '600', marginBottom: '4px' }}>Provider Order</label>
+                            <input
+                              type="text"
+                              placeholder="e.g. Anthropic, Together"
+                              value={openrouterOrder}
+                              onChange={(e) => setOpenrouterOrder(e.target.value)}
+                              style={{ width: '100%', padding: '6px 8px', fontSize: '0.78rem', borderRadius: '6px', background: 'var(--bg-input)', border: '1px solid var(--border-subtle)', color: 'var(--text-main)' }}
+                            />
+                          </div>
+
+                          <div>
+                            <label style={{ display: 'block', fontSize: '0.7rem', color: 'var(--text-sub)', fontWeight: '600', marginBottom: '4px' }}>Fallback Models</label>
+                            <input
+                              type="text"
+                              placeholder="e.g. openai/gpt-4o-mini"
+                              value={openrouterModels}
+                              onChange={(e) => setOpenrouterModels(e.target.value)}
+                              style={{ width: '100%', padding: '6px 8px', fontSize: '0.78rem', borderRadius: '6px', background: 'var(--bg-input)', border: '1px solid var(--border-subtle)', color: 'var(--text-main)' }}
+                            />
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Extra Body JSON */}
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '6px' }}>
+                    Custom Extra Body (JSON)
+                  </label>
+                  <textarea
+                    rows={2}
+                    placeholder='{"transforms": ["middle-out"]}'
+                    value={extraBodyJson}
+                    onChange={(e) => setExtraBodyJson(e.target.value)}
+                    style={{ width: '100%', padding: '8px 10px', fontSize: '0.78rem', fontFamily: 'monospace', borderRadius: '8px', background: 'var(--bg-input)', border: '1px solid var(--border-subtle)', color: 'var(--text-main)', resize: 'vertical' }}
+                  />
+                </div>
+
+              </div>
+            );
+          })()}
 
           {/* TAB 2: User Data */}
           {activeTab === 'userdata' && (

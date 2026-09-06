@@ -135,6 +135,25 @@ export default function ChatPlayground({ isSidebarOpen, toggleSidebar }) {
   const [selectedSkillNames, setSelectedSkillNames] = useState([]);
   const [systemPrompt, setSystemPrompt] = useState('You are AI Skill Engine, an enterprise agent equipped with sandboxed execution environments and specialized skills.');
 
+  // Model completion parameters state
+  const [temperature, setTemperature] = useState('');
+  const [topP, setTopP] = useState('');
+  const [topK, setTopK] = useState('');
+  const [maxTokens, setMaxTokens] = useState('');
+  const [presencePenalty, setPresencePenalty] = useState('');
+  const [frequencyPenalty, setFrequencyPenalty] = useState('');
+  const [stopSequences, setStopSequences] = useState('');
+  const [seed, setSeed] = useState('');
+  const [responseFormat, setResponseFormat] = useState('text');
+  const [toolChoice, setToolChoice] = useState('auto');
+  const [userParam, setUserParam] = useState('');
+  const [reasoningEffort, setReasoningEffort] = useState('');
+  const [thinkingBudget, setThinkingBudget] = useState('');
+  const [openrouterOrder, setOpenrouterOrder] = useState('');
+  const [openrouterDataCollection, setOpenrouterDataCollection] = useState('');
+  const [openrouterModels, setOpenrouterModels] = useState('');
+  const [extraBodyJson, setExtraBodyJson] = useState('');
+
   const fetchTemplates = async () => {
     try {
       const data = await userDataApi.list({ page_size: 100, page: 1, tenant_id: selectedTenantId || undefined });
@@ -667,6 +686,63 @@ export default function ChatPlayground({ isSidebarOpen, toggleSidebar }) {
           base64: f.base64
         }))
       };
+
+      // Attach Model Parameters
+      if (temperature !== '' && !isNaN(Number(temperature))) {
+        payload.temperature = Number(temperature);
+      }
+      if (topP !== '' && !isNaN(Number(topP))) {
+        payload.top_p = Number(topP);
+      }
+      if (topK !== '' && !isNaN(Number(topK))) {
+        payload.top_k = Number(topK);
+      }
+      if (maxTokens !== '' && !isNaN(Number(maxTokens))) {
+        payload.max_tokens = Number(maxTokens);
+      }
+      if (presencePenalty !== '' && !isNaN(Number(presencePenalty))) {
+        payload.presence_penalty = Number(presencePenalty);
+      }
+      if (frequencyPenalty !== '' && !isNaN(Number(frequencyPenalty))) {
+        payload.frequency_penalty = Number(frequencyPenalty);
+      }
+      if (stopSequences.trim()) {
+        payload.stop = stopSequences.split(',').map(s => s.trim()).filter(Boolean);
+      }
+      if (seed !== '' && !isNaN(Number(seed))) {
+        payload.seed = Number(seed);
+      }
+      if (responseFormat && responseFormat !== 'text') {
+        payload.response_format = { type: responseFormat };
+      }
+      if (toolChoice && toolChoice !== 'auto') {
+        payload.tool_choice = toolChoice;
+      }
+      if (userParam.trim()) {
+        payload.user = userParam.trim();
+      }
+      if (reasoningEffort) {
+        payload.reasoning_effort = reasoningEffort;
+      }
+      if (thinkingBudget !== '' && !isNaN(Number(thinkingBudget))) {
+        payload.thinking_budget = Number(thinkingBudget);
+      }
+      if (openrouterOrder.trim() || openrouterDataCollection) {
+        const provObj = {};
+        if (openrouterOrder.trim()) provObj.order = openrouterOrder.split(',').map(s => s.trim()).filter(Boolean);
+        if (openrouterDataCollection) provObj.data_collection = openrouterDataCollection;
+        payload.openrouter_provider = provObj;
+      }
+      if (openrouterModels.trim()) {
+        payload.openrouter_models = openrouterModels.split(',').map(s => s.trim()).filter(Boolean);
+      }
+      if (extraBodyJson.trim()) {
+        try {
+          payload.extra_body = JSON.parse(extraBodyJson);
+        } catch (e) {
+          console.warn('Custom Extra Body JSON parse error:', e);
+        }
+      }
 
       const response = await fetch('/api/v1/chat/completions', {
         method: 'POST',
@@ -1280,6 +1356,40 @@ export default function ChatPlayground({ isSidebarOpen, toggleSidebar }) {
         onClearConsole={() => setMessages([])}
         sessionsCount={sessionsTotalItems || sessions.length}
         executedToolsCount={executedTools.length}
+        temperature={temperature}
+        setTemperature={setTemperature}
+        topP={topP}
+        setTopP={setTopP}
+        topK={topK}
+        setTopK={setTopK}
+        maxTokens={maxTokens}
+        setMaxTokens={setMaxTokens}
+        presencePenalty={presencePenalty}
+        setPresencePenalty={setPresencePenalty}
+        frequencyPenalty={frequencyPenalty}
+        setFrequencyPenalty={setFrequencyPenalty}
+        stopSequences={stopSequences}
+        setStopSequences={setStopSequences}
+        seed={seed}
+        setSeed={setSeed}
+        responseFormat={responseFormat}
+        setResponseFormat={setResponseFormat}
+        toolChoice={toolChoice}
+        setToolChoice={setToolChoice}
+        userParam={userParam}
+        setUserParam={setUserParam}
+        reasoningEffort={reasoningEffort}
+        setReasoningEffort={setReasoningEffort}
+        thinkingBudget={thinkingBudget}
+        setThinkingBudget={setThinkingBudget}
+        openrouterOrder={openrouterOrder}
+        setOpenrouterOrder={setOpenrouterOrder}
+        openrouterDataCollection={openrouterDataCollection}
+        setOpenrouterDataCollection={setOpenrouterDataCollection}
+        openrouterModels={openrouterModels}
+        setOpenrouterModels={setOpenrouterModels}
+        extraBodyJson={extraBodyJson}
+        setExtraBodyJson={setExtraBodyJson}
       />
 
       {/* ---------------------------------------------------------------- */}

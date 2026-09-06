@@ -8,6 +8,7 @@ Heavy lifting is delegated to engine sub-modules:
   engine.messages       — system prompt & message list building
   engine.usage          — token/cost accounting
 """
+import os
 import json
 import time
 import openai
@@ -37,6 +38,174 @@ from skill_registry import skill_registry
 def _chunk(session_id: str, model_name: str, **delta_fields) -> str:
     """Build and serialise a single SSE chat completion chunk."""
     return f"data: {json.dumps({'id': f'chatcmpl-{session_id}', 'object': 'chat.completion.chunk', 'created': 1700000000, 'model': model_name, 'choices': [{'index': 0, 'delta': delta_fields, 'finish_reason': None}]})}\n\n"
+
+
+def _resolve_local_image_to_base64(url: str) -> str:
+    """Resolve a relative file URL, localhost URL, or local sandbox path to a data:<mime>;base64 URI."""
+    if not url or not isinstance(url, str):
+        return url
+    if url.startswith("data:"):
+        return url.replace("\n", "").strip()
+
+    import urllib.parse
+    import mimetypes
+    import base64
+
+    is_local_url = any(url.startswith(p) for p in [
+        "/", "http://localhost", "https://localhost",
+        "http://127.0.0.1", "https://127.0.0.1",
+        "http://0.0.0.0", "https://0.0.0.0",
+        "http://host.docker.internal", "sandbox/"
+    ])
+
+    # If it's a truly external public internet URL (e.g., https://example.com/img.png), leave it as-is
+    if not is_local_url and (url.startswith("http://") or url.startswith("https://")):
+        return url
+
+    # Clean and unquote url path
+    unquoted = urllib.parse.unquote(url)
+    if "://" in unquoted:
+        # Strip scheme & host
+        unquoted = "/" + unquoted.split("://", 1)[-1].split("/", 1)[-1]
+
+    cleaned = unquoted.split("?")[0].lstrip("/")
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+    possible_paths = [
+        cleaned,
+        os.path.join(base_dir, cleaned),
+        os.path.join(base_dir, "sandbox", cleaned),
+        os.path.join(base_dir, "sandbox", "uploads", cleaned),
+        os.path.join(base_dir, "sandbox", "outputs", cleaned)
+    ]
+
+    filename = os.path.basename(cleaned)
+    if filename:
+        possible_paths.append(os.path.join(base_dir, "sandbox", "uploads", "default", filename))
+        possible_paths.append(os.path.join(base_dir, "sandbox", "outputs", "default", filename))
+        
+        # Search all subdirectories in sandbox/uploads and sandbox/outputs
+        for sub_dir_name in ("uploads", "outputs"):
+            sub_root = os.path.join(base_dir, "sandbox", sub_dir_name)
+            if os.path.exists(sub_root):
+                for entry in os.listdir(sub_root):
+                    tenant_dir = os.path.join(sub_root, entry)
+                    if os.path.isdir(tenant_dir):
+                        possible_paths.append(os.path.join(tenant_dir, filename))
+                        # Also check if filename is part of a file in that directory
+                        for fn in os.listdir(tenant_dir):
+                            if fn == filename or fn.endswith(f"_{filename}") or filename in fn:
+                                possible_paths.append(os.path.join(tenant_dir, fn))
+
+    for p in possible_paths:
+        if os.path.isfile(p):
+            try:
+                mime_type, _ = mimetypes.guess_type(p)
+                if not mime_type:
+                    ext = os.path.splitext(p)[1].lower()
+                    mime_map = {
+                        ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+                        ".webp": "image/webp", ".gif": "image/gif", ".svg": "image/svg+xml",
+                        ".bmp": "image/bmp", ".tiff": "image/tiff",
+                        ".pdf": "application/pdf", ".mp3": "audio/mp3", ".wav": "audio/wav",
+                        ".ogg": "audio/ogg", ".m4a": "audio/mp4"
+                    }
+                    mime_type = mime_map.get(ext, "image/png")
+                with open(p, "rb") as f:
+                    encoded = base64.b64encode(f.read()).decode("utf-8").replace("\n", "").strip()
+                return f"data:{mime_type};base64,{encoded}"
+            except Exception:
+                pass
+    return url
+
+
+def _normalize_multimodal_content(content):
+    """Ensure all multimodal formats (OpenAI, Google Gemini, Anthropic Claude, xAI Grok, DeepSeek)
+    are normalized to valid OpenAI chat completion standards for execution."""
+    if isinstance(content, str):
+        if content.startswith("[") and ("image_url" in content or '"type":' in content or '"source":' in content):
+            try:
+                content = json.loads(content)
+            except Exception:
+                return content
+        else:
+            return content
+
+    if not isinstance(content, list):
+        return content
+
+    normalized = []
+    for part in content:
+        if not isinstance(part, dict):
+            normalized.append(part)
+            continue
+
+        p_type = part.get("type")
+
+        # 1. Anthropic Native Format: {"type": "image" | "document", "source": {"type": "base64", "media_type": "...", "data": "..."}}
+        if p_type in ("image", "document") and isinstance(part.get("source"), dict):
+            src = part["source"]
+            media_type = src.get("media_type") or ("application/pdf" if p_type == "document" else "image/png")
+            raw_data = src.get("data", "").replace("\n", "").strip()
+            if not raw_data.startswith("data:"):
+                data_uri = f"data:{media_type};base64,{raw_data}"
+            else:
+                data_uri = raw_data
+            normalized.append({
+                "type": "image_url",
+                "image_url": {"url": data_uri}
+            })
+
+        # 2. OpenAI / Google Gemini / Grok / DeepSeek format: {"type": "image_url", "image_url": {"url": "..."}}
+        elif p_type in ("image_url", "input_image"):
+            img_obj = part.get("image_url", {})
+            if isinstance(img_obj, dict):
+                raw_url = img_obj.get("url", "")
+                resolved_url = _resolve_local_image_to_base64(raw_url)
+                normalized.append({
+                    "type": "image_url",
+                    "image_url": {
+                        "url": resolved_url,
+                        **({"detail": img_obj["detail"]} if "detail" in img_obj else {})
+                    }
+                })
+            elif isinstance(img_obj, str):
+                resolved_url = _resolve_local_image_to_base64(img_obj)
+                normalized.append({
+                    "type": "image_url",
+                    "image_url": {"url": resolved_url}
+                })
+            elif part.get("url"):
+                resolved_url = _resolve_local_image_to_base64(part["url"])
+                normalized.append({
+                    "type": "image_url",
+                    "image_url": {"url": resolved_url}
+                })
+            else:
+                normalized.append(part)
+
+        # 3. Audio format: {"type": "input_audio", "input_audio": {"data": "...", "format": "wav" | "mp3"}}
+        elif p_type == "input_audio":
+            audio_obj = part.get("input_audio", {})
+            raw_data = audio_obj.get("data", "")
+            if raw_data and not raw_data.startswith("data:"):
+                raw_data = _resolve_local_image_to_base64(raw_data)
+                if raw_data.startswith("data:"):
+                    raw_data = raw_data.split(",", 1)[-1]
+            raw_data = raw_data.replace("\n", "").strip()
+            normalized.append({
+                "type": "input_audio",
+                "input_audio": {
+                    "data": raw_data,
+                    "format": audio_obj.get("format", "wav")
+                }
+            })
+
+        # 4. Standard text or other payload blocks
+        else:
+            normalized.append(part)
+
+    return normalized
 
 
 def _build_messages(db, persist, session_obj, user_message, allowed_skills, user_data, client_messages, tenant_id=None):
@@ -79,6 +248,7 @@ def _build_messages(db, persist, session_obj, user_message, allowed_skills, user
                         content_val = json.loads(content_val)
                     except Exception:
                         pass
+                content_val = _normalize_multimodal_content(content_val)
                 msgs.append({"role": msg.role, "content": content_val})
 
         # Inject active canvas artifacts context into system prompt
@@ -102,9 +272,10 @@ def _build_messages(db, persist, session_obj, user_message, allowed_skills, user
                 if m.get("role") == "system":
                     msgs[0]["content"] += "\n\n" + str(m.get("content", ""))
                 else:
-                    msgs.append(m)
+                    norm_content = _normalize_multimodal_content(m.get("content"))
+                    msgs.append({"role": m.get("role"), "content": norm_content})
         else:
-            msgs.append({"role": "user", "content": user_message})
+            msgs.append({"role": "user", "content": _normalize_multimodal_content(user_message)})
 
     return msgs
 
@@ -170,6 +341,250 @@ def _log_and_append_tool_results(db, tenant, session_id, model_name, request_sou
     return list(arts_map.values())
 
 
+def _prepare_completion_kwargs(
+    model_name: str,
+    messages: list,
+    llm,
+    is_stream: bool = False,
+    available_tools: list = None,
+    turn: int = 0,
+    max_turns: int = 25,
+    temperature: float = None,
+    top_p: float = None,
+    top_k: int = None,
+    max_tokens: int = None,
+    max_completion_tokens: int = None,
+    presence_penalty: float = None,
+    frequency_penalty: float = None,
+    stop = None,
+    seed: int = None,
+    response_format: dict = None,
+    tool_choice = None,
+    user: str = None,
+    reasoning_effort: str = None,
+    thinking_budget: int = None,
+    openrouter_provider: dict = None,
+    openrouter_models: list = None,
+    extra_body: dict = None,
+    store: bool = None,
+    metadata: dict = None,
+    service_tier: str = None,
+    safety_identifier: str = None,
+    prompt_cache_key: str = None,
+    prompt_cache_options: dict = None,
+    verbosity: str = None,
+) -> dict:
+    """Build a validated, provider-aware arguments dictionary for chat.completions.create."""
+    m_lower = model_name.lower()
+    base_url_str = str(getattr(llm, "base_url", "")).lower()
+    is_gemini = "gemini" in m_lower or "generativelanguage.googleapis.com" in base_url_str
+    is_prochat = "prochat" in m_lower or "prochat.dev" in base_url_str or m_lower.startswith("genui")
+    is_openrouter = "openrouter" in m_lower or "openrouter.ai" in base_url_str
+    is_deepseek = "deepseek" in m_lower or "api.deepseek.com" in base_url_str
+    is_grok = "grok" in m_lower or "api.x.ai" in base_url_str
+    is_openai_reasoning = any(k in m_lower for k in ["o1", "o3", "o4"])
+
+    kwargs = {"model": model_name, "messages": messages}
+    if is_stream:
+        kwargs["stream"] = True
+
+    # 1. Tools & Tool Choice
+    if available_tools and turn < max_turns - 1:
+        kwargs["tools"] = available_tools
+        if tool_choice:
+            kwargs["tool_choice"] = tool_choice
+
+    # 2. Temperature & Top P
+    if temperature is not None:
+        if not is_openai_reasoning:
+            try:
+                kwargs["temperature"] = float(temperature)
+            except Exception:
+                pass
+
+    if top_p is not None:
+        try:
+            kwargs["top_p"] = float(top_p)
+        except Exception:
+            pass
+
+    # 3. Max Tokens / Max Completion Tokens
+    if is_openai_reasoning:
+        tokens = max_completion_tokens if max_completion_tokens is not None else max_tokens
+        if tokens is not None:
+            try:
+                kwargs["max_completion_tokens"] = int(tokens)
+            except Exception:
+                pass
+    else:
+        if max_completion_tokens is not None:
+            try:
+                kwargs["max_completion_tokens"] = int(max_completion_tokens)
+            except Exception:
+                pass
+        if max_tokens is not None:
+            try:
+                kwargs["max_tokens"] = int(max_tokens)
+            except Exception:
+                pass
+
+    # 4. Stop Sequences
+    if stop:
+        if isinstance(stop, str):
+            if "," in stop:
+                kwargs["stop"] = [s.strip() for s in stop.split(",") if s.strip()]
+            else:
+                kwargs["stop"] = [stop.strip()] if stop.strip() else None
+        elif isinstance(stop, list):
+            kwargs["stop"] = stop
+
+    # 5. Seed (Gemini and ProChat reject seed with 'Unknown name "seed"')
+    if seed is not None and not (is_gemini or is_prochat):
+        try:
+            kwargs["seed"] = int(seed)
+        except Exception:
+            pass
+
+    # 6. Response Format
+    if response_format and isinstance(response_format, dict):
+        kwargs["response_format"] = response_format
+
+    # 7. User
+    if user:
+        kwargs["user"] = str(user)
+
+    # 8. Presence & Frequency Penalty
+    # Gemini and ProChat reject presence_penalty and frequency_penalty with 400
+    if not (is_gemini or is_prochat):
+        if presence_penalty is not None:
+            try:
+                kwargs["presence_penalty"] = float(presence_penalty)
+            except Exception:
+                pass
+        if frequency_penalty is not None:
+            try:
+                kwargs["frequency_penalty"] = float(frequency_penalty)
+            except Exception:
+                pass
+
+    # 9. Stream Options (Gemini & ProChat reject stream_options with 400)
+    if is_stream and not (is_gemini or is_prochat):
+        kwargs["stream_options"] = {"include_usage": True}
+
+    # 10. Modern OpenAI Parameters (gpt-4o, gpt-5, o1/o3/o4, Responses API compatibility)
+    if not (is_gemini or is_prochat):
+        if store is not None:
+            kwargs["store"] = bool(store)
+        if metadata and isinstance(metadata, dict):
+            kwargs["metadata"] = metadata
+        if service_tier:
+            kwargs["service_tier"] = str(service_tier)
+        if safety_identifier:
+            kwargs["safety_identifier"] = str(safety_identifier)
+        if prompt_cache_key:
+            kwargs["prompt_cache_key"] = str(prompt_cache_key)
+        if prompt_cache_options and isinstance(prompt_cache_options, dict):
+            kwargs["prompt_cache_options"] = prompt_cache_options
+        if verbosity:
+            kwargs["verbosity"] = str(verbosity)
+
+    # 11. Provider-specific Extra Body / Extensions
+    merged_extra_body = dict(extra_body) if extra_body and isinstance(extra_body, dict) else {}
+
+    # OpenRouter specifics
+    if is_openrouter or openrouter_provider or openrouter_models or top_k is not None:
+        if top_k is not None:
+            try:
+                kwargs["top_k"] = int(top_k)
+            except Exception:
+                pass
+        if openrouter_provider and isinstance(openrouter_provider, dict):
+            merged_extra_body["provider"] = openrouter_provider
+        if openrouter_models and isinstance(openrouter_models, list):
+            merged_extra_body["models"] = openrouter_models
+
+    # Reasoning / Thinking configuration
+    # According to official Google Gemini OpenAI compatibility docs:
+    # 1. Top-level parameter: `reasoning_effort` ("minimal", "low", "medium", "high", "none")
+    #    - "minimal" maps to minimal thinking_level (e.g. Gemini 3.1 Flash-Lite, 3 Flash)
+    #    - "low", "medium", "high" map to thinking_level or budget (2.5)
+    #    - "none" turns off thinking (supported on 2.5 Flash, 3.7 Flash; not supported on 2.5 Pro)
+    # 2. Or custom Gemini extension via `extra_body: {"google": {"thinking_config": {"thinking_level": "...", "include_thoughts": True}}}`
+    #    Note: In OpenAI Python client, passing `extra_body={'extra_body': {'google': ...}}` maps to JSON `{"extra_body": {"google": ...}}`.
+    if is_gemini or is_prochat:
+        if reasoning_effort:
+            val = str(reasoning_effort).strip().lower()
+            if val in ("minimal", "low", "medium", "high", "none"):
+                kwargs["reasoning_effort"] = val
+
+        # If user passes extra_body with google thinking_config, wrap appropriately for OpenAI Python SDK
+        if "google" in merged_extra_body:
+            g_val = merged_extra_body.pop("google")
+            merged_extra_body["extra_body"] = {"google": g_val}
+        elif "thinking_config" in merged_extra_body:
+            tc_val = merged_extra_body.pop("thinking_config")
+            merged_extra_body["extra_body"] = {"google": {"thinking_config": tc_val}}
+    elif is_openrouter:
+        if reasoning_effort or thinking_budget is not None:
+            r_obj = {}
+            # In OpenRouter, effort and max_tokens are mutually exclusive:
+            # If max_tokens is set, it overrides or effort is omitted; otherwise effort is sent.
+            if thinking_budget is not None:
+                try:
+                    r_obj["max_tokens"] = int(thinking_budget)
+                except Exception:
+                    pass
+            elif reasoning_effort:
+                r_obj["effort"] = str(reasoning_effort).strip().lower()
+
+            if r_obj:
+                merged_extra_body["reasoning"] = r_obj
+            elif reasoning_effort:
+                kwargs["reasoning_effort"] = str(reasoning_effort).strip().lower()
+    elif is_deepseek:
+        # DeepSeek Chat Completion API specification:
+        # - reasoning_effort: "low", "high", "max" (defaults to "high"; "medium" and "xhigh" are automatically mapped to "high")
+        # - thinking: {"type": "enabled" | "disabled"} in extra_body controls thinking mode switch
+        if reasoning_effort:
+            r_val = str(reasoning_effort).strip().lower()
+            if r_val in ("low", "high", "max"):
+                kwargs["reasoning_effort"] = r_val
+            elif r_val in ("medium", "xhigh"):
+                kwargs["reasoning_effort"] = "high"
+            elif r_val == "none":
+                merged_extra_body["thinking"] = {"type": "disabled"}
+
+        if thinking_budget is not None or reasoning_effort in ("low", "medium", "high", "max"):
+            if "thinking" not in merged_extra_body:
+                merged_extra_body["thinking"] = {"type": "enabled"}
+    elif is_grok:
+        # xAI Grok Chat Completion API specification:
+        # reasoning_effort: "none" (disables reasoning), "low", "medium", "high", "xhigh"
+        if reasoning_effort:
+            r_val = str(reasoning_effort).strip().lower()
+            if r_val in ("none", "low", "medium", "high", "xhigh"):
+                kwargs["reasoning_effort"] = r_val
+            elif r_val == "max":
+                kwargs["reasoning_effort"] = "xhigh"
+    else:
+        if reasoning_effort:
+            kwargs["reasoning_effort"] = reasoning_effort
+        elif is_openai_reasoning:
+            kwargs["reasoning_effort"] = "medium"
+
+        if thinking_budget is not None:
+            merged_extra_body["thinking"] = {"type": "enabled", "budget_tokens": int(thinking_budget)}
+
+    # DeepSeek R1 / Reasoner compatibility flag
+    if any(k in m_lower for k in ["deepseek-r1", "deepseek-reasoner", "r1"]):
+        merged_extra_body["include_reasoning"] = True
+
+    if merged_extra_body:
+        kwargs["extra_body"] = merged_extra_body
+
+    return kwargs
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # SkillEngine
 # ─────────────────────────────────────────────────────────────────────────────
@@ -190,9 +605,30 @@ class SkillEngine:
         user_data: dict = None,
         skill_names: list = None,
         client_messages: list = None,
+        temperature: float = None,
+        top_p: float = None,
+        top_k: int = None,
+        max_tokens: int = None,
+        max_completion_tokens: int = None,
+        presence_penalty: float = None,
+        frequency_penalty: float = None,
+        stop = None,
+        seed: int = None,
+        response_format: dict = None,
+        tool_choice = None,
+        user: str = None,
         reasoning_effort: str = None,
         thinking_budget: int = None,
+        openrouter_provider: dict = None,
+        openrouter_models: list = None,
         extra_body: dict = None,
+        store: bool = None,
+        metadata: dict = None,
+        service_tier: str = None,
+        safety_identifier: str = None,
+        prompt_cache_key: str = None,
+        prompt_cache_options: dict = None,
+        verbosity: str = None,
     ) -> dict:
         start_time = time.time()
         persist = (request_source == "dashboard")
@@ -238,28 +674,42 @@ class SkillEngine:
 
             accumulated_artifacts = {}
             for turn in range(max_turns):
-                kwargs = {"model": model_name, "messages": messages}
-                if available_tools and turn < max_turns - 1:
-                    kwargs["tools"] = available_tools
                 if turn == max_turns - 1:
                     messages.append({"role": "user", "content": "[System Notice: Maximum tool execution turns reached. You can no longer call any tools. Please summarize the tool outputs and provide your final response to the user.]"})
 
-                # Handle reasoning / thinking configs
-                m_lower = model_name.lower()
-                if reasoning_effort:
-                    kwargs["reasoning_effort"] = reasoning_effort
-                elif any(k in m_lower for k in ["o1", "o3", "o4"]):
-                    kwargs["reasoning_effort"] = "medium"
-
-                if extra_body:
-                    kwargs["extra_body"] = extra_body
-                elif any(k in m_lower for k in ["deepseek-r1", "deepseek-reasoner", "r1"]):
-                    kwargs["extra_body"] = {"include_reasoning": True}
-
-                if thinking_budget is not None:
-                    if "extra_body" not in kwargs:
-                        kwargs["extra_body"] = {}
-                    kwargs["extra_body"]["thinking"] = {"budget_tokens": thinking_budget}
+                kwargs = _prepare_completion_kwargs(
+                    model_name=model_name,
+                    messages=messages,
+                    llm=llm,
+                    is_stream=False,
+                    available_tools=available_tools,
+                    turn=turn,
+                    max_turns=max_turns,
+                    temperature=temperature,
+                    top_p=top_p,
+                    top_k=top_k,
+                    max_tokens=max_tokens,
+                    max_completion_tokens=max_completion_tokens,
+                    presence_penalty=presence_penalty,
+                    frequency_penalty=frequency_penalty,
+                    stop=stop,
+                    seed=seed,
+                    response_format=response_format,
+                    tool_choice=tool_choice,
+                    user=user,
+                    reasoning_effort=reasoning_effort,
+                    thinking_budget=thinking_budget,
+                    openrouter_provider=openrouter_provider,
+                    openrouter_models=openrouter_models,
+                    extra_body=extra_body,
+                    store=store,
+                    metadata=metadata,
+                    service_tier=service_tier,
+                    safety_identifier=safety_identifier,
+                    prompt_cache_key=prompt_cache_key,
+                    prompt_cache_options=prompt_cache_options,
+                    verbosity=verbosity,
+                )
 
                 try:
                     response = llm.chat.completions.create(**kwargs)
@@ -285,12 +735,7 @@ class SkillEngine:
                             "tenant": tenant.name, "executed_tools": executed_logs,
                             "artifacts": []
                         }
-                    sys_content = skill_registry.get_system_instructions(tenant_id=tenant.id)
-                    if user_data:
-                        sys_content = resolve_user_data_placeholders(sys_content, user_data)
-                    messages = [{"role": "system", "content": sys_content}, {"role": "user", "content": user_message}]
-                    kwargs["messages"] = messages
-                    response = llm.chat.completions.create(**kwargs)
+                    raise e
 
                 response_msg = response.choices[0].message
                 tool_calls = response_msg.tool_calls
@@ -415,9 +860,30 @@ class SkillEngine:
         user_data: dict = None,
         skill_names: list = None,
         client_messages: list = None,
+        temperature: float = None,
+        top_p: float = None,
+        top_k: int = None,
+        max_tokens: int = None,
+        max_completion_tokens: int = None,
+        presence_penalty: float = None,
+        frequency_penalty: float = None,
+        stop = None,
+        seed: int = None,
+        response_format: dict = None,
+        tool_choice = None,
+        user: str = None,
         reasoning_effort: str = None,
         thinking_budget: int = None,
+        openrouter_provider: dict = None,
+        openrouter_models: list = None,
         extra_body: dict = None,
+        store: bool = None,
+        metadata: dict = None,
+        service_tier: str = None,
+        safety_identifier: str = None,
+        prompt_cache_key: str = None,
+        prompt_cache_options: dict = None,
+        verbosity: str = None,
     ):
         start_time = time.time()
 
@@ -468,6 +934,7 @@ class SkillEngine:
                     save_message(db, session_obj, "assistant", content=quota_msg)
                 finalize_request(db, chat_req, quota_msg, executed_logs, start_time,
                                  usage_obj=None, in_rate=in_r, out_rate=out_r, au_in_rate=au_in_r, au_out_rate=au_out_r, model_name=model_name)
+                delta_payload = {"content": quota_msg}
                 if prochat_model:
                     delta_payload["json"] = prochat_json
                     delta_payload["code"] = prochat_code
@@ -478,10 +945,6 @@ class SkillEngine:
                 return
 
             for turn in range(max_turns):
-                kwargs = {"model": model_name, "messages": messages, "stream": True}
-                kwargs["stream_options"] = {"include_usage": True}
-                if available_tools and turn < max_turns - 1:
-                    kwargs["tools"] = available_tools
                 if turn == max_turns - 1:
                     messages.append({"role": "user", "content": "[System Notice: Maximum tool execution turns reached. You can no longer call any tools. Please summarize the tool outputs and provide your final response to the user.]"})
 
@@ -491,22 +954,39 @@ class SkillEngine:
                     turn_msg = f"Processing tool outputs & synthesizing response (Turn {turn+1})..."
                 yield _chunk(session_id, model_name, reasoning=turn_msg)
 
-                # Handle reasoning / thinking configs
-                m_lower = model_name.lower()
-                if reasoning_effort:
-                    kwargs["reasoning_effort"] = reasoning_effort
-                elif any(k in m_lower for k in ["o1", "o3", "o4"]):
-                    kwargs["reasoning_effort"] = "medium"
-
-                if extra_body:
-                    kwargs["extra_body"] = extra_body
-                elif any(k in m_lower for k in ["deepseek-r1", "deepseek-reasoner", "r1"]):
-                    kwargs["extra_body"] = {"include_reasoning": True}
-
-                if thinking_budget is not None:
-                    if "extra_body" not in kwargs:
-                        kwargs["extra_body"] = {}
-                    kwargs["extra_body"]["thinking"] = {"budget_tokens": thinking_budget}
+                kwargs = _prepare_completion_kwargs(
+                    model_name=model_name,
+                    messages=messages,
+                    llm=llm,
+                    is_stream=True,
+                    available_tools=available_tools,
+                    turn=turn,
+                    max_turns=max_turns,
+                    temperature=temperature,
+                    top_p=top_p,
+                    top_k=top_k,
+                    max_tokens=max_tokens,
+                    max_completion_tokens=max_completion_tokens,
+                    presence_penalty=presence_penalty,
+                    frequency_penalty=frequency_penalty,
+                    stop=stop,
+                    seed=seed,
+                    response_format=response_format,
+                    tool_choice=tool_choice,
+                    user=user,
+                    reasoning_effort=reasoning_effort,
+                    thinking_budget=thinking_budget,
+                    openrouter_provider=openrouter_provider,
+                    openrouter_models=openrouter_models,
+                    extra_body=extra_body,
+                    store=store,
+                    metadata=metadata,
+                    service_tier=service_tier,
+                    safety_identifier=safety_identifier,
+                    prompt_cache_key=prompt_cache_key,
+                    prompt_cache_options=prompt_cache_options,
+                    verbosity=verbosity,
+                )
 
                 try:
                     response_stream = llm.chat.completions.create(**kwargs)
@@ -526,7 +1006,7 @@ class SkillEngine:
                             save_message(db, session_obj, "assistant", content=quota_msg)
                         finalize_request(db, chat_req, quota_msg, executed_logs, start_time,
                                          accumulated_usage if accumulated_usage["prompt_tokens"] else None,
-                                         in_r, out_r, au_in_r, au_out_r, model_name=model_name)
+                                         in_r, out_r, au_in_r, au_out_rate=au_out_r, model_name=model_name)
                         delta_payload = {"content": quota_msg}
                         if prochat_model:
                             delta_payload["json"] = prochat_json
@@ -560,9 +1040,21 @@ class SkillEngine:
                         getattr(delta, "thought", None) or
                         getattr(delta, "thoughts", None)
                     )
+                    # Check extra_content for Google Gemini thought / reasoning
+                    if not raw_thought:
+                        extra_c = getattr(delta, "extra_content", None)
+                        if isinstance(extra_c, dict):
+                            g_data = extra_c.get("google") or {}
+                            if isinstance(g_data, dict):
+                                raw_thought = g_data.get("thought") or g_data.get("thought_signature")
+
                     thought_text = ""
                     if isinstance(raw_thought, str):
-                        thought_text = raw_thought
+                        # If it is an opaque thought_signature hash, don't spam raw hash; indicate reasoning activity
+                        if raw_thought.startswith("E") and len(raw_thought) > 100:
+                            thought_text = "Thinking..."
+                        else:
+                            thought_text = raw_thought
                     elif isinstance(raw_thought, dict):
                         thought_text = raw_thought.get("text") or raw_thought.get("content") or json.dumps(raw_thought)
 

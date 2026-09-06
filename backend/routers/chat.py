@@ -52,7 +52,31 @@ def stream_interact(
             request_source="dashboard",
             prochat_model=req.prochat_model,
             user_data=req.user_data,
-            skill_names=req.skill_names
+            skill_names=req.skill_names,
+            temperature=req.temperature,
+            top_p=req.top_p,
+            top_k=req.top_k,
+            max_tokens=req.max_tokens,
+            max_completion_tokens=req.max_completion_tokens,
+            presence_penalty=req.presence_penalty,
+            frequency_penalty=req.frequency_penalty,
+            stop=req.stop,
+            seed=req.seed,
+            response_format=req.response_format,
+            tool_choice=req.tool_choice,
+            user=req.user,
+            reasoning_effort=req.reasoning_effort,
+            thinking_budget=req.thinking_budget,
+            openrouter_provider=req.openrouter_provider,
+            openrouter_models=req.openrouter_models,
+            extra_body=req.extra_body,
+            store=req.store,
+            metadata=req.metadata,
+            service_tier=req.service_tier,
+            safety_identifier=req.safety_identifier,
+            prompt_cache_key=req.prompt_cache_key,
+            prompt_cache_options=req.prompt_cache_options,
+            verbosity=req.verbosity,
         ),
         media_type="text/event-stream"
     )
@@ -92,9 +116,30 @@ def openai_chat_completions(
                     user_data=req.user_data,
                     skill_names=req.skill_names,
                     client_messages=client_messages,
+                    temperature=req.temperature,
+                    top_p=req.top_p,
+                    top_k=req.top_k,
+                    max_tokens=req.max_tokens,
+                    max_completion_tokens=req.max_completion_tokens,
+                    presence_penalty=req.presence_penalty,
+                    frequency_penalty=req.frequency_penalty,
+                    stop=req.stop,
+                    seed=req.seed,
+                    response_format=req.response_format,
+                    tool_choice=req.tool_choice,
+                    user=req.user,
                     reasoning_effort=req.reasoning_effort,
                     thinking_budget=req.thinking_budget,
-                    extra_body=req.extra_body
+                    openrouter_provider=req.openrouter_provider,
+                    openrouter_models=req.openrouter_models,
+                    extra_body=req.extra_body,
+                    store=req.store,
+                    metadata=req.metadata,
+                    service_tier=req.service_tier,
+                    safety_identifier=req.safety_identifier,
+                    prompt_cache_key=req.prompt_cache_key,
+                    prompt_cache_options=req.prompt_cache_options,
+                    verbosity=req.verbosity,
                 ),
                 media_type="text/event-stream"
             )
@@ -111,9 +156,30 @@ def openai_chat_completions(
             user_data=req.user_data,
             skill_names=req.skill_names,
             client_messages=client_messages,
+            temperature=req.temperature,
+            top_p=req.top_p,
+            top_k=req.top_k,
+            max_tokens=req.max_tokens,
+            max_completion_tokens=req.max_completion_tokens,
+            presence_penalty=req.presence_penalty,
+            frequency_penalty=req.frequency_penalty,
+            stop=req.stop,
+            seed=req.seed,
+            response_format=req.response_format,
+            tool_choice=req.tool_choice,
+            user=req.user,
             reasoning_effort=req.reasoning_effort,
             thinking_budget=req.thinking_budget,
-            extra_body=req.extra_body
+            openrouter_provider=req.openrouter_provider,
+            openrouter_models=req.openrouter_models,
+            extra_body=req.extra_body,
+            store=req.store,
+            metadata=req.metadata,
+            service_tier=req.service_tier,
+            safety_identifier=req.safety_identifier,
+            prompt_cache_key=req.prompt_cache_key,
+            prompt_cache_options=req.prompt_cache_options,
+            verbosity=req.verbosity,
         )
 
         return {
@@ -532,3 +598,28 @@ def get_session_messages(
         "page_size": page_size,
         "pages": pages
     }
+
+
+@router.delete("/sessions/{session_id}")
+def delete_session(
+    session_id: str,
+    tenant: Tenant = Depends(get_current_tenant),
+    db: Session = Depends(get_db)
+):
+    from models import ConversationSession, ChatMessage, SessionArtifact
+    s = db.query(ConversationSession).filter(
+        ConversationSession.tenant_id == tenant.id,
+        ConversationSession.session_id == session_id
+    ).first()
+
+    if not s:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    # Delete related chat messages
+    db.query(ChatMessage).filter(ChatMessage.session_id == s.id).delete()
+    # Delete session
+    db.delete(s)
+    db.commit()
+
+    return {"status": "success", "message": f"Session {session_id} deleted successfully"}
+

@@ -148,6 +148,26 @@ export default function ApiTester() {
   // Custom tenant models list
   const [tenantModels, setTenantModels] = useState([]);
 
+  // Model completion parameters state
+  const [paramsOpen, setParamsOpen] = useState(false);
+  const [temperature, setTemperature] = useState('');
+  const [topP, setTopP] = useState('');
+  const [topK, setTopK] = useState('');
+  const [maxTokens, setMaxTokens] = useState('');
+  const [presencePenalty, setPresencePenalty] = useState('');
+  const [frequencyPenalty, setFrequencyPenalty] = useState('');
+  const [stopSequences, setStopSequences] = useState('');
+  const [seed, setSeed] = useState('');
+  const [responseFormat, setResponseFormat] = useState('text');
+  const [toolChoice, setToolChoice] = useState('auto');
+  const [userParam, setUserParam] = useState('');
+  const [reasoningEffort, setReasoningEffort] = useState('');
+  const [thinkingBudget, setThinkingBudget] = useState('');
+  const [openrouterOrder, setOpenrouterOrder] = useState('');
+  const [openrouterDataCollection, setOpenrouterDataCollection] = useState('');
+  const [openrouterModels, setOpenrouterModels] = useState('');
+  const [extraBodyJson, setExtraBodyJson] = useState('');
+
   const [loading, setLoading] = useState(false);
   const abortControllerRef = React.useRef(null);
   const handleStop = () => {
@@ -207,14 +227,24 @@ export default function ApiTester() {
       const formData = new FormData();
       formData.append('file', file);
 
-      const data = await apiClient.post('/api/v1/files/upload', formData, {
-        apiKey: selectedTenantKey.trim() || undefined
-      });
+      const [data, base64] = await Promise.all([
+        apiClient.post('/api/v1/files/upload', formData, {
+          apiKey: selectedTenantKey.trim() || undefined
+        }),
+        new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.readAsDataURL(file);
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = () => resolve(null);
+        })
+      ]);
+
       setUploadedFile({
         name: file.name,
         url: data.url,
         sandboxPath: data.sandbox_path,
-        type: file.type
+        type: file.type,
+        base64: base64
       });
       logText(`File uploaded successfully! URL: ${data.url}`);
     } catch (err) {
@@ -327,9 +357,19 @@ export default function ApiTester() {
       if (attachMode === 'text') {
         finalCurrentMessage = `[Attached File: ${uploadedFile.name} (URL: ${uploadedFile.url})]\n\n${currentMessage}`;
       } else if (attachMode === 'image') {
+        const imageUrlToUse = uploadedFile.base64 || uploadedFile.url;
         finalCurrentMessage = [
           { type: 'text', text: currentMessage },
-          { type: 'image_url', image_url: { url: uploadedFile.url } }
+          { type: 'image_url', image_url: { url: imageUrlToUse } }
+        ];
+      } else if (attachMode === 'audio') {
+        const rawB64 = (uploadedFile.base64 || '').includes(',')
+          ? uploadedFile.base64.split(',')[1]
+          : uploadedFile.base64;
+        const fmt = uploadedFile.name.toLowerCase().endsWith('.mp3') ? 'mp3' : 'wav';
+        finalCurrentMessage = [
+          { type: 'text', text: currentMessage },
+          { type: 'input_audio', input_audio: { data: rawB64, format: fmt } }
         ];
       }
     }
@@ -355,6 +395,63 @@ export default function ApiTester() {
     }
     if (selectedSkillNames.length > 0) {
       payload.skill_names = selectedSkillNames;
+    }
+
+    // Attach Provider & OpenAI Completion Parameters
+    if (temperature !== '' && !isNaN(Number(temperature))) {
+      payload.temperature = Number(temperature);
+    }
+    if (topP !== '' && !isNaN(Number(topP))) {
+      payload.top_p = Number(topP);
+    }
+    if (topK !== '' && !isNaN(Number(topK))) {
+      payload.top_k = Number(topK);
+    }
+    if (maxTokens !== '' && !isNaN(Number(maxTokens))) {
+      payload.max_tokens = Number(maxTokens);
+    }
+    if (presencePenalty !== '' && !isNaN(Number(presencePenalty))) {
+      payload.presence_penalty = Number(presencePenalty);
+    }
+    if (frequencyPenalty !== '' && !isNaN(Number(frequencyPenalty))) {
+      payload.frequency_penalty = Number(frequencyPenalty);
+    }
+    if (stopSequences.trim()) {
+      payload.stop = stopSequences.split(',').map(s => s.trim()).filter(Boolean);
+    }
+    if (seed !== '' && !isNaN(Number(seed))) {
+      payload.seed = Number(seed);
+    }
+    if (responseFormat && responseFormat !== 'text') {
+      payload.response_format = { type: responseFormat };
+    }
+    if (toolChoice && toolChoice !== 'auto') {
+      payload.tool_choice = toolChoice;
+    }
+    if (userParam.trim()) {
+      payload.user = userParam.trim();
+    }
+    if (reasoningEffort) {
+      payload.reasoning_effort = reasoningEffort;
+    }
+    if (thinkingBudget !== '' && !isNaN(Number(thinkingBudget))) {
+      payload.thinking_budget = Number(thinkingBudget);
+    }
+    if (openrouterOrder.trim() || openrouterDataCollection) {
+      const provObj = {};
+      if (openrouterOrder.trim()) provObj.order = openrouterOrder.split(',').map(s => s.trim()).filter(Boolean);
+      if (openrouterDataCollection) provObj.data_collection = openrouterDataCollection;
+      payload.openrouter_provider = provObj;
+    }
+    if (openrouterModels.trim()) {
+      payload.openrouter_models = openrouterModels.split(',').map(s => s.trim()).filter(Boolean);
+    }
+    if (extraBodyJson.trim()) {
+      try {
+        payload.extra_body = JSON.parse(extraBodyJson);
+      } catch (e) {
+        logText(`Warning: Custom Extra Body JSON could not be parsed: ${e.message}`);
+      }
     }
 
     try {
@@ -647,9 +744,19 @@ export default function ApiTester() {
     if (attachMode === 'text') {
       finalCurrentMessageForCurl = `[Attached File: ${uploadedFile.name} (URL: ${uploadedFile.url})]\n\n${currentMessage}`;
     } else if (attachMode === 'image') {
+      const imageUrlToUse = uploadedFile.base64 || uploadedFile.url;
       finalCurrentMessageForCurl = [
         { type: 'text', text: currentMessage },
-        { type: 'image_url', image_url: { url: uploadedFile.url } }
+        { type: 'image_url', image_url: { url: imageUrlToUse } }
+      ];
+    } else if (attachMode === 'audio') {
+      const rawB64 = (uploadedFile.base64 || '').includes(',')
+        ? uploadedFile.base64.split(',')[1]
+        : uploadedFile.base64;
+      const fmt = uploadedFile.name.toLowerCase().endsWith('.mp3') ? 'mp3' : 'wav';
+      finalCurrentMessageForCurl = [
+        { type: 'text', text: currentMessage },
+        { type: 'input_audio', input_audio: { data: rawB64, format: fmt } }
       ];
     }
   }
@@ -772,6 +879,42 @@ export default function ApiTester() {
           selectedTenantKey={selectedTenantKey}
           isPaused={false}
           togglePause={handleStop}
+          paramsOpen={paramsOpen}
+          setParamsOpen={setParamsOpen}
+          temperature={temperature}
+          setTemperature={setTemperature}
+          topP={topP}
+          setTopP={setTopP}
+          topK={topK}
+          setTopK={setTopK}
+          maxTokens={maxTokens}
+          setMaxTokens={setMaxTokens}
+          presencePenalty={presencePenalty}
+          setPresencePenalty={setPresencePenalty}
+          frequencyPenalty={frequencyPenalty}
+          setFrequencyPenalty={setFrequencyPenalty}
+          stopSequences={stopSequences}
+          setStopSequences={setStopSequences}
+          seed={seed}
+          setSeed={setSeed}
+          responseFormat={responseFormat}
+          setResponseFormat={setResponseFormat}
+          toolChoice={toolChoice}
+          setToolChoice={setToolChoice}
+          userParam={userParam}
+          setUserParam={setUserParam}
+          reasoningEffort={reasoningEffort}
+          setReasoningEffort={setReasoningEffort}
+          thinkingBudget={thinkingBudget}
+          setThinkingBudget={setThinkingBudget}
+          openrouterOrder={openrouterOrder}
+          setOpenrouterOrder={setOpenrouterOrder}
+          openrouterDataCollection={openrouterDataCollection}
+          setOpenrouterDataCollection={setOpenrouterDataCollection}
+          openrouterModels={openrouterModels}
+          setOpenrouterModels={setOpenrouterModels}
+          extraBodyJson={extraBodyJson}
+          setExtraBodyJson={setExtraBodyJson}
         />
 
         {/* Column 2: Request & Response Tabs */}

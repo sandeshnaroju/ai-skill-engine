@@ -1,10 +1,17 @@
-# ⚡ AI Skill Engine
+<p align="center">
+  <img src="frontend/public/logo_stacked.svg" alt="AI Skill Engine" width="320" />
+</p>
 
-> **Self-hosted AI gateway and execution engine for businesses — add AI tool execution to your product, or offer AI-powered services to your own clients.**
+<p align="center">
+  <strong>Enterprise self-hosted AI gateway, tool execution engine, and multi-tenant skill hub.</strong>
+</p>
 
-Connect your chatbot with a single Chat Completion API call. AI Skill Engine acts as a gateway between your clients and any LLM — handling multi-turn tool execution, sandboxed code runs, MCP integrations, generative UI rendering via ProChat, per-tenant isolation, cost tracking, and a full visual admin dashboard — all in one self-hosted package. Drop-in compatible with the OpenAI API.
-
-![Dashboard](https://img.shields.io/badge/dashboard-React-blueviolet) ![API](https://img.shields.io/badge/API-OpenAI%20Compatible-green) ![License](https://img.shields.io/badge/license-Apache%202.0-blue) ![Docker](https://img.shields.io/badge/docker-sandeshnaroju%2Fai--skill--engine-blue)
+<p align="center">
+  <img src="https://img.shields.io/badge/dashboard-React-blueviolet" alt="Dashboard" />
+  <img src="https://img.shields.io/badge/API-OpenAI%20Compatible-green" alt="API" />
+  <img src="https://img.shields.io/badge/license-Apache%202.0-blue" alt="License" />
+  <img src="https://img.shields.io/badge/docker-sandeshnaroju%2Fai--skill--engine-blue" alt="Docker" />
+</p>
 
 ---
 

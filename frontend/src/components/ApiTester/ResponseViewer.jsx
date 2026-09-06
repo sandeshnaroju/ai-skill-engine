@@ -243,7 +243,29 @@ export default function ResponseViewer({
                   <div style={{ fontSize: '0.7rem', color: msg.role === 'user' ? 'var(--primary-violet)' : 'var(--primary-cyan)', fontWeight: '600', marginBottom: '4px', textTransform: 'uppercase' }}>
                     {msg.role}
                   </div>
-                  <div className="markdown-body" dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }} />
+                  {Array.isArray(msg.content) ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      {msg.content.map((part, pIdx) => {
+                        if (part.type === 'text') {
+                          return <div key={pIdx} className="markdown-body" dangerouslySetInnerHTML={{ __html: renderMarkdown(part.text || '') }} />;
+                        }
+                        if (part.type === 'image_url') {
+                          return (
+                            <div key={pIdx} style={{ marginTop: '4px' }}>
+                              <img
+                                src={part.image_url?.url}
+                                alt="Attached content"
+                                style={{ maxWidth: '100%', maxHeight: '240px', borderRadius: '6px', border: '1px solid var(--border-subtle)', objectFit: 'contain' }}
+                              />
+                            </div>
+                          );
+                        }
+                        return null;
+                      })}
+                    </div>
+                  ) : (
+                    <div className="markdown-body" dangerouslySetInnerHTML={{ __html: renderMarkdown(typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content)) }} />
+                  )}
 
                   {/* Artifact Pin Card(s) */}
                   {Array.isArray(msg.artifacts) && msg.artifacts.length > 0 ? (

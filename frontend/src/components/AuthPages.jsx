@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Mail, Lock, CheckCircle, AlertTriangle, ArrowRight, Zap, RefreshCw, HelpCircle, ArrowLeft } from 'lucide-react';
+import { Mail, Lock, CheckCircle, AlertTriangle, ArrowRight, Zap, RefreshCw, HelpCircle, ArrowLeft, BookOpen, ExternalLink } from 'lucide-react';
 import { authApi } from '../api';
 
 export default function AuthPages({ onLoginSuccess }) {
@@ -185,17 +185,20 @@ export default function AuthPages({ onLoginSuccess }) {
       }}>
         {/* Header */}
         <div style={{ textAlign: 'center', marginBottom: '28px' }}>
-          <div style={{
-            display: 'inline-flex',
-            background: 'linear-gradient(135deg, var(--primary-violet, #8b5cf6), var(--primary-emerald, #10b981))',
-            padding: '12px',
-            borderRadius: '14px',
-            boxShadow: '0 0 20px rgba(139, 92, 246, 0.4)',
-            marginBottom: '16px'
-          }}>
-            <Zap size={28} color="#ffffff" />
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '16px' }}>
+            <img
+              src="/logo_stacked.svg"
+              alt="AI Skill Engine"
+              style={{
+                height: '130px',
+                width: 'auto',
+                maxWidth: '280px',
+                display: 'block',
+                filter: 'drop-shadow(0 6px 20px rgba(0, 242, 254, 0.35))'
+              }}
+            />
           </div>
-          <h2 style={{ fontSize: '1.5rem', fontWeight: '800', margin: '0 0 6px 0', letterSpacing: '-0.025em' }}>
+          <h2 style={{ fontSize: '1.45rem', fontWeight: '800', margin: '0 0 6px 0', letterSpacing: '-0.025em' }}>
             {mode === 'login' && 'Welcome Back'}
             {mode === 'register' && 'Create Account'}
             {mode === 'forgot' && 'Reset Password'}
@@ -709,6 +712,33 @@ export default function AuthPages({ onLoginSuccess }) {
             </div>
           </form>
         )}
+
+        {/* Public API Docs Link for Unauthenticated Developers */}
+        <div style={{
+          marginTop: '24px',
+          paddingTop: '16px',
+          borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center'
+        }}>
+          <a
+            href="/api-docs"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              fontSize: '0.82rem',
+              color: 'var(--primary-cyan, #06b6d4)',
+              textDecoration: 'none',
+              fontWeight: '600'
+            }}
+          >
+            <BookOpen size={15} />
+            <span>Developer API Documentation</span>
+            <ExternalLink size={12} style={{ opacity: 0.8 }} />
+          </a>
+        </div>
       </div>
     </div>
   );

@@ -161,6 +161,7 @@
 
 /* ── Sleek, Compact Document Header ── */
 .canvas-header {
+  position: relative;
   height: 38px;
   background: var(--canvas-header-bg);
   backdrop-filter: blur(12px);
@@ -169,7 +170,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 0 10px;
-  z-index: 20;
+  z-index: 1000;
   flex-shrink: 0;
   transition: background 0.25s ease, border-color 0.25s ease;
 }
