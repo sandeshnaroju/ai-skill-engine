@@ -529,21 +529,35 @@ function AppContent() {
       >
         <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, flex: 1 }}>
           {/* Top Brand & Sidebar Toggle */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: isSidebarOpen ? 'space-between' : 'center', marginBottom: '22px', flexShrink: 0, gap: '8px' }}>
+          <div style={{
+            position: 'relative',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            marginBottom: '20px',
+            flexShrink: 0,
+            padding: '2px 0'
+          }}>
             {isSidebarOpen ? (
               <div
-                style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', flex: 1, minWidth: 0 }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  width: '100%'
+                }}
                 onClick={() => navigate('/playground')}
               >
                 <img
                   src="/logo_navbar.svg"
                   alt="AI Skill Engine"
                   style={{
-                    height: '54px',
-                    maxWidth: '100%',
+                    height: '38px',
+                    maxWidth: '170px',
                     width: 'auto',
                     display: 'block',
-                    filter: 'drop-shadow(0 2px 12px rgba(0, 242, 254, 0.3))'
+                    filter: 'drop-shadow(0 2px 10px rgba(0, 242, 254, 0.25))'
                   }}
                   onError={(e) => {
                     e.currentTarget.style.display = 'none';
@@ -559,19 +573,31 @@ function AppContent() {
                 <img
                   src="/favicon.svg"
                   alt="AI Skill Engine"
-                  style={{ width: '42px', height: '42px', filter: 'drop-shadow(0 2px 12px rgba(0, 242, 254, 0.4))' }}
+                  style={{ width: '36px', height: '36px', filter: 'drop-shadow(0 2px 12px rgba(0, 242, 254, 0.4))' }}
                 />
               </div>
             )}
 
-            <button
-              className="btn-outline"
-              onClick={toggleSidebar}
-              style={{ padding: '6px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-              title={isSidebarOpen ? 'Collapse Left Sidebar' : 'Expand Left Sidebar'}
-            >
-              {isSidebarOpen ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}
-            </button>
+            {isSidebarOpen && (
+              <button
+                className="btn-outline"
+                onClick={toggleSidebar}
+                style={{
+                  position: 'absolute',
+                  right: 0,
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  padding: '6px',
+                  borderRadius: '8px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+                title="Collapse Left Sidebar"
+              >
+                <PanelLeftClose size={17} />
+              </button>
+            )}
           </div>
 
           {/* Navigation Items Menu */}
