@@ -19,6 +19,10 @@
 > **Cloud-Hosted Setup Coming Soon!** ☁️
 > We are building a fully managed cloud version of AI Skill Engine. If you want to skip self-hosting and deployment maintenance, stay tuned!
 
+<p align="center">
+  <img src="screenshots/chat_playground.png" alt="AI Skill Engine Chat Playground and Live Canvas" width="100%" style="border-radius: 10px; box-shadow: 0 8px 30px rgba(0,0,0,0.5);" />
+</p>
+
 ---
 
 ## 👥 Who Is This For?
