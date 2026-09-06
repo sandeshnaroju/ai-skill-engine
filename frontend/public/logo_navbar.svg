@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 140 48" width="100%" height="100%">
+  <defs>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@600;800;900&amp;family=Space+Grotesk:wght@700;800&amp;display=swap');
+      
+      .font-base { 
+        font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+      }
+      
+      .font-engine { 
+        font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, sans-serif; 
+        font-weight: 800; 
+        font-size: 20px; 
+        letter-spacing: 0.11em; 
+      }
+    </style>
+
+    <!-- Logo Pill Gradients -->
+    <linearGradient id="pillCyan" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00F2FE" />
+      <stop offset="100%" stop-color="#2563EB" />
+    </linearGradient>
+
+    <linearGradient id="pillPurple" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38BDF8" />
+      <stop offset="100%" stop-color="#7C3AED" />
+    </linearGradient>
+
+    <linearGradient id="pillViolet" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#8B5CF6" />
+      <stop offset="100%" stop-color="#00F2FE" />
+    </linearGradient>
+
+    <!-- Word Gradients (Zero White) -->
+    <linearGradient id="aiViolet" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#A855F7" />
+      <stop offset="100%" stop-color="#C084FC" />
+    </linearGradient>
+
+    <linearGradient id="skillBlue" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#60A5FA" />
+      <stop offset="100%" stop-color="#93C5FD" />
+    </linearGradient>
+
+    <linearGradient id="engineCyan" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#00F2FE" />
+      <stop offset="100%" stop-color="#38BDF8" />
+    </linearGradient>
+  </defs>
+
+  <!-- ==================== LEFT: LOGO ICON (Shifted down to y=26) ==================== -->
+  <g transform="translate(22.5, 26)">
+    <!-- Pill 1 (Top) -->
+    <rect x="-4.5" y="-22" width="9" height="15" rx="4.5" fill="url(#pillCyan)" />
+    
+    <!-- Pill 2 (Bottom Right) -->
+    <g transform="rotate(120)">
+      <rect x="-4.5" y="-22" width="9" height="15" rx="4.5" fill="url(#pillPurple)" />
+    </g>
+    
+    <!-- Pill 3 (Bottom Left) -->
+    <g transform="rotate(240)">
+      <rect x="-4.5" y="-22" width="9" height="15" rx="4.5" fill="url(#pillViolet)" />
+    </g>
+
+    <!-- Center AI Dot -->
+    <circle cx="0" cy="0" r="3" fill="#00F2FE" />
+  </g>
+
+  <!-- ==================== RIGHT: TITLE (ENGINE enlarged to 20px) ==================== -->
+  <g transform="translate(54, 0)">
+    <!-- Line 1: AI SKILL -->
+    <text x="0" y="18.5" class="font-base" font-size="18">
+      <tspan font-weight="900" fill="url(#aiViolet)" letter-spacing="0.05em">AI </tspan>
+      <tspan font-weight="700" fill="url(#skillBlue)" letter-spacing="0.07em">SKILL</tspan>
+    </text>
+
+    <!-- Line 2: ENGINE (Enlarged to 20px) -->
+    <text x="0" y="41.5" class="font-engine" fill="url(#engineCyan)">
+      ENGINE
+    </text>
+  </g>
+</svg>

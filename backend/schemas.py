@@ -7,6 +7,30 @@ class PlaygroundChatRequest(BaseModel):
     prochat_model: Optional[str] = None
     user_data: Optional[dict] = None
     skill_names: Optional[List[str]] = None
+    temperature: Optional[float] = None
+    top_p: Optional[float] = None
+    top_k: Optional[int] = None
+    max_tokens: Optional[int] = None
+    max_completion_tokens: Optional[int] = None
+    presence_penalty: Optional[float] = None
+    frequency_penalty: Optional[float] = None
+    stop: Optional[Union[str, List[str]]] = None
+    seed: Optional[int] = None
+    response_format: Optional[dict] = None
+    tool_choice: Optional[Union[str, dict]] = None
+    user: Optional[str] = None
+    reasoning_effort: Optional[str] = None
+    thinking_budget: Optional[int] = None
+    openrouter_provider: Optional[dict] = None
+    openrouter_models: Optional[List[str]] = None
+    extra_body: Optional[dict] = None
+    store: Optional[bool] = None
+    metadata: Optional[dict] = None
+    service_tier: Optional[str] = None
+    safety_identifier: Optional[str] = None
+    prompt_cache_key: Optional[str] = None
+    prompt_cache_options: Optional[dict] = None
+    verbosity: Optional[str] = None
 
 class OpenAIStyleMessage(BaseModel):
     role: str
@@ -21,6 +45,30 @@ class OpenAIChatRequest(BaseModel):
     prochat_model: Optional[str] = None
     user_data: Optional[dict] = None
     skill_names: Optional[List[str]] = None
+    temperature: Optional[float] = None
+    top_p: Optional[float] = None
+    top_k: Optional[int] = None
+    max_tokens: Optional[int] = None
+    max_completion_tokens: Optional[int] = None
+    presence_penalty: Optional[float] = None
+    frequency_penalty: Optional[float] = None
+    stop: Optional[Union[str, List[str]]] = None
+    seed: Optional[int] = None
+    response_format: Optional[dict] = None
+    tool_choice: Optional[Union[str, dict]] = None
+    user: Optional[str] = None
+    reasoning_effort: Optional[str] = None
+    thinking_budget: Optional[int] = None
+    openrouter_provider: Optional[dict] = None
+    openrouter_models: Optional[List[str]] = None
+    extra_body: Optional[dict] = None
+    store: Optional[bool] = None
+    metadata: Optional[dict] = None
+    service_tier: Optional[str] = None
+    safety_identifier: Optional[str] = None
+    prompt_cache_key: Optional[str] = None
+    prompt_cache_options: Optional[dict] = None
+    verbosity: Optional[str] = None
 
 class TenantCreate(BaseModel):
     name: str

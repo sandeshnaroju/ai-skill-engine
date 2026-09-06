@@ -120,12 +120,20 @@ def stream_prochat_ui(db: Session, tenant, full_text: str, prochat_model: str,
             {"role": "user", "content": f"Here is the assistant response data:\n\n{full_text}\n\nBased on this response, please present this in the UI."}
         ]
         headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+        is_gemini_or_prochat = (
+            "gemini" in resolved_model.lower()
+            or "prochat" in resolved_model.lower()
+            or resolved_model.lower().startswith("genui")
+            or "generativelanguage.googleapis.com" in str(base_url)
+            or "prochat" in str(base_url).lower()
+        )
         payload = {
             "model": resolved_model,
             "messages": prochat_messages,
-            "stream": True,
-            "stream_options": {"include_usage": True}
+            "stream": True
         }
+        if not is_gemini_or_prochat:
+            payload["stream_options"] = {"include_usage": True}
 
         res = requests.post(f"{base_url.rstrip('/')}/chat/completions", headers=headers, json=payload, stream=True, timeout=60)
 

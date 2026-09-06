@@ -1,0 +1,939 @@
+import React, { useState } from 'react';
+import {
+  X, Sliders, Key, Box, Cpu, Sparkles, Database, Plus, Trash2,
+  Check, FileText, Download, Terminal, History, Shield, Zap
+} from 'lucide-react';
+import AsyncSearchableDropdown from '../AsyncSearchableDropdown';
+import { tenantsApi, appsApi, skillsApi, userDataApi } from '../../api';
+
+export default function ConfigDrawer({
+  isOpen,
+  onClose,
+  selectedTenantId,
+  setSelectedTenantId,
+  tenants,
+  setTenants,
+  selectedModel,
+  setSelectedModel,
+  tenantModels,
+  selectedAppId,
+  setSelectedAppId,
+  apps,
+  setApps,
+  prochatModel,
+  setProchatModel,
+  selectedSkillNames,
+  setSelectedSkillNames,
+  templates,
+  setTemplates,
+  selectedTemplateId,
+  handleTemplateChange,
+  userDataPairs,
+  handleUserDataPairChange,
+  handleAddUserDataPair,
+  handleRemoveUserDataPair,
+  systemPrompt,
+  setSystemPrompt,
+  onOpenHistory,
+  onOpenAudit,
+  onExportTranscript,
+  onClearConsole,
+  sessionsCount,
+  executedToolsCount,
+  // Completion parameters props
+  temperature,
+  setTemperature,
+  topP,
+  setTopP,
+  topK,
+  setTopK,
+  maxTokens,
+  setMaxTokens,
+  presencePenalty,
+  setPresencePenalty,
+  frequencyPenalty,
+  setFrequencyPenalty,
+  stopSequences,
+  setStopSequences,
+  seed,
+  setSeed,
+  responseFormat,
+  setResponseFormat,
+  toolChoice,
+  setToolChoice,
+  userParam,
+  setUserParam,
+  reasoningEffort,
+  setReasoningEffort,
+  thinkingBudget,
+  setThinkingBudget,
+  openrouterOrder,
+  setOpenrouterOrder,
+  openrouterDataCollection,
+  setOpenrouterDataCollection,
+  openrouterModels,
+  setOpenrouterModels,
+  extraBodyJson,
+  setExtraBodyJson
+}) {
+  const [activeTab, setActiveTab] = useState('agent'); // 'agent' | 'params' | 'userdata' | 'skills' | 'system'
+
+  if (!isOpen) return null;
+
+  return (
+    <div style={{
+      position: 'fixed',
+      inset: 0,
+      zIndex: 1100,
+      display: 'flex',
+      justifyContent: 'flex-end',
+      background: 'rgba(0, 0, 0, 0.45)',
+      backdropFilter: 'blur(4px)',
+      animation: 'fadeIn 0.15s ease'
+    }}>
+      {/* Backdrop Click */}
+      <div style={{ flex: 1 }} onClick={onClose} />
+
+      {/* Slide-out Drawer Box */}
+      <div style={{
+        width: '430px',
+        maxWidth: '92vw',
+        height: '100%',
+        background: 'var(--bg-card)',
+        backdropFilter: 'blur(20px)',
+        borderLeft: '1px solid var(--border-glow)',
+        boxShadow: 'var(--shadow-card)',
+        display: 'flex',
+        flexDirection: 'column',
+        zIndex: 1101,
+        animation: 'slideInRight 0.25s cubic-bezier(0.16, 1, 0.3, 1)'
+      }}>
+        {/* Drawer Header */}
+        <div style={{
+          padding: '18px 22px',
+          borderBottom: '1px solid var(--border-subtle)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.08), rgba(99, 102, 241, 0.04))'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{
+              background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.2), rgba(99, 102, 241, 0.2))',
+              border: '1px solid rgba(139, 92, 246, 0.35)',
+              padding: '8px',
+              borderRadius: '10px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxShadow: '0 4px 12px rgba(139, 92, 246, 0.15)'
+            }}>
+              <Sliders size={18} color="var(--primary-violet)" />
+            </div>
+            <div>
+              <div style={{ fontSize: '1rem', fontWeight: '700', color: 'var(--text-main)', letterSpacing: '-0.01em' }}>
+                Session Configuration
+              </div>
+              <div style={{ fontSize: '0.76rem', color: 'var(--primary-violet)', fontWeight: '500', opacity: 0.85 }}>
+                Model parameters, secrets & skills
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="btn-outline"
+            style={{ padding: '6px', borderRadius: '8px', border: '1px solid var(--border-subtle)' }}
+            title="Close Settings"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        {/* Tab Navigation */}
+        <div style={{
+          display: 'flex',
+          borderBottom: '1px solid var(--border-subtle)',
+          background: 'linear-gradient(180deg, rgba(139, 92, 246, 0.03), transparent)',
+          padding: '0 10px',
+          gap: '4px'
+        }}>
+          {[
+            { id: 'agent', label: 'Agent & Model', icon: Cpu },
+            { id: 'params', label: 'Parameters', icon: Sliders },
+            { id: 'userdata', label: 'User Data', icon: Database },
+            { id: 'skills', label: 'Skills Filter', icon: Zap },
+            { id: 'system', label: 'System Prompt', icon: FileText }
+          ].map(tab => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                style={{
+                  flex: 1,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  padding: '12px 4px',
+                  fontSize: '0.76rem',
+                  fontWeight: isActive ? '700' : '500',
+                  color: isActive ? 'var(--primary-violet)' : 'var(--text-sub)',
+                  border: 'none',
+                  borderBottom: `2px solid ${isActive ? 'var(--primary-violet)' : 'transparent'}`,
+                  background: isActive ? 'rgba(139, 92, 246, 0.08)' : 'transparent',
+                  borderRadius: '6px 6px 0 0',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                <Icon size={14} color={isActive ? 'var(--primary-violet)' : 'inherit'} />
+                <span>{tab.label}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Drawer Body Content */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '20px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+
+          {/* TAB 1: Agent & Model */}
+          {activeTab === 'agent' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+              {/* Tenant Selector */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '8px', letterSpacing: '0.5px' }}>
+                  Tenant Access Key
+                </label>
+                <AsyncSearchableDropdown
+                  value={selectedTenantId}
+                  onChange={(val) => setSelectedTenantId(val)}
+                  initialLabel={tenants.find(t => t.id === selectedTenantId)?.name ? `🔑 ${tenants.find(t => t.id === selectedTenantId).name}` : ''}
+                  fetchOptions={async (searchTerm) => {
+                    const data = await tenantsApi.list({ search: searchTerm || '', page_size: 10, page: 1 });
+                    const items = data.items || Array.isArray(data) ? (data.items || data) : [];
+                    setTenants(prev => {
+                      const newTs = [...prev];
+                      items.forEach(t => {
+                        if (!newTs.find(existing => existing.id === t.id)) newTs.push(t);
+                      });
+                      return newTs;
+                    });
+                    return items.map(t => ({
+                      value: t.id,
+                      label: `🔑 ${t.name}`
+                    }));
+                  }}
+                  placeholder="Select Tenant"
+                />
+              </div>
+
+              {/* Execution Model */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '8px', letterSpacing: '0.5px' }}>
+                  LLM Execution Model
+                </label>
+                <AsyncSearchableDropdown
+                  value={selectedModel}
+                  onChange={(val) => setSelectedModel(val)}
+                  fetchOptions={async (searchTerm) => {
+                    const data = await tenantsApi.listLlms(null, { search: searchTerm || '', page_size: 10, page: 1, tenant_id: selectedTenantId || undefined });
+                    const items = data.items || Array.isArray(data) ? (data.items || data) : [];
+                    return items
+                      .filter(m => m.provider !== 'prochat' && !m.model_name.toLowerCase().includes('genui'))
+                      .map(m => ({
+                        value: m.model_name,
+                        label: `${m.model_name} (${m.provider})`
+                      }));
+                  }}
+                  placeholder={tenantModels.length === 0 ? "No models" : "Select Model"}
+                  disabled={!selectedTenantId}
+                />
+              </div>
+
+              {/* Application Scope */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '8px', letterSpacing: '0.5px' }}>
+                  Application Scope
+                </label>
+                <AsyncSearchableDropdown
+                  value={selectedAppId}
+                  onChange={(val) => setSelectedAppId(val)}
+                  initialLabel={apps.find(a => a.id === selectedAppId)?.name ? `📦 ${apps.find(a => a.id === selectedAppId).name}` : ''}
+                  fetchOptions={async (searchTerm) => {
+                    const data = await appsApi.list({ search: searchTerm || '', page_size: 10, page: 1, tenant_id: selectedTenantId || undefined });
+                    const items = data.items || Array.isArray(data) ? (data.items || data) : [];
+                    setApps(prev => {
+                      const newApps = [...prev];
+                      items.forEach(a => {
+                        if (!newApps.find(existing => existing.id === a.id)) newApps.push(a);
+                      });
+                      return newApps;
+                    });
+                    return items.map(a => ({
+                      value: a.id,
+                      label: `📦 ${a.name} (${a.skills_count || (a.skill_names ? a.skill_names.length : 0)} skills)`
+                    }));
+                  }}
+                  placeholder="Select Application..."
+                />
+              </div>
+
+              {/* Generative UI Model */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.5px' }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Sparkles size={12} color={prochatModel.trim() ? 'var(--primary-violet)' : 'var(--text-muted)'} />
+                    Generative UI (ProChat)
+                  </span>
+                </label>
+                <div style={{ position: 'relative', display: 'flex', gap: '6px', alignItems: 'center' }}>
+                  <select
+                    value={prochatModel}
+                    onChange={(e) => setProchatModel(e.target.value)}
+                    style={{
+                      flex: 1,
+                      padding: '8px 10px',
+                      fontSize: '0.82rem',
+                      borderRadius: '8px',
+                      border: `1px solid ${prochatModel.trim() ? 'rgba(139, 92, 246, 0.5)' : 'var(--border-subtle)'}`,
+                      background: prochatModel.trim() ? 'rgba(139, 92, 246, 0.06)' : 'var(--bg-input)',
+                      color: prochatModel.trim() ? 'var(--primary-violet)' : 'var(--text-sub)',
+                      outline: 'none',
+                    }}
+                  >
+                    <option value="">— disabled —</option>
+                    {tenantModels
+                      .filter(m => m.provider === 'prochat' || m.model_name.toLowerCase().includes('genui'))
+                      .map(m => (
+                        <option key={m.id} value={m.model_name}>
+                          {m.model_name}
+                        </option>
+                      ))}
+                  </select>
+                  {prochatModel.trim() && (
+                    <button
+                      onClick={() => setProchatModel('')}
+                      title="Clear ProChat model"
+                      className="btn-outline"
+                      style={{ padding: '6px', borderRadius: '8px' }}
+                    >
+                      <X size={13} />
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB: Parameters (OpenAI & Provider Specification) */}
+          {activeTab === 'params' && (() => {
+            const activeModelObj = tenantModels?.find(m => m.model_name === selectedModel);
+            const rawProvider = (activeModelObj?.provider || '').toLowerCase();
+            const mLower = (selectedModel || '').toLowerCase();
+            const isGemini = rawProvider === 'gemini' || mLower.includes('gemini') || rawProvider === 'google';
+            const isProChat = rawProvider === 'prochat' || mLower.includes('prochat') || mLower.startsWith('genui');
+            const isOpenRouter = rawProvider === 'openrouter' || mLower.includes('openrouter') || selectedModel?.includes('/');
+            const isOpenAiReasoning = mLower.includes('o1') || mLower.includes('o3') || mLower.includes('o4');
+            const isAnthropic = rawProvider === 'anthropic' || mLower.includes('claude');
+
+            return (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+                
+                {/* Active Mode Banner */}
+                <div style={{
+                  padding: '10px 14px',
+                  borderRadius: '10px',
+                  fontSize: '0.74rem',
+                  lineHeight: '1.4',
+                  background: isGemini || isProChat ? 'rgba(59, 130, 246, 0.08)' : (isOpenRouter ? 'rgba(16, 185, 129, 0.08)' : 'rgba(139, 92, 246, 0.08)'),
+                  border: `1px solid ${isGemini || isProChat ? 'rgba(59, 130, 246, 0.25)' : (isOpenRouter ? 'rgba(16, 185, 129, 0.25)' : 'rgba(139, 92, 246, 0.25)')}`,
+                  color: 'var(--text-sub)'
+                }}>
+                  <div style={{ fontWeight: '700', marginBottom: '2px', color: isGemini || isProChat ? '#60a5fa' : (isOpenRouter ? '#34d399' : 'var(--primary-violet)') }}>
+                    {isGemini || isProChat ? 'Google Gemini & ProChat Mode' : (isOpenRouter ? 'OpenRouter Routing Mode' : (isOpenAiReasoning ? 'OpenAI Reasoning Mode' : 'Standard OpenAI Mode'))}
+                  </div>
+                  <div>
+                    {isGemini || isProChat ? (
+                      <span><code>temperature</code>, <code>top_p</code>, <code>max_tokens</code>, <code>stop</code>, <code>response_format</code>, and <code>reasoning_effort</code> (Gemini 3.x / 2.5: <code>none</code>, <code>low</code>, <code>medium</code>, <code>high</code>) are supported. Incompatible params (penalties, seed) are stripped to guarantee <code>200 OK</code>.</span>
+                    ) : isOpenRouter ? (
+                      <span>Includes <code>top_k</code>, provider routing preferences, fallback models, and thinking tokens.</span>
+                    ) : (
+                      <span>All parameter fields map directly into standard OpenAI completion requests.</span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Temperature */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.74rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted)' }}>
+                    <span>Temperature</span>
+                    <span style={{ color: 'var(--primary-violet)' }}>{temperature !== '' ? temperature : 'default'}</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <input
+                      type="range"
+                      min="0"
+                      max="2"
+                      step="0.05"
+                      value={temperature !== '' ? temperature : 0.7}
+                      disabled={isOpenAiReasoning}
+                      onChange={(e) => setTemperature(e.target.value)}
+                      style={{ flex: 1, accentColor: 'var(--primary-violet)' }}
+                    />
+                    <input
+                      type="number"
+                      min="0"
+                      max="2"
+                      step="0.1"
+                      placeholder="default"
+                      value={temperature}
+                      disabled={isOpenAiReasoning}
+                      onChange={(e) => setTemperature(e.target.value)}
+                      style={{ width: '65px', padding: '6px 8px', fontSize: '0.78rem', borderRadius: '8px', background: 'var(--bg-input)', border: '1px solid var(--border-subtle)', color: 'var(--text-main)', textAlign: 'center' }}
+                    />
+                  </div>
+                  {isOpenAiReasoning && <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Fixed by reasoning model</span>}
+                </div>
+
+                {/* Top P */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.74rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted)' }}>
+                    <span>Top P (Nucleus Sampling)</span>
+                    <span style={{ color: 'var(--primary-violet)' }}>{topP !== '' ? topP : 'default'}</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <input
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.05"
+                      value={topP !== '' ? topP : 1.0}
+                      onChange={(e) => setTopP(e.target.value)}
+                      style={{ flex: 1, accentColor: 'var(--primary-violet)' }}
+                    />
+                    <input
+                      type="number"
+                      min="0"
+                      max="1"
+                      step="0.05"
+                      placeholder="default"
+                      value={topP}
+                      onChange={(e) => setTopP(e.target.value)}
+                      style={{ width: '65px', padding: '6px 8px', fontSize: '0.78rem', borderRadius: '8px', background: 'var(--bg-input)', border: '1px solid var(--border-subtle)', color: 'var(--text-main)', textAlign: 'center' }}
+                    />
+                  </div>
+                </div>
+
+                {/* Max Tokens & Response Format */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '6px' }}>
+                      {isOpenAiReasoning ? 'Max Completion' : 'Max Tokens'}
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      placeholder="e.g. 4096"
+                      value={maxTokens}
+                      onChange={(e) => setMaxTokens(e.target.value)}
+                      style={{ width: '100%', padding: '8px 10px', fontSize: '0.8rem', borderRadius: '8px', background: 'var(--bg-input)', border: '1px solid var(--border-subtle)', color: 'var(--text-main)' }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '6px' }}>
+                      Response Format
+                    </label>
+                    <select
+                      value={responseFormat}
+                      onChange={(e) => setResponseFormat(e.target.value)}
+                      style={{ width: '100%', padding: '8px 10px', fontSize: '0.8rem', borderRadius: '8px', background: 'var(--bg-input)', border: '1px solid var(--border-subtle)', color: 'var(--text-main)', cursor: 'pointer' }}
+                    >
+                      <option value="text">Default (Text)</option>
+                      <option value="json_object">JSON Object</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Reasoning Effort & Thinking Budget */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                      <label style={{ fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted)' }}>
+                        Reasoning Effort
+                      </label>
+                      {(isGemini || isProChat) && (
+                        <span style={{ fontSize: '0.64rem', color: '#60a5fa' }}>Gemini 3.x / 2.5</span>
+                      )}
+                    </div>
+                    <select
+                      value={reasoningEffort}
+                      onChange={(e) => setReasoningEffort(e.target.value)}
+                      style={{ width: '100%', padding: '8px 10px', fontSize: '0.8rem', borderRadius: '8px', background: 'var(--bg-input)', border: '1px solid var(--border-subtle)', color: 'var(--text-main)', cursor: 'pointer' }}
+                    >
+                      <option value="">Default</option>
+                      <option value="none">None (Off)</option>
+                      <option value="minimal">Minimal</option>
+                      <option value="low">Low</option>
+                      <option value="medium">Medium</option>
+                      <option value="high">High</option>
+                      <option value="xhigh">Extra High (xAI / OpenAI)</option>
+                      <option value="max">Max</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '6px' }}>
+                      Thinking Budget
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder="e.g. 2000"
+                      value={thinkingBudget}
+                      onChange={(e) => setThinkingBudget(e.target.value)}
+                      style={{ width: '100%', padding: '8px 10px', fontSize: '0.8rem', borderRadius: '8px', background: 'var(--bg-input)', border: '1px solid var(--border-subtle)', color: 'var(--text-main)' }}
+                    />
+                  </div>
+                </div>
+
+                {/* Penalties (Presence & Frequency) */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', opacity: (isGemini || isProChat) ? 0.5 : 1 }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '6px' }}>
+                      Presence Penalty
+                    </label>
+                    <input
+                      type="number"
+                      min="-2"
+                      max="2"
+                      step="0.1"
+                      placeholder="0.0"
+                      value={presencePenalty}
+                      disabled={isGemini || isProChat}
+                      onChange={(e) => setPresencePenalty(e.target.value)}
+                      style={{ width: '100%', padding: '8px 10px', fontSize: '0.8rem', borderRadius: '8px', background: 'var(--bg-input)', border: '1px solid var(--border-subtle)', color: 'var(--text-main)' }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '6px' }}>
+                      Frequency Penalty
+                    </label>
+                    <input
+                      type="number"
+                      min="-2"
+                      max="2"
+                      step="0.1"
+                      placeholder="0.0"
+                      value={frequencyPenalty}
+                      disabled={isGemini || isProChat}
+                      onChange={(e) => setFrequencyPenalty(e.target.value)}
+                      style={{ width: '100%', padding: '8px 10px', fontSize: '0.8rem', borderRadius: '8px', background: 'var(--bg-input)', border: '1px solid var(--border-subtle)', color: 'var(--text-main)' }}
+                    />
+                  </div>
+                </div>
+
+                {/* Seed & Tool Choice */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '6px' }}>
+                      Seed
+                    </label>
+                    <input
+                      type="number"
+                      placeholder="e.g. 42"
+                      value={seed}
+                      onChange={(e) => setSeed(e.target.value)}
+                      style={{ width: '100%', padding: '8px 10px', fontSize: '0.8rem', borderRadius: '8px', background: 'var(--bg-input)', border: '1px solid var(--border-subtle)', color: 'var(--text-main)' }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '6px' }}>
+                      Tool Choice
+                    </label>
+                    <select
+                      value={toolChoice}
+                      onChange={(e) => setToolChoice(e.target.value)}
+                      style={{ width: '100%', padding: '8px 10px', fontSize: '0.8rem', borderRadius: '8px', background: 'var(--bg-input)', border: '1px solid var(--border-subtle)', color: 'var(--text-main)', cursor: 'pointer' }}
+                    >
+                      <option value="auto">auto</option>
+                      <option value="required">required</option>
+                      <option value="none">none</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Stop Sequences & User ID */}
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '6px' }}>
+                    Stop Sequences (comma-separated)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. ###, END_CONV, STOP"
+                    value={stopSequences}
+                    onChange={(e) => setStopSequences(e.target.value)}
+                    style={{ width: '100%', padding: '8px 10px', fontSize: '0.8rem', borderRadius: '8px', background: 'var(--bg-input)', border: '1px solid var(--border-subtle)', color: 'var(--text-main)' }}
+                  />
+                </div>
+
+                {/* OpenRouter options */}
+                {(isOpenRouter || isAnthropic) && (
+                  <div style={{ padding: '12px', borderRadius: '10px', background: 'rgba(16, 185, 129, 0.04)', border: '1px solid rgba(16, 185, 129, 0.2)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    <div style={{ fontSize: '0.76rem', fontWeight: '700', color: 'var(--primary-emerald)' }}>
+                      ⚡ {isOpenRouter ? 'OpenRouter Routing & Sampling' : 'Anthropic Sampling'}
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.7rem', color: 'var(--text-sub)', fontWeight: '600', marginBottom: '4px' }}>Top K</label>
+                        <input
+                          type="number"
+                          placeholder="e.g. 40"
+                          value={topK}
+                          onChange={(e) => setTopK(e.target.value)}
+                          style={{ width: '100%', padding: '6px 8px', fontSize: '0.78rem', borderRadius: '6px', background: 'var(--bg-input)', border: '1px solid var(--border-subtle)', color: 'var(--text-main)' }}
+                        />
+                      </div>
+
+                      {isOpenRouter && (
+                        <>
+                          <div>
+                            <label style={{ display: 'block', fontSize: '0.7rem', color: 'var(--text-sub)', fontWeight: '600', marginBottom: '4px' }}>Data Collection</label>
+                            <select
+                              value={openrouterDataCollection}
+                              onChange={(e) => setOpenrouterDataCollection(e.target.value)}
+                              style={{ width: '100%', padding: '6px 8px', fontSize: '0.78rem', borderRadius: '6px', background: 'var(--bg-input)', border: '1px solid var(--border-subtle)', color: 'var(--text-main)' }}
+                            >
+                              <option value="">Default (Provider policy)</option>
+                              <option value="allow">Allow data collection</option>
+                              <option value="deny">Deny data collection</option>
+                            </select>
+                          </div>
+
+                          <div>
+                            <label style={{ display: 'block', fontSize: '0.7rem', color: 'var(--text-sub)', fontWeight: '600', marginBottom: '4px' }}>Provider Order</label>
+                            <input
+                              type="text"
+                              placeholder="e.g. Anthropic, Together"
+                              value={openrouterOrder}
+                              onChange={(e) => setOpenrouterOrder(e.target.value)}
+                              style={{ width: '100%', padding: '6px 8px', fontSize: '0.78rem', borderRadius: '6px', background: 'var(--bg-input)', border: '1px solid var(--border-subtle)', color: 'var(--text-main)' }}
+                            />
+                          </div>
+
+                          <div>
+                            <label style={{ display: 'block', fontSize: '0.7rem', color: 'var(--text-sub)', fontWeight: '600', marginBottom: '4px' }}>Fallback Models</label>
+                            <input
+                              type="text"
+                              placeholder="e.g. openai/gpt-4o-mini"
+                              value={openrouterModels}
+                              onChange={(e) => setOpenrouterModels(e.target.value)}
+                              style={{ width: '100%', padding: '6px 8px', fontSize: '0.78rem', borderRadius: '6px', background: 'var(--bg-input)', border: '1px solid var(--border-subtle)', color: 'var(--text-main)' }}
+                            />
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Extra Body JSON */}
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '6px' }}>
+                    Custom Extra Body (JSON)
+                  </label>
+                  <textarea
+                    rows={2}
+                    placeholder='{"transforms": ["middle-out"]}'
+                    value={extraBodyJson}
+                    onChange={(e) => setExtraBodyJson(e.target.value)}
+                    style={{ width: '100%', padding: '8px 10px', fontSize: '0.78rem', fontFamily: 'monospace', borderRadius: '8px', background: 'var(--bg-input)', border: '1px solid var(--border-subtle)', color: 'var(--text-main)', resize: 'vertical' }}
+                  />
+                </div>
+
+              </div>
+            );
+          })()}
+
+          {/* TAB 2: User Data */}
+          {activeTab === 'userdata' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '8px', letterSpacing: '0.5px' }}>
+                  Load Profile Template
+                </label>
+                <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                  <div style={{ flex: 1 }}>
+                    <AsyncSearchableDropdown
+                      value={selectedTemplateId}
+                      onChange={handleTemplateChange}
+                      initialLabel={selectedTemplateId ? `📋 ${templates.find(t => t.id === selectedTemplateId)?.name || 'Loading Profile...'}` : ''}
+                      fetchOptions={async (searchTerm) => {
+                        const data = await userDataApi.list({ search: searchTerm || '', page_size: 20, page: 1, tenant_id: selectedTenantId || undefined });
+                        const items = data.items || Array.isArray(data) ? (data.items || data) : [];
+                        setTemplates(prev => {
+                          const newTs = [...prev];
+                          items.forEach(t => {
+                            if (!newTs.find(existing => existing.id === t.id)) newTs.push(t);
+                          });
+                          return newTs;
+                        });
+                        return items.map(t => ({
+                          value: t.id,
+                          label: `📋 ${t.name}`
+                        }));
+                      }}
+                      placeholder="Select user data profile..."
+                    />
+                  </div>
+                  {selectedTemplateId && (
+                    <button
+                      type="button"
+                      onClick={() => handleTemplateChange('')}
+                      className="btn-outline"
+                      style={{ padding: '7px 8px', borderRadius: '8px' }}
+                    >
+                      <X size={13} />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '8px', letterSpacing: '0.5px' }}>
+                  Key-Value Pairs (Injected into Sandbox)
+                </label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {userDataPairs.map((pair, idx) => (
+                    <div key={idx} style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                      <input
+                        type="text"
+                        placeholder="Key"
+                        value={pair.key}
+                        onChange={(e) => handleUserDataPairChange(idx, 'key', e.target.value)}
+                        style={{
+                          flex: 1,
+                          background: 'var(--bg-input)',
+                          border: '1px solid var(--border-subtle)',
+                          borderRadius: '8px',
+                          padding: '7px 10px',
+                          color: 'var(--text-main)',
+                          fontSize: '0.78rem',
+                          outline: 'none'
+                        }}
+                      />
+                      <input
+                        type="text"
+                        placeholder="Value"
+                        value={pair.value}
+                        onChange={(e) => handleUserDataPairChange(idx, 'value', e.target.value)}
+                        style={{
+                          flex: 1.2,
+                          background: 'var(--bg-input)',
+                          border: '1px solid var(--border-subtle)',
+                          borderRadius: '8px',
+                          padding: '7px 10px',
+                          color: 'var(--text-main)',
+                          fontSize: '0.78rem',
+                          outline: 'none'
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveUserDataPair(idx)}
+                        style={{
+                          background: 'transparent',
+                          border: 'none',
+                          color: 'var(--accent-rose)',
+                          cursor: 'pointer',
+                          padding: '4px',
+                          fontSize: '0.9rem'
+                        }}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    className="btn-outline"
+                    onClick={handleAddUserDataPair}
+                    style={{ padding: '6px 12px', fontSize: '0.76rem', alignSelf: 'flex-start', marginTop: '4px' }}
+                  >
+                    <Plus size={13} /> Add Key-Value
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 3: Skills Filter */}
+          {activeTab === 'skills' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '8px', letterSpacing: '0.5px' }}>
+                  Filter Active Skills
+                </label>
+                <AsyncSearchableDropdown
+                  value=''
+                  onChange={(val) => { if (val && !selectedSkillNames.includes(val)) setSelectedSkillNames(prev => [...prev, val]); }}
+                  fetchOptions={async (searchTerm) => {
+                    const data = await skillsApi.list({ search: searchTerm || '', page_size: 30, page: 1, tenant_id: selectedTenantId || undefined });
+                    const items = Array.isArray(data.items) ? data.items : (Array.isArray(data) ? data : []);
+                    return items.filter(s => !selectedSkillNames.includes(s.name)).map(s => ({ value: s.name, label: `🧩 ${s.name}` }));
+                  }}
+                  placeholder="Search and add skill..."
+                />
+              </div>
+
+              {selectedSkillNames.length > 0 ? (
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Selected ({selectedSkillNames.length})</span>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedSkillNames([])}
+                      style={{ background: 'transparent', border: 'none', color: 'var(--accent-rose)', fontSize: '0.72rem', cursor: 'pointer' }}
+                    >
+                      Clear All
+                    </button>
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                    {selectedSkillNames.map(name => (
+                      <span key={name} style={{
+                        display: 'inline-flex', alignItems: 'center', gap: '6px',
+                        padding: '4px 10px', borderRadius: '16px', fontSize: '0.74rem',
+                        background: 'rgba(139,92,246,0.12)', border: '1px solid rgba(139,92,246,0.3)',
+                        color: 'var(--primary-violet)'
+                      }}>
+                        🧩 {name}
+                        <button type="button" onClick={() => setSelectedSkillNames(prev => prev.filter(s => s !== name))}
+                          style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'inherit', padding: '0', display: 'flex', alignItems: 'center' }}>
+                          <X size={11} />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div style={{ padding: '16px', background: 'rgba(255,255,255,0.02)', borderRadius: '10px', border: '1px dashed var(--border-subtle)', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.78rem' }}>
+                  No skill filter applied. All skills in the selected app scope are enabled by default.
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB 4: System Prompt */}
+          {activeTab === 'system' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.5px' }}>
+                System Instructions
+              </label>
+              <textarea
+                value={systemPrompt || ''}
+                onChange={(e) => setSystemPrompt && setSystemPrompt(e.target.value)}
+                placeholder="You are AI Skill Engine, equipped with advanced sandboxes..."
+                rows={8}
+                style={{
+                  width: '100%',
+                  padding: '12px',
+                  borderRadius: '10px',
+                  background: 'var(--bg-input)',
+                  border: '1px solid var(--border-subtle)',
+                  color: 'var(--text-main)',
+                  fontSize: '0.82rem',
+                  lineHeight: '1.5',
+                  resize: 'vertical',
+                  fontFamily: 'inherit',
+                  outline: 'none'
+                }}
+              />
+              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                Defines the persona, constraints, and instructions for the agent during this session.
+              </span>
+            </div>
+          )}
+
+        </div>
+
+        {/* Drawer Footer Actions */}
+        <div style={{
+          padding: '16px 20px',
+          borderTop: '1px solid var(--border-subtle)',
+          background: 'linear-gradient(180deg, transparent, rgba(139, 92, 246, 0.05))',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '10px'
+        }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+            <button
+              type="button"
+              className="btn-outline"
+              onClick={onOpenHistory}
+              style={{
+                justifyContent: 'center',
+                fontSize: '0.78rem',
+                padding: '8px',
+                borderColor: 'rgba(139, 92, 246, 0.25)',
+                color: 'var(--text-main)'
+              }}
+            >
+              <History size={14} color="var(--primary-violet)" /> History ({sessionsCount || 0})
+            </button>
+            <button
+              type="button"
+              className="btn-outline"
+              onClick={onOpenAudit}
+              style={{
+                justifyContent: 'center',
+                fontSize: '0.78rem',
+                padding: '8px',
+                borderColor: 'rgba(16, 185, 129, 0.25)',
+                color: 'var(--text-main)'
+              }}
+            >
+              <Terminal size={14} color="var(--primary-emerald)" /> Audit Logs ({executedToolsCount || 0})
+            </button>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+            <button
+              type="button"
+              className="btn-outline"
+              onClick={onExportTranscript}
+              style={{
+                justifyContent: 'center',
+                fontSize: '0.78rem',
+                padding: '8px',
+                borderColor: 'rgba(99, 102, 241, 0.25)',
+                color: 'var(--text-main)'
+              }}
+            >
+              <Download size={14} color="var(--primary-indigo)" /> Export
+            </button>
+            <button
+              type="button"
+              className="btn-outline"
+              onClick={onClearConsole}
+              style={{
+                justifyContent: 'center',
+                fontSize: '0.78rem',
+                padding: '8px',
+                borderColor: 'rgba(244, 63, 94, 0.25)',
+                color: 'var(--accent-rose)'
+              }}
+            >
+              <Trash2 size={14} /> Clear Chat
+            </button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  );
+}

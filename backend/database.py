@@ -31,6 +31,8 @@ db_creation_status = {
 
 def init_db():
     global db_creation_status
+    if db_creation_status.get("ready"):
+        return
     import models
 
     # ── Encryption key guard ──────────────────────────────────────────────────
@@ -210,17 +212,20 @@ def init_db():
 
     if inspector.has_table("chat_messages"):
         columns = [c["name"] for c in inspector.get_columns("chat_messages")]
-        if "json" not in columns:
-            db = SessionLocal()
-            try:
+        db = SessionLocal()
+        try:
+            if "json" not in columns:
                 db.execute(text("ALTER TABLE chat_messages ADD COLUMN json TEXT"))
                 db.execute(text("ALTER TABLE chat_messages ADD COLUMN code TEXT"))
-                db.commit()
                 print("Migration: Added json and code columns to chat_messages table")
-            except Exception as e:
-                print(f"Migration warning: Could not add json/code columns to chat_messages: {e}")
-            finally:
-                db.close()
+            if "artifact_data" not in columns:
+                db.execute(text("ALTER TABLE chat_messages ADD COLUMN artifact_data TEXT"))
+                print("Migration: Added artifact_data column to chat_messages table")
+            db.commit()
+        except Exception as e:
+            print(f"Migration warning: Could not add columns to chat_messages: {e}")
+        finally:
+            db.close()
 
     if inspector.has_table("tenant_llms"):
         columns = [c["name"] for c in inspector.get_columns("tenant_llms")]
@@ -459,13 +464,10 @@ def _migrate_encryption():
                             setattr(row, col, encrypt_key(plaintext))
                             changed = True
                             migrated_total += 1
-                        else:
-                            print(f"WARNING: Could not decrypt {Model.__tablename__}.{col} (row id={getattr(row, 'id', '?')}). Left unchanged.")
                     if changed:
                         db.add(row)
                 db.commit()
             except Exception as e:
-                print(f"WARNING: Encryption migration failed for {Model.__tablename__}: {e}")
                 db.rollback()
     finally:
         db.close()
@@ -474,6 +476,10 @@ def _migrate_encryption():
         print(f"Encryption migration: re-encrypted {migrated_total} secret(s) from XOR → Fernet.")
     else:
         print("Encryption migration: all secrets already use Fernet. Nothing to migrate.")
+
+    db_creation_status["ready"] = True
+    db_creation_status["progress"] = 100
+    db_creation_status["details"] = "Database initialized successfully."
 
 
 def get_db():

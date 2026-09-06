@@ -1,13 +1,39 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Send, Bot, User, Terminal, Sparkles, Trash2, Check, Copy, Activity, Code2, Globe, Plus, MessageSquare, Brain, ChevronDown, ChevronUp, Cpu, ShieldCheck, Box, Key, Download, X, History, FileText, Sparkle, Sliders, Paperclip, Maximize2, Minimize2, Loader } from 'lucide-react';
+import {
+  Send, Bot, User, Terminal, Sparkles, Trash2, Check, Copy, Activity,
+  Code2, Globe, Plus, MessageSquare, Brain, ChevronDown, ChevronUp, Cpu,
+  ShieldCheck, Box, Key, Download, X, History, FileText, Sparkle, Sliders,
+  Paperclip, Maximize2, Minimize2, Loader, LayoutDashboard, Settings, PanelLeftOpen,
+  Sun, Moon
+} from 'lucide-react';
 import AsyncSearchableDropdown from '../AsyncSearchableDropdown';
-import { chatApi, tenantsApi, appsApi, userDataApi, skillsApi, apiClient } from '../../api';
+import { chatApi, tenantsApi, appsApi, userDataApi, skillsApi, apiClient, artifactsApi } from '../../api';
 import ChatInput from './ChatInput';
 import MessageList from './MessageList';
+import ConfigDrawer from './ConfigDrawer';
+import Canvas from '../Canvas';
 import ProChat from 'prochat';
 
-export default function ChatPlayground() {
+export default function ChatPlayground({ isSidebarOpen, toggleSidebar }) {
+  const [theme, setTheme] = useState(() => localStorage.getItem('app_theme') || 'dark');
+
+  useEffect(() => {
+    const handleThemeChange = (e) => {
+      if (e.detail?.theme) setTheme(e.detail.theme);
+    };
+    window.addEventListener('app-theme-change', handleThemeChange);
+    return () => window.removeEventListener('app-theme-change', handleThemeChange);
+  }, []);
+
+  const toggleTheme = () => {
+    const nextTheme = theme === 'dark' ? 'light' : 'dark';
+    setTheme(nextTheme);
+    document.documentElement.setAttribute('data-theme', nextTheme);
+    localStorage.setItem('app_theme', nextTheme);
+    window.dispatchEvent(new CustomEvent('app-theme-change', { detail: { theme: nextTheme } }));
+  };
+
   const [searchParams, setSearchParams] = useSearchParams();
   const [initialSessionId] = useState(() => `session_${Math.floor(1000 + Math.random() * 9000)}`);
   const [sessions, setSessions] = useState([]);
@@ -25,6 +51,25 @@ export default function ChatPlayground() {
   };
 
   const [messages, setMessages] = useState([]);
+  const [canvasArtifact, setCanvasArtifact] = useState(null);
+  const [isCanvasOpen, setIsCanvasOpen] = useState(false);
+  const [canvasWidthPercent, setCanvasWidthPercent] = useState(55);
+
+  // Auto-detect if current session already has an artifact and make it available
+  useEffect(() => {
+    if (!activeSessionId) return;
+    artifactsApi.getSessionArtifacts(activeSessionId).then((res) => {
+      const list = res?.data !== undefined ? res.data : res;
+      if (Array.isArray(list) && list.length > 0) {
+        setCanvasArtifact({
+          id: list[0].id,
+          token: null,
+          title: list[0].title || list[0].filename,
+          artifact_type: list[0].artifact_type || 'document'
+        });
+      }
+    }).catch(() => { });
+  }, [activeSessionId]);
 
   useEffect(() => {
     const urlSessionId = searchParams.get('session_id');
@@ -32,24 +77,29 @@ export default function ChatPlayground() {
       setActiveSessionId(initialSessionId);
     }
   }, [initialSessionId]);
+
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
-  const abortControllerRef = React.useRef(null);
+  const abortControllerRef = useRef(null);
+
   const handleStop = () => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
     }
   };
+
   const [liveThought, setLiveThought] = useState('');
   const [executedTools, setExecutedTools] = useState([]);
   const [tenants, setTenants] = useState([]);
   const selectedTenantId = searchParams.get('tenant') || '';
+
   const setSelectedTenantId = (val) => {
     const nextParams = new URLSearchParams(searchParams);
     if (val) nextParams.set('tenant', val);
     else nextParams.delete('tenant');
     setSearchParams(nextParams);
   };
+
   const activeTenant = tenants.find(t => t.id === selectedTenantId) || tenants[0];
   const apiKey = activeTenant ? activeTenant.api_key : '';
 
@@ -72,18 +122,37 @@ export default function ChatPlayground() {
 
   // Custom tenant models list
   const [tenantModels, setTenantModels] = useState([]);
-
   const [apps, setApps] = useState([]);
   const [copiedIdx, setCopiedIdx] = useState(null);
   const [expandedReasoning, setExpandedReasoning] = useState({});
 
-  // Collapsible configuration sidebar state
-  const [isSettingsOpen, setIsSettingsOpen] = useState(true);
+  // Slide-over configuration drawer (closed by default for clean ChatGPT/Claude UI)
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [userDataPairs, setUserDataPairs] = useState([{ key: 'api_key', value: 'example_secret_key' }]);
   const [templates, setTemplates] = useState([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState('');
   const [selectedSkillNames, setSelectedSkillNames] = useState([]);
+  const [systemPrompt, setSystemPrompt] = useState('You are AI Skill Engine, an enterprise agent equipped with sandboxed execution environments and specialized skills.');
+
+  // Model completion parameters state
+  const [temperature, setTemperature] = useState('');
+  const [topP, setTopP] = useState('');
+  const [topK, setTopK] = useState('');
+  const [maxTokens, setMaxTokens] = useState('');
+  const [presencePenalty, setPresencePenalty] = useState('');
+  const [frequencyPenalty, setFrequencyPenalty] = useState('');
+  const [stopSequences, setStopSequences] = useState('');
+  const [seed, setSeed] = useState('');
+  const [responseFormat, setResponseFormat] = useState('text');
+  const [toolChoice, setToolChoice] = useState('auto');
+  const [userParam, setUserParam] = useState('');
+  const [reasoningEffort, setReasoningEffort] = useState('');
+  const [thinkingBudget, setThinkingBudget] = useState('');
+  const [openrouterOrder, setOpenrouterOrder] = useState('');
+  const [openrouterDataCollection, setOpenrouterDataCollection] = useState('');
+  const [openrouterModels, setOpenrouterModels] = useState('');
+  const [extraBodyJson, setExtraBodyJson] = useState('');
 
   const fetchTemplates = async () => {
     try {
@@ -117,13 +186,11 @@ export default function ChatPlayground() {
       setUserDataPairs([{ key: '', value: '' }]);
       return;
     }
-    // First try the already-fetched list
     const tpl = templates.find(t => String(t.id) === String(tplId));
     if (tpl) {
       applyTemplate(tpl);
       return;
     }
-    // If not found in the initial list, re-fetch all templates
     try {
       const data = await userDataApi.list({ search: '', page: 1, page_size: 100, tenant_id: selectedTenantId || undefined });
       const items = Array.isArray(data.items) ? data.items : (Array.isArray(data) ? data : []);
@@ -158,11 +225,11 @@ export default function ChatPlayground() {
     });
     return Object.keys(obj).length > 0 ? obj : null;
   };
-  // ProChat model selection — empty string = disabled, model name string = enabled with that model
+
   const [prochatModel, setProchatModel] = useState('');
 
   // File Upload states
-  const fileInputRef = React.useRef(null);
+  const fileInputRef = useRef(null);
   const [attachedFiles, setAttachedFiles] = useState([]);
   const [uploading, setUploading] = useState(false);
 
@@ -178,16 +245,10 @@ export default function ChatPlayground() {
         const formData = new FormData();
         formData.append('file', file);
 
-        const headers = {};
-        if (apiKey.trim()) {
-          headers['X-API-Key'] = apiKey.trim();
-        }
-
         const data = await apiClient.post('/api/v1/files/upload', formData, {
           tenantKey: apiKey.trim() || undefined
         });
 
-        // Read file to base64 if it's an image
         let base64 = null;
         if (file.type.startsWith('image/')) {
           base64 = await new Promise((resolve) => {
@@ -231,37 +292,19 @@ export default function ChatPlayground() {
   const [previewTotalPages, setPreviewTotalPages] = useState(1);
   const [previewTotalItems, setPreviewTotalItems] = useState(0);
 
-  const presets = [
-    {
-      label: 'Python Math Sandbox',
-      icon: Code2,
-      text: 'Calculate compound interest for 50,000 RS at 10.5% interest for 15 years in Python sandbox.',
-    },
-    {
-      label: 'Server Uptime & Disk',
-      icon: Activity,
-      text: 'Check server uptime and disk space using system_diagnostics.',
-    },
-    {
-      label: 'GitHub REST API',
-      icon: Globe,
-      text: 'Fetch a design philosophy quote using the sample_api skill.',
-    },
-  ];
-
   const fetchSessionsList = async (activeKey) => {
     try {
       const keyToUse = activeKey || apiKey;
       const data = await apiClient.get('/api/v1/sessions', {
-        params: { page: sessionsPage, page_size: 6 },
+        params: { page: sessionsPage, page_size: 8 },
         tenantKey: keyToUse || undefined
       });
 
       if (data && data.items !== undefined) {
         const mapped = data.items.map((s) => ({
           id: s.id,
-          name: s.title || `Session ${s.id}`,
-          lastTime: s.created_at ? new Date(s.created_at).toLocaleTimeString() : 'Recent',
+          name: s.title || `Session ${s.id.substring(0, 8)}`,
+          lastTime: s.created_at ? new Date(s.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Recent',
         }));
         setSessions(mapped);
         setSessionsTotalPages(data.pages || 1);
@@ -269,7 +312,7 @@ export default function ChatPlayground() {
       } else {
         const mapped = (data || []).map((s) => ({
           id: s.id,
-          name: s.title || `Session ${s.id}`,
+          name: s.title || `Session ${s.id.substring(0, 8)}`,
           lastTime: 'Recent',
         }));
         setSessions(mapped);
@@ -284,18 +327,39 @@ export default function ChatPlayground() {
   const processLoadedMessages = (rawMessages) => {
     const processed = [];
     let pendingReasoning = [];
+    let pendingArtifacts = [];
 
     rawMessages.forEach((m) => {
       if (m.role === 'user') {
         processed.push({
           role: 'user',
           content: m.content || '',
-          timestamp: m.timestamp || new Date().toLocaleTimeString(),
+          timestamp: m.timestamp || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         });
       } else if (m.role === 'tool') {
         const contentStr = m.content || '';
         pendingReasoning.push(`💭 Tool execution completed.`);
         pendingReasoning.push(`⚡ Executed tool\nOutput: ${contentStr}`);
+
+        if (m.artifact) {
+          pendingArtifacts.push(m.artifact);
+        } else if (m.artifact_data) {
+          try {
+            const parsed = typeof m.artifact_data === 'string' ? JSON.parse(m.artifact_data) : m.artifact_data;
+            if (Array.isArray(parsed)) pendingArtifacts.push(...parsed);
+            else if (parsed) pendingArtifacts.push(parsed);
+          } catch (e) { }
+        } else if (contentStr.includes('/embed/canvas?token=')) {
+          const match = contentStr.match(/token=([a-zA-Z0-9_\-\.]+)/);
+          if (match) {
+            pendingArtifacts.push({
+              title: 'Interactive Document',
+              artifact_type: 'document',
+              token: match[1],
+              embed_url: `/embed/canvas?token=${match[1]}`
+            });
+          }
+        }
       } else if (m.role === 'assistant') {
         let toolCalls = [];
         if (m.tool_calls) {
@@ -305,33 +369,38 @@ export default function ChatPlayground() {
         }
 
         if (toolCalls && toolCalls.length > 0) {
-          pendingReasoning.push(`💭 Analyzing query context & invoking tool dependencies...`);
+          pendingReasoning.push(`💭 Analyzing context & invoking tool dependencies...`);
           toolCalls.forEach(tc => {
             const rawName = tc.function?.name || tc.name || 'tool';
             const cleanName = rawName.split('__').pop().replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
             const args = typeof tc.function?.arguments === 'string'
               ? tc.function.arguments
               : JSON.stringify(tc.function?.arguments || tc.arguments || {});
-            pendingReasoning.push(`💭 Invoking ${cleanName}...`);
             pendingReasoning.push(`🛠️ Invoking Tool: ${cleanName}\nArgs: ${args}`);
           });
         }
 
-        if (m.json || m.code) {
-          pendingReasoning.push(`💭 Generating dynamic user interface components...`);
-          let parsedJson = null;
-          if (m.json) {
-            if (typeof m.json === 'string') {
-              try { parsedJson = JSON.parse(m.json); } catch (e) { }
-            } else {
-              parsedJson = m.json;
-            }
-          }
-          if (parsedJson) {
-            pendingReasoning.push(`📊 UI Schema JSON:\n${JSON.stringify(parsedJson, null, 2)}`);
-          }
-          pendingReasoning.push(`⚡ Rendered ProChat Generative UI component.`);
+        let messageArtifacts = [];
+        if (Array.isArray(m.artifacts) && m.artifacts.length > 0) {
+          messageArtifacts = [...m.artifacts];
+        } else if (m.artifact_data) {
+          try {
+            const parsed = typeof m.artifact_data === 'string' ? JSON.parse(m.artifact_data) : m.artifact_data;
+            if (Array.isArray(parsed)) messageArtifacts.push(...parsed);
+            else if (parsed) messageArtifacts.push(parsed);
+          } catch (e) { }
+        } else if (m.artifact) {
+          messageArtifacts.push(m.artifact);
         }
+
+        if (messageArtifacts.length === 0 && pendingArtifacts.length > 0) {
+          messageArtifacts = [...pendingArtifacts];
+        }
+
+        messageArtifacts.forEach(a => {
+          if (!a.id && a.artifact_id) a.id = a.artifact_id;
+        });
+        pendingArtifacts = [];
 
         if (m.content && m.content.trim()) {
           processed.push({
@@ -339,7 +408,8 @@ export default function ChatPlayground() {
             content: m.content,
             json: m.json,
             code: m.code,
-            timestamp: m.timestamp || new Date().toLocaleTimeString(),
+            artifacts: messageArtifacts,
+            timestamp: m.timestamp || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
             reasoning: pendingReasoning.length > 0 ? pendingReasoning.join('\n\n') : null
           });
           pendingReasoning = [];
@@ -348,7 +418,7 @@ export default function ChatPlayground() {
         processed.push({
           role: m.role,
           content: m.content || '',
-          timestamp: m.timestamp || new Date().toLocaleTimeString(),
+          timestamp: m.timestamp || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         });
       }
     });
@@ -357,7 +427,7 @@ export default function ChatPlayground() {
       processed.push({
         role: 'assistant',
         content: 'No response content emitted.',
-        timestamp: new Date().toLocaleTimeString(),
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         reasoning: pendingReasoning.join('\n\n')
       });
     }
@@ -374,15 +444,12 @@ export default function ChatPlayground() {
       if (data && data.length > 0) {
         const loadedMsgs = processLoadedMessages(data);
         setMessages(loadedMsgs);
+        const lastWithArt = [...loadedMsgs].reverse().find(msg => Array.isArray(msg.artifacts) && msg.artifacts.length > 0);
+        if (lastWithArt && lastWithArt.artifacts && lastWithArt.artifacts.length > 0) {
+          setCanvasArtifact(lastWithArt.artifacts[lastWithArt.artifacts.length - 1]);
+        }
       } else {
-        setMessages([
-          {
-            role: 'assistant',
-            content: 'Welcome to `AI Skill Engine` Enterprise Simulator! Select an App scope or API key, then ask any question requiring system diagnostics, sandboxed Python code execution, or MCP tool calls.',
-            timestamp: new Date().toLocaleTimeString(),
-            reasoning: 'Gateway initialized with active skills & MCP drivers.',
-          },
-        ]);
+        setMessages([]);
       }
     } catch (e) {
       console.error('Failed to fetch session messages:', e);
@@ -401,7 +468,6 @@ export default function ChatPlayground() {
       const appsList = appsData?.items || appsData || [];
       setApps(appsList);
 
-      // Auto-select first app if none is set or if previous app doesn't exist in the list
       if (appsList.length > 0) {
         if (!selectedAppId || !appsList.find(a => a.id === selectedAppId)) {
           setSelectedAppId(appsList[0].id);
@@ -420,7 +486,6 @@ export default function ChatPlayground() {
       const items = Array.isArray(tenantsData) ? tenantsData : (tenantsData.items || tenantsData.data || []);
       setTenants(items || []);
 
-      // Auto-select first tenant if none selected
       let tenantIdToUse = selectedTenantId;
       if (tenantsData.length > 0 && !selectedTenantId) {
         tenantIdToUse = tenantsData[0].id;
@@ -431,7 +496,6 @@ export default function ChatPlayground() {
       const keyToUse = activeT ? activeT.api_key : '';
       fetchSessionsList(keyToUse);
 
-      // Always fetch tenant models and apps on load scoped to tenant
       fetchTenantModels();
       loadApps();
     } catch (e) {
@@ -522,158 +586,195 @@ export default function ChatPlayground() {
     }
   };
 
-  const handleNewSession = () => {
-    const newId = `session_${Math.floor(1000 + Math.random() * 9000)}`;
-    setActiveSessionId(newId);
-    setMessages([
-      {
-        role: 'assistant',
-        content: 'Welcome to `AI Skill Engine` Enterprise Simulator! Select an App scope or API key, then ask any question requiring system diagnostics, sandboxed Python code execution, or MCP tool calls.',
-        timestamp: new Date().toLocaleTimeString(),
-        reasoning: 'Gateway initialized with active skills & MCP drivers.',
-      },
-    ]);
-    setExecutedTools([]);
-    setShowHistoryModal(false);
-  };
-
-  // LLM Thread Title Generator
-  const generateLLMThreadTitle = async (queryText) => {
+  const handleDeleteSession = async (sessionId, e) => {
+    e.stopPropagation();
     try {
-      const data = await chatApi.createCompletion({
-        messages: [
-          {
-            role: 'user',
-            content: `Generate a concise, 3-5 word title summarizing a chat starting with user query: "${queryText}". Return ONLY the title string, no quotes or markdown.`,
-          },
-        ],
-        model: selectedModel,
-        stream: false,
-      }, apiKey.trim() || undefined);
-
-      const generatedTitle = data.choices && data.choices[0] && data.choices[0].message ? data.choices[0].message.content.trim() : null;
-
-      if (generatedTitle) {
-        const cleanTitle = generatedTitle.replace(/^["']|["']$/g, '');
-        setSessions((prev) => {
-          const exists = prev.some((s) => s.id === activeSessionId);
-          if (exists) {
-            return prev.map((s) => s.id === activeSessionId ? { ...s, name: cleanTitle } : s);
-          } else {
-            return [{ id: activeSessionId, name: cleanTitle, lastTime: 'Just now' }, ...prev];
-          }
-        });
+      await apiClient.delete(`/api/v1/sessions/${sessionId}`, {
+        tenantKey: apiKey || undefined
+      });
+      fetchSessionsList();
+      if (activeSessionId === sessionId) {
+        handleNewSession();
       }
-    } catch (e) {
-      console.error('Failed to generate LLM thread title:', e);
+      if (previewSessionId === sessionId) {
+        setPreviewSessionId(null);
+        setPreviewMessages([]);
+      }
+    } catch (err) {
+      console.error('Failed to delete session:', err);
     }
   };
 
-  const handleSend = async (textToSend = null) => {
-    const query = textToSend || input;
-    if (!query.trim() || loading) return;
+  const handleNewSession = () => {
+    const newSessionId = `session_${Math.floor(1000 + Math.random() * 9000)}`;
+    setActiveSessionId(newSessionId);
+    setMessages([]);
+    setCanvasArtifact(null);
+    setIsCanvasOpen(false);
+    setAttachedFiles([]);
+    setInput('');
+  };
 
-    const currentSessionObj = sessions.find((s) => s.id === activeSessionId);
-    if (currentSessionObj && (currentSessionObj.name.startsWith('New Chat Session') || currentSessionObj.name === 'Developer & Math Session')) {
-      generateLLMThreadTitle(query);
+  const copyText = (txt, idx) => {
+    navigator.clipboard.writeText(txt);
+    setCopiedIdx(idx);
+    setTimeout(() => setCopiedIdx(null), 2000);
+  };
+
+  // SEND MESSAGE HANDLER (STREAMING)
+  const handleSend = async (overridePrompt) => {
+    const promptToSend = typeof overridePrompt === 'string' ? overridePrompt : input;
+    if ((!promptToSend || !promptToSend.trim()) && attachedFiles.length === 0) return;
+    if (loading) return;
+
+    let userContent = promptToSend ? promptToSend.trim() : '';
+    if (attachedFiles.length > 0) {
+      const fileRefs = attachedFiles
+        .map(f => `[Attached File: ${f.name} (URL: ${f.url || f.sandboxPath || 'sandbox'})]`)
+        .join('\n');
+      userContent = userContent ? `${userContent}\n\n${fileRefs}` : fileRefs;
     }
 
-    // Construct multimodal content payload
-    let contentPayload = query;
-    let textDescriptionParts = [];
+    const newMsg = {
+      role: 'user',
+      content: userContent,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    };
 
-    // Document attachments description
-    const docAttachments = attachedFiles.filter(f => !f.type.startsWith('image/'));
-    if (docAttachments.length > 0) {
-      const descriptions = docAttachments.map(f => `[Attached File: ${f.name} (URL: ${f.url})]`).join('\n');
-      textDescriptionParts.push(descriptions);
-    }
-
-    let finalQueryText = query;
-    if (textDescriptionParts.length > 0) {
-      finalQueryText = `${textDescriptionParts.join('\n')}\n\n${query}`;
-    }
-
-    const imageAttachments = attachedFiles.filter(f => f.type.startsWith('image/'));
-    if (imageAttachments.length > 0) {
-      contentPayload = [
-        { type: 'text', text: finalQueryText },
-        ...imageAttachments.map(img => ({
-          type: 'image_url',
-          image_url: { url: img.base64 }
-        }))
-      ];
-    } else {
-      contentPayload = finalQueryText;
-    }
-
-    const userTime = new Date().toLocaleTimeString();
-    setMessages((prev) => [
-      ...prev,
-      { role: 'user', content: contentPayload, timestamp: userTime },
-    ]);
-    if (!textToSend) setInput('');
+    const currentFiles = [...attachedFiles];
+    setMessages((prev) => [...prev, newMsg]);
+    setInput('');
     setAttachedFiles([]);
     setLoading(true);
-    const controller = new AbortController();
-    abortControllerRef.current = controller;
-    setLiveThought('Connecting to Skill Gateway...');
+    setLiveThought('Connecting to Skill Engine...');
+    setExecutedTools([]);
 
-    let reasoningTraces = [];
-    let finalContent = '';
-    let turnGeneratedFiles = [];
-    let finalJson = null;
-    let finalCode = '';
+    abortControllerRef.current = new AbortController();
 
     try {
-      const headers = {
-        'Content-Type': 'application/json',
-        'X-Request-Source': 'dashboard'
-      };
-      if (apiKey.trim()) {
-        headers['X-API-Key'] = apiKey.trim();
-      }
+      let finalContent = '';
+      let finalJson = null;
+      let finalCode = null;
+      let reasoningTraces = [];
+      let turnArtifacts = [];
+      let turnGeneratedFiles = [];
+
+      // Build complete conversation history for the LLM
+      const historyToSend = messages
+        .filter(m => (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string' && m.content.trim())
+        .map(m => ({
+          role: m.role,
+          content: m.content
+        }));
+      historyToSend.push({ role: 'user', content: userContent });
 
       const payload = {
-        messages: [{ role: 'user', content: contentPayload }],
-        session_id: activeSessionId,
-        model: selectedModel,
+        model: selectedModel || 'default',
+        messages: historyToSend,
         stream: true,
-        ...(prochatModel.trim() ? { prochat_model: prochatModel.trim() } : {}),
+        session_id: activeSessionId,
+        app_id: selectedAppId || undefined,
+        user_data: getUserDataPayload(),
+        prochat_model: prochatModel.trim() || undefined,
+        skill_names: selectedSkillNames.length > 0 ? selectedSkillNames : undefined,
+        system_prompt: systemPrompt || undefined,
+        attachments: currentFiles.map(f => ({
+          name: f.name,
+          url: f.url,
+          sandbox_path: f.sandboxPath,
+          type: f.type,
+          base64: f.base64
+        }))
       };
-      if (selectedAppId) {
-        payload.app_id = selectedAppId;
+
+      // Attach Model Parameters
+      if (temperature !== '' && !isNaN(Number(temperature))) {
+        payload.temperature = Number(temperature);
       }
-      const userDataPayload = getUserDataPayload();
-      if (userDataPayload) {
-        payload.user_data = userDataPayload;
+      if (topP !== '' && !isNaN(Number(topP))) {
+        payload.top_p = Number(topP);
       }
-      if (selectedSkillNames.length > 0) {
-        payload.skill_names = selectedSkillNames;
+      if (topK !== '' && !isNaN(Number(topK))) {
+        payload.top_k = Number(topK);
+      }
+      if (maxTokens !== '' && !isNaN(Number(maxTokens))) {
+        payload.max_tokens = Number(maxTokens);
+      }
+      if (presencePenalty !== '' && !isNaN(Number(presencePenalty))) {
+        payload.presence_penalty = Number(presencePenalty);
+      }
+      if (frequencyPenalty !== '' && !isNaN(Number(frequencyPenalty))) {
+        payload.frequency_penalty = Number(frequencyPenalty);
+      }
+      if (stopSequences.trim()) {
+        payload.stop = stopSequences.split(',').map(s => s.trim()).filter(Boolean);
+      }
+      if (seed !== '' && !isNaN(Number(seed))) {
+        payload.seed = Number(seed);
+      }
+      if (responseFormat && responseFormat !== 'text') {
+        payload.response_format = { type: responseFormat };
+      }
+      if (toolChoice && toolChoice !== 'auto') {
+        payload.tool_choice = toolChoice;
+      }
+      if (userParam.trim()) {
+        payload.user = userParam.trim();
+      }
+      if (reasoningEffort) {
+        payload.reasoning_effort = reasoningEffort;
+      }
+      if (thinkingBudget !== '' && !isNaN(Number(thinkingBudget))) {
+        payload.thinking_budget = Number(thinkingBudget);
+      }
+      if (openrouterOrder.trim() || openrouterDataCollection) {
+        const provObj = {};
+        if (openrouterOrder.trim()) provObj.order = openrouterOrder.split(',').map(s => s.trim()).filter(Boolean);
+        if (openrouterDataCollection) provObj.data_collection = openrouterDataCollection;
+        payload.openrouter_provider = provObj;
+      }
+      if (openrouterModels.trim()) {
+        payload.openrouter_models = openrouterModels.split(',').map(s => s.trim()).filter(Boolean);
+      }
+      if (extraBodyJson.trim()) {
+        try {
+          payload.extra_body = JSON.parse(extraBodyJson);
+        } catch (e) {
+          console.warn('Custom Extra Body JSON parse error:', e);
+        }
       }
 
-      const res = await chatApi.createStream(payload, apiKey.trim() || null, {
-        source: 'dashboard',
-        signal: controller.signal
+      const response = await fetch('/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Request-Source': 'dashboard',
+          ...(apiKey.trim() ? { 'X-API-Key': apiKey.trim() } : {}),
+        },
+        body: JSON.stringify(payload),
+        signal: abortControllerRef.current.signal,
       });
 
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder('utf-8');
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
       let buffer = '';
 
-      // Append initial streaming assistant message to show progress in real-time
       setMessages((prev) => [
         ...prev,
         {
           role: 'assistant',
           content: '',
-          timestamp: new Date().toLocaleTimeString(),
+          json: null,
+          code: null,
+          prochat_model: prochatModel.trim() || null,
+          artifacts: [],
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           reasoning: '',
-          generatedFiles: [],
           isStreaming: true,
-          json: '',
-          code: '',
-          prochat_model: prochatModel
         },
       ]);
 
@@ -683,10 +784,13 @@ export default function ChatPlayground() {
           const lastMsg = next[next.length - 1];
           if (lastMsg && lastMsg.role === 'assistant') {
             lastMsg.content = finalContent;
-            lastMsg.reasoning = reasoningTraces.join('\n\n');
-            lastMsg.generatedFiles = [...turnGeneratedFiles];
             lastMsg.json = finalJson;
             lastMsg.code = finalCode;
+            lastMsg.reasoning = reasoningTraces.join('\n\n');
+            lastMsg.artifacts = [...turnArtifacts];
+            if (turnArtifacts.length > 0) {
+              lastMsg.artifact = turnArtifacts[turnArtifacts.length - 1];
+            }
           }
           return next;
         });
@@ -704,63 +808,121 @@ export default function ChatPlayground() {
         for (const evtBlock of events) {
           if (!evtBlock.trim()) continue;
           const lines = evtBlock.split('\n');
-          let dataJson = null;
 
           for (const line of lines) {
             if (line.startsWith('data: ')) {
               const rawData = line.replace('data: ', '').trim();
               if (rawData === '[DONE]') continue;
               try {
-                dataJson = JSON.parse(rawData);
-              } catch (e) { }
-            }
-          }
+                const dataJson = JSON.parse(rawData);
 
-          if (dataJson && dataJson.choices && dataJson.choices[0] && dataJson.choices[0].delta) {
-            const delta = dataJson.choices[0].delta;
-            if (delta.reasoning) {
-              setLiveThought(delta.reasoning);
-              reasoningTraces.push(`💭 ${delta.reasoning}`);
-              stateChanged = true;
-            }
-            if (delta.tool_call) {
-              const rawName = delta.tool_call.name || 'tool';
-              const cleanName = rawName.split('__').pop().replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-              setLiveThought(`Invoking ${cleanName}...`);
-              reasoningTraces.push(`🛠️ Invoking Tool: ${cleanName}\nArgs: ${JSON.stringify(delta.tool_call.arguments)}`);
-              stateChanged = true;
-            }
-            if (delta.tool_result) {
-              const rawName = delta.tool_result.tool_name || 'tool';
-              const cleanName = rawName.split('__').pop().replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-              setLiveThought(`${cleanName} finished in ${delta.tool_result.execution_time_ms}ms.`);
-              reasoningTraces.push(`⚡ Executed in ${delta.tool_result.sandbox_type} sandbox (${delta.tool_result.execution_time_ms}ms, Exit: ${delta.tool_result.exit_code})\nOutput: ${(delta.tool_result.stdout || delta.tool_result.stderr || '').trim()}`);
-              setExecutedTools((prev) => [...prev, delta.tool_result]);
-              if (delta.tool_result.generated_files && delta.tool_result.generated_files.length > 0) {
-                turnGeneratedFiles.push(...delta.tool_result.generated_files);
-              }
-              stateChanged = true;
-            }
-            if (delta.content) {
-              finalContent += delta.content;
-              stateChanged = true;
-            }
-            if (delta.json) {
-              if (typeof delta.json === 'string') {
-                try {
-                  finalJson = JSON.parse(delta.json);
-                } catch (e) {
-                  // Fall back only if parsing fails
-                  finalJson = delta.json;
+                if (dataJson.type === 'done' && Array.isArray(dataJson.artifacts) && dataJson.artifacts.length > 0) {
+                  dataJson.artifacts.forEach(rawA => {
+                    const artInfo = {
+                      id: rawA.artifact_id || rawA.id,
+                      token: rawA.token,
+                      title: rawA.title || 'Document',
+                      filename: rawA.filename || 'document.md',
+                      artifact_type: rawA.artifact_type || 'document',
+                      current_version: rawA.current_version || 1,
+                      embed_url: rawA.embed_url || (rawA.token ? `/embed/canvas?token=${rawA.token}` : '')
+                    };
+                    if (!turnArtifacts.some(existing => (artInfo.id && existing.id === artInfo.id) || (existing.token && existing.token === artInfo.token))) {
+                      turnArtifacts.push(artInfo);
+                    }
+                  });
+                  if (turnArtifacts.length > 0) {
+                    setCanvasArtifact(turnArtifacts[turnArtifacts.length - 1]);
+                    stateChanged = true;
+                  }
                 }
-              } else {
-                finalJson = delta.json;
-              }
-              stateChanged = true;
-            }
-            if (delta.code) {
-              finalCode = delta.code;
-              stateChanged = true;
+
+                if (dataJson && dataJson.choices && dataJson.choices[0] && dataJson.choices[0].delta) {
+                  const delta = dataJson.choices[0].delta;
+                  if (delta.reasoning && !delta.tool_call && !delta.tool_result) {
+                    setLiveThought(delta.reasoning);
+                    if (!reasoningTraces.some(t => t.includes(delta.reasoning))) {
+                      reasoningTraces.push(`💭 ${delta.reasoning}`);
+                    }
+                    stateChanged = true;
+                  }
+                  if (delta.artifact) {
+                    const rawA = delta.artifact;
+                    const artInfo = {
+                      id: rawA.artifact_id || rawA.id,
+                      token: rawA.token,
+                      title: rawA.title || 'Document',
+                      filename: rawA.filename || 'document.md',
+                      artifact_type: rawA.artifact_type || 'document',
+                      current_version: rawA.current_version || 1,
+                      embed_url: rawA.embed_url || (rawA.token ? `/embed/canvas?token=${rawA.token}` : '')
+                    };
+                    if (!turnArtifacts.some(existing => (artInfo.id && existing.id === artInfo.id) || (existing.token && existing.token === artInfo.token))) {
+                      turnArtifacts.push(artInfo);
+                    }
+                    setCanvasArtifact(artInfo);
+                    stateChanged = true;
+                  }
+                  if (delta.tool_call) {
+                    const rawName = delta.tool_call.name || 'tool';
+                    const cleanName = rawName.split('__').pop().replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                    setLiveThought(`Invoking ${cleanName}...`);
+                    reasoningTraces.push(`🛠️ Invoking Tool: ${cleanName}\nArgs: ${JSON.stringify(delta.tool_call.arguments)}`);
+                    stateChanged = true;
+                  }
+                  if (delta.tool_result) {
+                    const rawName = delta.tool_result.tool_name || 'tool';
+                    const cleanName = rawName.split('__').pop().replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                    setLiveThought(`${cleanName} finished in ${delta.tool_result.execution_time_ms}ms.`);
+                    reasoningTraces.push(`⚡ Executed in ${delta.tool_result.sandbox_type} sandbox (${delta.tool_result.execution_time_ms}ms, Exit: ${delta.tool_result.exit_code})\nOutput: ${(delta.tool_result.stdout || delta.tool_result.stderr || '').trim()}`);
+                    setExecutedTools((prev) => [...prev, delta.tool_result]);
+                    if (delta.tool_result.generated_files && delta.tool_result.generated_files.length > 0) {
+                      turnGeneratedFiles.push(...delta.tool_result.generated_files);
+                    }
+                    if (delta.tool_result.artifact_data) {
+                      const rawA = delta.tool_result.artifact_data;
+                      const artInfo = {
+                        id: rawA.artifact_id || rawA.id,
+                        token: rawA.token,
+                        title: rawA.title || 'Document',
+                        filename: rawA.filename || 'document.md',
+                        artifact_type: rawA.artifact_type || 'document',
+                        current_version: rawA.current_version || 1,
+                        embed_url: rawA.embed_url || (rawA.token ? `/embed/canvas?token=${rawA.token}` : '')
+                      };
+                      if (!turnArtifacts.some(existing => (artInfo.id && existing.id === artInfo.id) || (existing.token && existing.token === artInfo.token))) {
+                        turnArtifacts.push(artInfo);
+                      }
+                      setCanvasArtifact(artInfo);
+                    }
+                    stateChanged = true;
+                  }
+                  if (delta.content) {
+                    finalContent += delta.content;
+                    // Auto-close reasoning accordion as soon as final response text begins streaming
+                    setExpandedReasoning((prev) => {
+                      const assistantIdx = messages.length + 1; // [..., userMsg, assistantMsg]
+                      if (prev[assistantIdx] !== false) {
+                        return { ...prev, [assistantIdx]: false };
+                      }
+                      return prev;
+                    });
+                    stateChanged = true;
+                  }
+                  if (delta.json) {
+                    if (typeof delta.json === 'string') {
+                      try { finalJson = JSON.parse(delta.json); } catch (e) { finalJson = delta.json; }
+                    } else {
+                      finalJson = delta.json;
+                    }
+                    stateChanged = true;
+                  }
+                  if (delta.code) {
+                    finalCode = delta.code;
+                    stateChanged = true;
+                  }
+                }
+              } catch (e) { }
             }
           }
         }
@@ -769,159 +931,343 @@ export default function ChatPlayground() {
         }
       }
 
-      // Finalize the streaming message
+      if (finalContent && finalContent.includes('/embed/canvas?token=')) {
+        const globalRegex = /\/embed\/canvas\?token=([^\s)"']+)/g;
+        let match;
+        while ((match = globalRegex.exec(finalContent)) !== null) {
+          const tokenStr = match[1];
+          let effId = null;
+          if (tokenStr.includes('.')) {
+            try {
+              const rawB64 = tokenStr.split('.')[0].replace(/-/g, '+').replace(/_/g, '/');
+              const padded = rawB64.padEnd(rawB64.length + ((4 - (rawB64.length % 4)) % 4), '=');
+              const payload = JSON.parse(atob(padded));
+              if (payload?.art) effId = payload.art;
+            } catch (e) { }
+          }
+          const artInfo = {
+            id: effId,
+            token: tokenStr,
+            title: 'Interactive Document',
+            artifact_type: 'document',
+            current_version: 1,
+            embed_url: `/embed/canvas?token=${tokenStr}`
+          };
+          if (!turnArtifacts.some(existing => (effId && existing.id === effId) || (existing.token && existing.token === tokenStr))) {
+            turnArtifacts.push(artInfo);
+          }
+        }
+        if (turnArtifacts.length > 0) {
+          setCanvasArtifact(turnArtifacts[turnArtifacts.length - 1]);
+        }
+      }
+
       setMessages((prev) => {
         const next = [...prev];
         const lastMsg = next[next.length - 1];
         if (lastMsg && lastMsg.role === 'assistant') {
-          lastMsg.content = finalContent || 'No response content emitted.';
-          if (finalJson) {
-            reasoningTraces.push(`💭 Generating dynamic user interface components...`);
-            reasoningTraces.push(`📊 UI Schema JSON:\n${JSON.stringify(finalJson, null, 2)}`);
-            reasoningTraces.push(`⚡ Rendered ProChat Generative UI component.`);
-          }
-          lastMsg.reasoning = reasoningTraces.join('\n\n');
-          lastMsg.generatedFiles = turnGeneratedFiles;
+          lastMsg.content = finalContent || (turnArtifacts.length > 0 ? 'Created Canvas document.' : (finalJson ? 'Generated dynamic UI.' : 'Completed task.'));
           lastMsg.json = finalJson;
           lastMsg.code = finalCode;
-          delete lastMsg.isStreaming;
+          lastMsg.reasoning = reasoningTraces.join('\n\n');
+          lastMsg.isStreaming = false;
+          lastMsg.artifacts = [...turnArtifacts];
+          if (turnArtifacts.length > 0) {
+            lastMsg.artifact = turnArtifacts[turnArtifacts.length - 1];
+          }
         }
         return next;
       });
 
-      // Refresh sessions list after message finishes
-      fetchSessionsList(apiKey);
+      // Ensure reasoning accordion is closed once response is finalized
+      setExpandedReasoning((prev) => ({
+        ...prev,
+        [messages.length + 1]: false
+      }));
+
+      fetchSessionsList();
     } catch (err) {
-      if (err.name === 'AbortError') {
-        // Gracefully finalize the last message with whatever content was streamed so far
-        setMessages((prev) => {
-          const next = [...prev];
-          const lastMsg = next[next.length - 1];
-          if (lastMsg && lastMsg.role === 'assistant') {
-            lastMsg.content = finalContent || 'Stream stopped by user.';
-            lastMsg.reasoning = reasoningTraces.join('\n\n') + '\n\n⚠️ Stream execution stopped by user.';
-            lastMsg.generatedFiles = turnGeneratedFiles;
-            lastMsg.json = finalJson;
-            lastMsg.code = finalCode;
-            delete lastMsg.isStreaming;
-          }
-          return next;
-        });
-        fetchSessionsList(apiKey);
-      } else {
+      if (err.name !== 'AbortError') {
         setMessages((prev) => [
           ...prev,
           {
             role: 'assistant',
-            content: `Error connecting to gateway: ${err.message}`,
-            timestamp: new Date().toLocaleTimeString(),
+            content: `**Error:** Failed to execute request: ${err.message}`,
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            reasoning: `Connection terminated: ${err.message}`,
           },
         ]);
       }
     } finally {
       setLoading(false);
       setLiveThought('');
+      abortControllerRef.current = null;
     }
   };
 
-  const copyText = (text, idx) => {
-    navigator.clipboard.writeText(text);
-    setCopiedIdx(idx);
-    setTimeout(() => setCopiedIdx(null), 2000);
-  };
-
-  const toggleReasoning = (idx) => {
-    setExpandedReasoning((prev) => ({ ...prev, [idx]: !prev[idx] }));
-  };
-
   const exportTranscript = () => {
-    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(messages, null, 2));
+    const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(messages, null, 2));
     const downloadAnchor = document.createElement('a');
-    downloadAnchor.setAttribute("href", dataStr);
-    downloadAnchor.setAttribute("download", `chat_transcript_${activeSessionId}.json`);
+    downloadAnchor.setAttribute('href', dataStr);
+    downloadAnchor.setAttribute('download', `transcript_${activeSessionId}.json`);
     document.body.appendChild(downloadAnchor);
     downloadAnchor.click();
     downloadAnchor.remove();
   };
 
-  const activeSessionObj = sessions.find((s) => s.id === activeSessionId);
-  const activeSessionTitle = activeSessionObj ? activeSessionObj.name : 'New Chat Session';
+  const activeApp = apps.find(a => a.id === selectedAppId);
+  const activeSessionTitle = sessions.find(s => s.id === activeSessionId)?.name || 'New Conversation';
 
   return (
     <div style={{
       display: 'flex',
       flexDirection: 'column',
-      ...(isFullscreen
-        ? { position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 9999 }
-        : { height: 'calc(100vh - 105px)', width: '100%' }
-      )
+      height: '100%',
+      width: '100%',
+      background: 'var(--bg-main)',
+      position: 'relative',
+      overflow: 'hidden'
     }}>
-      {/* Main Full-Width Simulator Console */}
-      <div className="glass-box" style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%', overflow: 'hidden' }}>
-        {/* Simulator Control Header Bar */}
-        <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--border-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--bg-panel)', flexShrink: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <div style={{ background: 'rgba(139, 92, 246, 0.15)', padding: '7px', borderRadius: '9px' }}>
-              <Bot size={20} color="var(--primary-violet)" />
-            </div>
-            <div>
-              <div style={{ fontWeight: '700', fontSize: '0.96rem', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                {activeSessionTitle}
-              </div>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Session ID: {activeSessionId}</div>
-            </div>
-          </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            {/* New Chat Primary Button */}
+      {/* ---------------------------------------------------------------- */}
+      {/* 1. TOP NAVIGATION BAR (Clean Claude / ChatGPT Style)             */}
+      {/* ---------------------------------------------------------------- */}
+      <div style={{
+        height: '54px',
+        borderBottom: '1px solid var(--border-subtle)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '0 16px',
+        background: 'var(--bg-panel)',
+        flexShrink: 0,
+        zIndex: 20
+      }}>
+        {/* Left: Sidebar Toggle, Active Session Indicator & History Trigger */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {toggleSidebar && !isSidebarOpen && (
             <button
-              className="btn-gradient"
-              onClick={handleNewSession}
-              style={{ padding: '6px 14px', fontSize: '0.82rem' }}
-            >
-              <Plus size={15} /> New Chat
-            </button>
-
-            {/* Toggle Settings Panel */}
-            <button
+              type="button"
               className="btn-outline"
-              onClick={() => setIsSettingsOpen(!isSettingsOpen)}
-              style={{ padding: '6px 12px', fontSize: '0.82rem', borderColor: isSettingsOpen ? 'var(--primary-violet)' : 'var(--border-subtle)', background: isSettingsOpen ? 'rgba(139, 92, 246, 0.08)' : 'transparent' }}
+              onClick={toggleSidebar}
+              style={{ padding: '6px 8px', borderRadius: '8px', border: '1px solid var(--border-subtle)' }}
+              title="Expand Left Sidebar"
             >
-              <Sliders size={15} color="var(--primary-violet)" />
-              {isSettingsOpen ? ' Hide Config' : ' Config'}
+              <PanelLeftOpen size={16} color="var(--primary-violet)" />
             </button>
+          )}
 
-            {/* Fullscreen Toggle */}
-            <button
-              className="btn-outline"
-              onClick={() => setIsFullscreen(!isFullscreen)}
-              title={isFullscreen ? 'Exit fullscreen' : 'Maximize chat'}
-              style={{ padding: '6px 10px', fontSize: '0.82rem', borderColor: isFullscreen ? 'var(--primary-violet)' : 'var(--border-subtle)', background: isFullscreen ? 'rgba(139, 92, 246, 0.08)' : 'transparent' }}
-            >
-              {isFullscreen ? <Minimize2 size={15} color="var(--primary-violet)" /> : <Maximize2 size={15} color="var(--primary-violet)" />}
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={handleNewSession}
+            className="btn-gradient"
+            style={{
+              padding: '6px 12px',
+              fontSize: '0.8rem',
+              borderRadius: '8px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}
+            title="Start fresh conversation"
+          >
+            <Plus size={14} /> <span>New Chat</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setPreviewSessionId(activeSessionId);
+              setPreviewMessages(messages);
+              setShowHistoryModal(true);
+            }}
+            className="btn-outline"
+            style={{
+              padding: '6px 12px',
+              fontSize: '0.8rem',
+              borderRadius: '8px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              border: '1px solid var(--border-subtle)',
+              color: 'var(--text-main)'
+            }}
+            title="View chat history threads"
+          >
+            <History size={14} color="var(--primary-violet)" />
+            <span style={{ maxWidth: '160px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {activeSessionTitle}
+            </span>
+            <ChevronDown size={13} color="var(--text-muted)" />
+          </button>
         </div>
 
-        {/* Outer Split Container */}
-        <div style={{ display: 'flex', flex: 1, minHeight: 0, width: '100%' }}>
+        {/* Center: Model & App Pills */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {/* Quick Model Selector */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            background: 'rgba(255, 255, 255, 0.04)',
+            border: '1px solid var(--border-subtle)',
+            borderRadius: '16px',
+            padding: '4px 10px',
+            fontSize: '0.78rem',
+            color: 'var(--text-main)',
+            cursor: 'pointer'
+          }}
+          onClick={() => setIsSettingsOpen(true)}
+          title="Click to configure model & parameters"
+          >
+            <Cpu size={13} color="var(--primary-violet)" />
+            <span style={{ fontWeight: '600' }}>{selectedModel || 'Select Model'}</span>
+            <ChevronDown size={11} color="var(--text-muted)" />
+          </div>
 
-          {/* LEFT SECTION: Message Area (Takes up remaining flex space) */}
-          <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, height: '100%' }}>
+          {/* Quick App Scope Badge */}
+          {activeApp && (
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '5px',
+              background: 'rgba(139, 92, 246, 0.08)',
+              border: '1px solid rgba(139, 92, 246, 0.25)',
+              borderRadius: '16px',
+              padding: '4px 10px',
+              fontSize: '0.76rem',
+              color: 'var(--primary-violet)',
+              cursor: 'pointer'
+            }}
+            onClick={() => setIsSettingsOpen(true)}
+            title="App Scope - Click to change"
+            >
+              <Box size={12} />
+              <span>{activeApp.name}</span>
+            </div>
+          )}
+        </div>
 
+        {/* Right: Theme Toggle, Config Drawer Toggle, Fullscreen */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {/* Day / Night Theme Toggle */}
+          <button
+            type="button"
+            className="btn-outline"
+            onClick={toggleTheme}
+            style={{
+              padding: '6px 9px',
+              borderRadius: '8px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              border: '1px solid var(--border-subtle)',
+              color: theme === 'dark' ? '#fbbf24' : '#6366f1'
+            }}
+            title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+          >
+            {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
+          </button>
 
+          {/* Slide-over Config Trigger */}
+          <button
+            type="button"
+            className="btn-outline"
+            onClick={() => setIsSettingsOpen(!isSettingsOpen)}
+            style={{
+              padding: '6px 10px',
+              borderRadius: '8px',
+              fontSize: '0.8rem',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              borderColor: isSettingsOpen ? 'var(--primary-violet)' : 'var(--border-subtle)',
+              background: isSettingsOpen ? 'rgba(139, 92, 246, 0.1)' : 'transparent',
+              color: isSettingsOpen ? 'var(--primary-violet)' : 'var(--text-main)'
+            }}
+            title="Session configuration & parameters"
+          >
+            <Sliders size={14} />
+            <span>Config</span>
+          </button>
 
-            {/* Message Stream Viewport */}
+          {/* Fullscreen Toggle */}
+          <button
+            type="button"
+            className="btn-outline"
+            onClick={() => setIsFullscreen(!isFullscreen)}
+            style={{
+              padding: '6px 8px',
+              borderRadius: '8px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              border: '1px solid var(--border-subtle)'
+            }}
+            title={isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'}
+          >
+            {isFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+          </button>
+        </div>
+      </div>
+
+      {/* ---------------------------------------------------------------- */}
+      {/* 2. MAIN WORKSPACE (Split Chat & Canvas Artifacts)                */}
+      {/* ---------------------------------------------------------------- */}
+      <div style={{
+        display: 'flex',
+        flex: 1,
+        minHeight: 0,
+        width: '100%',
+        minWidth: 0,
+        overflow: 'hidden',
+        position: 'relative'
+      }}>
+
+        {/* LEFT SECTION: Chat Conversation Viewport */}
+        {(!isCanvasOpen || canvasWidthPercent < 100) && (
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            flex: isCanvasOpen ? `0 0 calc(100% - ${canvasWidthPercent}%)` : '1 1 100%',
+            width: isCanvasOpen ? `calc(100% - ${canvasWidthPercent}%)` : '100%',
+            minWidth: 0,
+            maxWidth: isCanvasOpen ? `calc(100% - ${canvasWidthPercent}%)` : '100%',
+            minHeight: 0,
+            height: '100%',
+            position: 'relative',
+            overflow: 'hidden',
+            transition: 'width 0.15s ease'
+          }}>
+            {/* Messages Stream */}
             <MessageList
               messages={messages}
               expandedReasoning={expandedReasoning}
               setExpandedReasoning={setExpandedReasoning}
               copiedIdx={copiedIdx}
               copyText={copyText}
+              onOpenCanvas={(art) => {
+                if (!art) return;
+                let resolvedArt = { ...art };
+                if (!resolvedArt.id && resolvedArt.token && resolvedArt.token.includes('.')) {
+                  try {
+                    const rawB64 = resolvedArt.token.split('.')[0].replace(/-/g, '+').replace(/_/g, '/');
+                    const padded = rawB64.padEnd(rawB64.length + ((4 - (rawB64.length % 4)) % 4), '=');
+                    const payload = JSON.parse(atob(padded));
+                    if (payload?.art) resolvedArt.id = payload.art;
+                  } catch (e) {
+                    console.warn('Could not extract artifact id:', e);
+                  }
+                }
+                setCanvasArtifact(resolvedArt);
+                setIsCanvasOpen(true);
+              }}
+              activeCanvasArtifact={canvasArtifact}
+              isCanvasOpen={isCanvasOpen}
+              onSelectPreset={(text) => handleSend(text)}
             />
 
-            {/* Input Bar */}
+            {/* Floating Pill Chat Input */}
             <ChatInput
               attachedFiles={attachedFiles}
               setAttachedFiles={setAttachedFiles}
@@ -933,426 +1279,140 @@ export default function ChatPlayground() {
               setInput={setInput}
               handleSend={handleSend}
               handleStop={handleStop}
+              activeModelName={selectedModel}
+              activeAppName={activeApp?.name}
             />
           </div>
+        )}
 
-          {/* RIGHT SECTION: Collapsible Settings Panel */}
-          {isSettingsOpen && (
-            <div style={{
-              width: '280px',
-              borderLeft: '1px solid var(--border-subtle)',
-              background: 'var(--bg-panel)',
-              display: 'flex',
-              flexDirection: 'column',
-              padding: '20px',
-              gap: '20px',
-              overflowY: 'auto',
-              flexShrink: 0
-            }}>
-              {/* Section 0: Quick Examples */}
-              <div>
-                <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '10px', letterSpacing: '0.5px' }}>
-                  ⚡ Quick Examples
-                </label>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {presets.map((p, idx) => {
-                    const Icon = p.icon;
-                    return (
-                      <button
-                        key={idx}
-                        onClick={() => handleSend(p.text)}
-                        disabled={loading}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '10px',
-                          padding: '10px 12px',
-                          background: 'rgba(139, 92, 246, 0.06)',
-                          border: '1px solid rgba(139, 92, 246, 0.2)',
-                          borderRadius: '10px',
-                          cursor: loading ? 'not-allowed' : 'pointer',
-                          textAlign: 'left',
-                          width: '100%',
-                          transition: 'background 0.15s',
-                          opacity: loading ? 0.5 : 1,
-                        }}
-                        onMouseEnter={e => e.currentTarget.style.background = 'rgba(139, 92, 246, 0.12)'}
-                        onMouseLeave={e => e.currentTarget.style.background = 'rgba(139, 92, 246, 0.06)'}
-                      >
-                        <div style={{ background: 'rgba(139, 92, 246, 0.15)', padding: '6px', borderRadius: '8px', flexShrink: 0 }}>
-                          <Icon size={13} color="var(--primary-violet)" />
-                        </div>
-                        <span style={{ fontSize: '0.78rem', fontWeight: '600', color: 'var(--text-main)' }}>{p.label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
+        {/* RIGHT SECTION: Interactive Canvas (Slides, Docs, Sheets, Code) */}
+        {canvasArtifact && isCanvasOpen && (
+          <div style={{
+            width: canvasWidthPercent === 100 ? '100%' : `${canvasWidthPercent}%`,
+            flex: canvasWidthPercent === 100 ? '1 1 100%' : `0 0 ${canvasWidthPercent}%`,
+            minWidth: 0,
+            maxWidth: canvasWidthPercent === 100 ? '100%' : `${canvasWidthPercent}%`,
+            borderLeft: canvasWidthPercent === 100 ? 'none' : '1px solid var(--border-subtle)',
+            display: 'flex',
+            flexDirection: 'column',
+            height: '100%',
+            position: 'relative',
+            background: 'var(--bg-main)',
+            overflow: 'hidden',
+            animation: 'fadeIn 0.2s ease',
+            transition: 'width 0.15s ease'
+          }}>
+            <Canvas
+              key={`${canvasArtifact.id}-${canvasArtifact.token || 'notoken'}`}
+              artifactId={canvasArtifact.id}
+              token={canvasArtifact.token}
+              onClose={() => setIsCanvasOpen(false)}
+            />
+          </div>
+        )}
 
-              {/* Section 1: Tenant Key */}
-              <div>
-                <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '8px', letterSpacing: '0.5px' }}>
-                  Tenant Access Key
-                </label>
-                <AsyncSearchableDropdown
-                  value={selectedTenantId}
-                  onChange={(val) => {
-                    setSelectedTenantId(val);
-                  }}
-                  initialLabel={tenants.find(t => t.id === selectedTenantId)?.name ? `🔑 ${tenants.find(t => t.id === selectedTenantId).name}` : ''}
-                  fetchOptions={async (searchTerm) => {
-                    const data = await tenantsApi.list({ search: searchTerm || '', page_size: 10, page: 1 });
-                    const items = data.items || Array.isArray(data) ? (data.items || data) : [];
-                    setTenants(prev => {
-                      const newTs = [...prev];
-                      items.forEach(t => {
-                        if (!newTs.find(existing => existing.id === t.id)) newTs.push(t);
-                      });
-                      return newTs;
-                    });
-                    return items.map(t => ({
-                      value: t.id,
-                      label: `🔑 ${t.name}`
-                    }));
-                  }}
-                  placeholder="Select Tenant"
-                />
-              </div>
-
-              {/* Section 2: LLM Model */}
-              <div>
-                <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '8px', letterSpacing: '0.5px' }}>
-                  Execution Model
-                </label>
-                <AsyncSearchableDropdown
-                  value={selectedModel}
-                  onChange={(val) => setSelectedModel(val)}
-                  fetchOptions={async (searchTerm) => {
-                    const data = await tenantsApi.listLlms(null, { search: searchTerm || '', page_size: 10, page: 1, tenant_id: selectedTenantId || undefined });
-                    const items = data.items || Array.isArray(data) ? (data.items || data) : [];
-                    return items
-                      .filter(m => m.provider !== 'prochat' && !m.model_name.toLowerCase().includes('genui'))
-                      .map(m => ({
-                        value: m.model_name,
-                        label: `${m.model_name} (${m.provider})`
-                      }));
-                  }}
-                  placeholder={tenantModels.length === 0 ? "No models" : "Select Model"}
-                  disabled={!selectedTenantId}
-                />
-              </div>
-
-              {/* Section 3: App Group Scope */}
-              <div>
-                <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '8px', letterSpacing: '0.5px' }}>
-                  Application Scope
-                </label>
-                <AsyncSearchableDropdown
-                  value={selectedAppId}
-                  onChange={(val) => setSelectedAppId(val)}
-                  initialLabel={apps.find(a => a.id === selectedAppId)?.name ? `📦 ${apps.find(a => a.id === selectedAppId).name}` : ''}
-                  fetchOptions={async (searchTerm) => {
-                    const data = await appsApi.list({ search: searchTerm || '', page_size: 10, page: 1, tenant_id: selectedTenantId || undefined });
-                    const items = data.items || Array.isArray(data) ? (data.items || data) : [];
-                    setApps(prev => {
-                      const newApps = [...prev];
-                      items.forEach(a => {
-                        if (!newApps.find(existing => existing.id === a.id)) newApps.push(a);
-                      });
-                      return newApps;
-                    });
-                    return items.map(a => ({
-                      value: a.id,
-                      label: `📦 ${a.name} (${a.skills_count || (a.skill_names ? a.skill_names.length : 0)} skills)`
-                    }));
-                  }}
-                  placeholder="Select Application..."
-                />
-              </div>
-
-              {/* Section 3.5: Generative UI Model */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.5px' }}>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <Sparkles size={12} color={prochatModel.trim() ? 'var(--primary-violet)' : 'var(--text-muted)'} />
-                    Generative UI Model
-                  </span>
-                </label>
-                <div style={{ position: 'relative', display: 'flex', gap: '6px', alignItems: 'center' }}>
-                  <select
-                    value={prochatModel}
-                    onChange={(e) => setProchatModel(e.target.value)}
-                    style={{
-                      flex: 1,
-                      padding: '8px 10px',
-                      fontSize: '0.82rem',
-                      borderRadius: '8px',
-                      border: `1px solid ${prochatModel.trim() ? 'rgba(139, 92, 246, 0.5)' : 'var(--border-subtle)'}`,
-                      background: prochatModel.trim() ? 'rgba(139, 92, 246, 0.06)' : 'var(--bg-input)',
-                      color: prochatModel.trim() ? 'var(--primary-violet)' : 'var(--text-sub)',
-                      outline: 'none',
-                      transition: 'all 0.2s',
-                    }}
-                  >
-                    <option value="">— disabled —</option>
-                    {tenantModels
-                      .filter(m => m.provider === 'prochat' || m.model_name.toLowerCase().includes('genui'))
-                      .map(m => (
-                        <option key={m.id} value={m.model_name}>
-                          {m.model_name}
-                        </option>
-                      ))}
-                  </select>
-                  {prochatModel.trim() && (
-                    <button
-                      onClick={() => setProchatModel('')}
-                      title="Clear ProChat model"
-                      style={{
-                        padding: '7px 8px',
-                        borderRadius: '8px',
-                        border: '1px solid var(--border-subtle)',
-                        background: 'transparent',
-                        cursor: 'pointer',
-                        color: 'var(--text-muted)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        lineHeight: 1,
-                        flexShrink: 0,
-                      }}
-                    >
-                      <X size={13} />
-                    </button>
-                  )}
-                </div>
-                {prochatModel.trim() && (
-                  <span style={{ fontSize: '0.71rem', color: 'var(--primary-violet)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <Sparkles size={10} /> ProChat active · <code style={{ fontSize: '0.7rem' }}>{prochatModel}</code>
-                  </span>
-                )}
-              </div>
-
-              {/* Section 3.75: Skill Filter */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.5px' }}>
-                  Skill Filter (Optional)
-                </label>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', minHeight: '32px' }}>
-                  {selectedSkillNames.map(name => (
-                    <span key={name} style={{
-                      display: 'inline-flex', alignItems: 'center', gap: '4px',
-                      padding: '3px 8px', borderRadius: '12px', fontSize: '0.72rem',
-                      background: 'rgba(139,92,246,0.15)', border: '1px solid rgba(139,92,246,0.3)',
-                      color: 'var(--primary-violet)'
-                    }}>
-                      🧩 {name}
-                      <button type="button" onClick={() => setSelectedSkillNames(prev => prev.filter(s => s !== name))}
-                        style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'inherit', padding: '0 2px', lineHeight: 1, display: 'flex', alignItems: 'center' }}>
-                        <X size={10} />
-                      </button>
-                    </span>
-                  ))}
-                </div>
-                <AsyncSearchableDropdown
-                  value=''
-                  onChange={(val) => { if (val && !selectedSkillNames.includes(val)) setSelectedSkillNames(prev => [...prev, val]); }}
-                  fetchOptions={async (searchTerm) => {
-                    const data = await skillsApi.list({ search: searchTerm || '', page_size: 30, page: 1, tenant_id: selectedTenantId || undefined });
-                    const items = Array.isArray(data.items) ? data.items : (Array.isArray(data) ? data : []);
-                    return items.filter(s => !selectedSkillNames.includes(s.name)).map(s => ({ value: s.name, label: `🧩 ${s.name}` }));
-                  }}
-                  placeholder="Add skill to filter..."
-                />
-                {selectedSkillNames.length > 0 && (
-                  <button type="button" onClick={() => setSelectedSkillNames([])}
-                    style={{ alignSelf: 'flex-start', fontSize: '0.71rem', color: 'var(--text-muted)', background: 'transparent', border: 'none', cursor: 'pointer', padding: 0 }}>
-                    Clear all filters
-                  </button>
-                )}
-              </div>
-
-              {/* Section 3.8: User Data Context */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.5px' }}>
-                  User Data Context (Optional)
-                </label>
-                <div style={{ position: 'relative', display: 'flex', gap: '6px', alignItems: 'center' }}>
-                  <div style={{ flex: 1 }}>
-                    <AsyncSearchableDropdown
-                      value={selectedTemplateId}
-                      onChange={handleTemplateChange}
-                      initialLabel={selectedTemplateId ? `📋 ${templates.find(t => t.id === selectedTemplateId)?.name || 'Loading Profile...'}` : ''}
-                      fetchOptions={async (searchTerm) => {
-                        const data = await userDataApi.list({ search: searchTerm || '', page_size: 20, page: 1, tenant_id: selectedTenantId || undefined });
-                        const items = data.items || Array.isArray(data) ? (data.items || data) : [];
-                        setTemplates(prev => {
-                          const newTs = [...prev];
-                          items.forEach(t => {
-                            if (!newTs.find(existing => existing.id === t.id)) newTs.push(t);
-                          });
-                          return newTs;
-                        });
-                        return items.map(t => ({
-                          value: t.id,
-                          label: `📋 ${t.name}`
-                        }));
-                      }}
-                      placeholder="Load User Data Profile..."
-                    />
-                  </div>
-                  {selectedTemplateId && (
-                    <button
-                      type="button"
-                      onClick={() => handleTemplateChange('')}
-                      title="Clear profile template"
-                      style={{
-                        padding: '7px 8px',
-                        borderRadius: '8px',
-                        border: '1px solid var(--border-subtle)',
-                        background: 'transparent',
-                        cursor: 'pointer',
-                        color: 'var(--text-muted)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        lineHeight: 1,
-                        flexShrink: 0,
-                      }}
-                    >
-                      <X size={13} />
-                    </button>
-                  )}
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {userDataPairs.map((pair, idx) => (
-                    <div key={idx} style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                      <input
-                        type="text"
-                        placeholder="Key"
-                        value={pair.key}
-                        onChange={(e) => handleUserDataPairChange(idx, 'key', e.target.value)}
-                        style={{
-                          flex: 1,
-                          background: 'var(--bg-input)',
-                          border: '1px solid var(--border-subtle)',
-                          borderRadius: '8px',
-                          padding: '6px 8px',
-                          color: 'var(--text-main)',
-                          fontSize: '0.76rem',
-                          outline: 'none'
-                        }}
-                      />
-                      <input
-                        type="text"
-                        placeholder="Value"
-                        value={pair.value}
-                        onChange={(e) => handleUserDataPairChange(idx, 'value', e.target.value)}
-                        style={{
-                          flex: 1.2,
-                          background: 'var(--bg-input)',
-                          border: '1px solid var(--border-subtle)',
-                          borderRadius: '8px',
-                          padding: '6px 8px',
-                          color: 'var(--text-main)',
-                          fontSize: '0.76rem',
-                          outline: 'none'
-                        }}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveUserDataPair(idx)}
-                        style={{
-                          background: 'transparent',
-                          border: 'none',
-                          color: '#ef4444',
-                          cursor: 'pointer',
-                          fontSize: '0.86rem',
-                          padding: '2px'
-                        }}
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  ))}
-                  <button
-                    type="button"
-                    className="btn-outline"
-                    onClick={handleAddUserDataPair}
-                    style={{ padding: '4px 8px', fontSize: '0.72rem', alignSelf: 'flex-start' }}
-                  >
-                    + Add Pair
-                  </button>
-                </div>
-              </div>
-
-              <div style={{ borderTop: '1px solid var(--border-subtle)', margin: '10px 0' }} />
-
-              {/* Section 4: Utility Controls */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '2px', letterSpacing: '0.5px' }}>
-                  Session Utilities
-                </label>
-
-                <button
-                  className="btn-outline"
-                  onClick={() => {
-                    setPreviewSessionId(activeSessionId);
-                    setPreviewMessages(messages);
-                    setShowHistoryModal(true);
-                  }}
-                  style={{ justifyContent: 'center', width: '100%', borderColor: 'var(--border-glow)' }}
-                >
-                  <History size={15} color="var(--primary-violet)" /> Chat History ({sessions.length})
-                </button>
-
-                <button
-                  className="btn-outline"
-                  onClick={() => setShowAuditModal(true)}
-                  style={{ justifyContent: 'center', width: '100%', borderColor: 'rgba(16, 185, 129, 0.3)' }}
-                >
-                  <Terminal size={15} color="var(--primary-emerald)" /> Audit Traces ({executedTools.length})
-                </button>
-
-                <button
-                  className="btn-outline"
-                  onClick={exportTranscript}
-                  style={{ justifyContent: 'center', width: '100%' }}
-                >
-                  <Download size={14} /> Export Transcript
-                </button>
-
-                <button
-                  className="btn-outline"
-                  onClick={() => setMessages([])}
-                  style={{ justifyContent: 'center', width: '100%', color: 'var(--accent-rose)' }}
-                >
-                  <Trash2 size={14} /> Clear Console
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
       </div>
 
       {/* ---------------------------------------------------------------- */}
-      {/* POPUP 1: ENLARGED CHAT SESSIONS & HISTORY MODAL (maxWidth: 850px)  */}
+      {/* 3. SLIDE-OVER CONFIGURATION DRAWER                               */}
+      {/* ---------------------------------------------------------------- */}
+      <ConfigDrawer
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        selectedTenantId={selectedTenantId}
+        setSelectedTenantId={setSelectedTenantId}
+        tenants={tenants}
+        setTenants={setTenants}
+        selectedModel={selectedModel}
+        setSelectedModel={setSelectedModel}
+        tenantModels={tenantModels}
+        selectedAppId={selectedAppId}
+        setSelectedAppId={setSelectedAppId}
+        apps={apps}
+        setApps={setApps}
+        prochatModel={prochatModel}
+        setProchatModel={setProchatModel}
+        selectedSkillNames={selectedSkillNames}
+        setSelectedSkillNames={setSelectedSkillNames}
+        templates={templates}
+        setTemplates={setTemplates}
+        selectedTemplateId={selectedTemplateId}
+        handleTemplateChange={handleTemplateChange}
+        userDataPairs={userDataPairs}
+        handleUserDataPairChange={handleUserDataPairChange}
+        handleAddUserDataPair={handleAddUserDataPair}
+        handleRemoveUserDataPair={handleRemoveUserDataPair}
+        systemPrompt={systemPrompt}
+        setSystemPrompt={setSystemPrompt}
+        onOpenHistory={() => {
+          setIsSettingsOpen(false);
+          setShowHistoryModal(true);
+        }}
+        onOpenAudit={() => {
+          setIsSettingsOpen(false);
+          setShowAuditModal(true);
+        }}
+        onExportTranscript={exportTranscript}
+        onClearConsole={() => setMessages([])}
+        sessionsCount={sessionsTotalItems || sessions.length}
+        executedToolsCount={executedTools.length}
+        temperature={temperature}
+        setTemperature={setTemperature}
+        topP={topP}
+        setTopP={setTopP}
+        topK={topK}
+        setTopK={setTopK}
+        maxTokens={maxTokens}
+        setMaxTokens={setMaxTokens}
+        presencePenalty={presencePenalty}
+        setPresencePenalty={setPresencePenalty}
+        frequencyPenalty={frequencyPenalty}
+        setFrequencyPenalty={setFrequencyPenalty}
+        stopSequences={stopSequences}
+        setStopSequences={setStopSequences}
+        seed={seed}
+        setSeed={setSeed}
+        responseFormat={responseFormat}
+        setResponseFormat={setResponseFormat}
+        toolChoice={toolChoice}
+        setToolChoice={setToolChoice}
+        userParam={userParam}
+        setUserParam={setUserParam}
+        reasoningEffort={reasoningEffort}
+        setReasoningEffort={setReasoningEffort}
+        thinkingBudget={thinkingBudget}
+        setThinkingBudget={setThinkingBudget}
+        openrouterOrder={openrouterOrder}
+        setOpenrouterOrder={setOpenrouterOrder}
+        openrouterDataCollection={openrouterDataCollection}
+        setOpenrouterDataCollection={setOpenrouterDataCollection}
+        openrouterModels={openrouterModels}
+        setOpenrouterModels={setOpenrouterModels}
+        extraBodyJson={extraBodyJson}
+        setExtraBodyJson={setExtraBodyJson}
+      />
+
+      {/* ---------------------------------------------------------------- */}
+      {/* 4. CHAT HISTORY MODAL                                            */}
       {/* ---------------------------------------------------------------- */}
       {showHistoryModal && (
         <div className="modal-overlay">
           <div className="modal-box" style={{ maxWidth: '850px', height: '80vh', display: 'flex', flexDirection: 'column' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '12px' }}>
               <h3 style={{ fontSize: '1.2rem', fontWeight: '700', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <History size={22} color="var(--primary-violet)" /> Chat History & AI Thread Manager
+                <History size={22} color="var(--primary-violet)" /> Chat History & AI Threads
               </h3>
               <button onClick={() => setShowHistoryModal(false)} className="btn-outline" style={{ padding: '6px' }}>
                 <X size={18} />
               </button>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: '18px', flex: 1, overflow: 'hidden' }}>
-              {/* Left Column: Sessions List with AI Thread Titles */}
+            <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: '18px', flex: 1, overflow: 'hidden', paddingTop: '12px' }}>
+              {/* Left Column: Sessions List */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', overflowY: 'auto', borderRight: '1px solid var(--border-subtle)', paddingRight: '14px', justifyContent: 'space-between' }}>
                 <div>
-                  <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)', fontWeight: '700', textTransform: 'uppercase', marginBottom: '8px' }}>
-                    AI-Titled Chat Threads ({sessionsTotalItems})
+                  <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', fontWeight: '700', textTransform: 'uppercase', marginBottom: '8px' }}>
+                    Past Conversations ({sessionsTotalItems})
                   </div>
 
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -1363,19 +1423,19 @@ export default function ChatPlayground() {
                           key={s.id}
                           onClick={() => handleSelectSession(s.id)}
                           style={{
-                            padding: '12px 14px',
+                            padding: '10px 12px',
                             borderRadius: '10px',
                             cursor: 'pointer',
                             background: isActive ? 'rgba(139, 92, 246, 0.12)' : 'var(--bg-input)',
                             border: isActive ? '1px solid var(--border-glow)' : '1px solid var(--border-subtle)',
-                            transition: 'all 0.2s ease',
+                            transition: 'all 0.15s ease',
                           }}
                         >
-                          <div style={{ fontWeight: '700', fontSize: '0.88rem', color: isActive ? 'var(--primary-violet)' : 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                            <Sparkle size={14} color="var(--primary-violet)" /> {s.name}
+                          <div style={{ fontWeight: '600', fontSize: '0.86rem', color: isActive ? 'var(--primary-violet)' : 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                            <MessageSquare size={13} color="var(--primary-violet)" /> {s.name}
                           </div>
-                          <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between' }}>
-                            <span>ID: {s.id.substring(0, 8)}...</span>
+                          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between' }}>
+                            <span>{s.id.substring(0, 10)}...</span>
                             <span>{s.lastTime}</span>
                           </div>
                         </div>
@@ -1398,54 +1458,50 @@ export default function ChatPlayground() {
                 </div>
               </div>
 
-              {/* Right Column: Active Session Transcript Preview */}
-              <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflowY: 'hidden', gap: '12px', paddingRight: '6px', justifyContent: 'space-between' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', flex: 1, overflowY: 'hidden' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '6px' }}>
-                    <div style={{ fontSize: '0.82rem', color: 'var(--primary-violet)', fontWeight: '700' }}>
-                      Preview Thread: "{sessions.find(s => s.id === previewSessionId)?.name || previewSessionId || 'Select thread'}"
-                    </div>
-                    <button onClick={handleContinueChat} className="btn-gradient" style={{ padding: '6px 12px', fontSize: '0.82rem' }} disabled={!previewSessionId}>
-                      Continue Chat <Check size={14} />
+              {/* Right Column: Thread Message Preview */}
+              <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', paddingBottom: '8px', borderBottom: '1px solid var(--border-subtle)' }}>
+                  <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: '600' }}>
+                    {previewSessionId ? `Previewing: ${previewSessionId}` : 'Select a thread to preview'}
+                  </span>
+                  {previewSessionId && (
+                    <button
+                      className="btn-gradient"
+                      onClick={handleContinueChat}
+                      style={{ padding: '5px 12px', fontSize: '0.78rem' }}
+                    >
+                      Resume This Thread
                     </button>
-                  </div>
-
-                  <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px', paddingRight: '4px' }}>
-                    {previewMessages.length === 0 ? (
-                      <div style={{ color: 'var(--text-muted)', fontSize: '0.86rem', textAlign: 'center', padding: '32px' }}>
-                        Select a chat thread from the left to view message history.
-                      </div>
-                    ) : (
-                      previewMessages.map((m, idx) => (
-                        <div key={idx} style={{ background: 'var(--bg-input)', border: '1px solid var(--border-subtle)', padding: '12px', borderRadius: '10px' }}>
-                          <div style={{ fontWeight: '700', fontSize: '0.78rem', color: m.role === 'user' ? 'var(--primary-emerald)' : 'var(--primary-violet)', marginBottom: '4px', textTransform: 'uppercase' }}>
-                            {m.role === 'user' ? 'User' : 'Skill Gateway AI'} - {m.timestamp}
-                          </div>
-                          <div style={{ fontSize: '0.86rem', color: 'var(--text-main)', whiteSpace: 'pre-wrap', lineHeight: '1.5' }}>
-                            {m.content}
-                          </div>
-                        </div>
-                      ))
-                    )}
-                  </div>
+                  )}
                 </div>
 
-                {/* Messages history pagination */}
-                {previewSessionId && previewMessages.length > 0 && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px', paddingTop: '10px', borderTop: '1px solid var(--border-subtle)' }}>
-                    <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
-                      Page {previewPage} of {previewTotalPages} ({previewTotalItems} messages total)
-                    </span>
-                    <div style={{ display: 'flex', gap: '4px' }}>
-                      <button type="button" className="btn-outline" onClick={() => setPreviewPage(p => Math.max(1, p - 1))} disabled={previewPage <= 1} style={{ padding: '3px 8px', fontSize: '0.72rem' }}>
-                        Older
-                      </button>
-                      <button type="button" className="btn-outline" onClick={() => setPreviewPage(p => Math.min(previewTotalPages, p + 1))} disabled={previewPage >= previewTotalPages} style={{ padding: '3px 8px', fontSize: '0.72rem' }}>
-                        Newer
-                      </button>
+                <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px', paddingRight: '4px' }}>
+                  {previewMessages.length === 0 ? (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-muted)', fontSize: '0.84rem' }}>
+                      No messages in preview
                     </div>
-                  </div>
-                )}
+                  ) : (
+                    previewMessages.map((pm, pidx) => (
+                      <div
+                        key={pidx}
+                        style={{
+                          padding: '10px 12px',
+                          borderRadius: '8px',
+                          background: pm.role === 'user' ? 'rgba(139, 92, 246, 0.08)' : 'var(--bg-input)',
+                          border: '1px solid var(--border-subtle)',
+                          fontSize: '0.8rem',
+                          color: 'var(--text-main)',
+                          lineHeight: '1.4'
+                        }}
+                      >
+                        <div style={{ fontWeight: '700', fontSize: '0.72rem', color: pm.role === 'user' ? 'var(--primary-violet)' : 'var(--primary-emerald)', marginBottom: '3px' }}>
+                          {pm.role.toUpperCase()}
+                        </div>
+                        <div>{pm.content}</div>
+                      </div>
+                    ))
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -1453,54 +1509,34 @@ export default function ChatPlayground() {
       )}
 
       {/* ---------------------------------------------------------------- */}
-      {/* POPUP 2: ENLARGED LIVE EXECUTION AUDIT TRACES (maxWidth: 960px)   */}
+      {/* 5. AUDIT LOGS MODAL                                              */}
       {/* ---------------------------------------------------------------- */}
       {showAuditModal && (
         <div className="modal-overlay">
-          <div className="modal-box" style={{ maxWidth: '960px', height: '80vh', display: 'flex', flexDirection: 'column' }}>
+          <div className="modal-box" style={{ maxWidth: '800px', maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '12px' }}>
-              <h3 style={{ fontSize: '1.2rem', fontWeight: '700', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <Terminal size={22} color="var(--primary-emerald)" /> Detailed Live Execution Audit Traces & Sandbox Logs
+              <h3 style={{ fontSize: '1.1rem', fontWeight: '700', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Terminal size={20} color="var(--primary-emerald)" /> Sandbox Execution Traces & Tools
               </h3>
               <button onClick={() => setShowAuditModal(false)} className="btn-outline" style={{ padding: '6px' }}>
-                <X size={18} />
+                <X size={16} />
               </button>
             </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', flex: 1, overflowY: 'auto', paddingRight: '6px' }}>
+            <div style={{ flex: 1, overflowY: 'auto', marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
               {executedTools.length === 0 ? (
-                <div style={{ color: 'var(--text-muted)', fontSize: '0.9rem', textAlign: 'center', padding: '60px 0' }}>
-                  No tool executions recorded in this session.<br />Send a prompt requiring Python math or shell commands!
+                <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)', fontSize: '0.86rem' }}>
+                  No tools executed in this active turn.
                 </div>
               ) : (
                 executedTools.map((t, idx) => (
-                  <div key={idx} style={{ background: 'var(--bg-input)', border: '1px solid var(--border-subtle)', padding: '16px', borderRadius: '12px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <span style={{ fontWeight: '800', fontSize: '0.94rem', color: 'var(--primary-violet)' }}>
-                          🛠️ {t.tool_name}
-                        </span>
-                        <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                          Exit Code: {t.exit_code}
-                        </span>
-                      </div>
-
-                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                        <span className={t.sandbox_type === 'docker' ? 'badge-tag tag-docker' : 'badge-tag tag-process'}>
-                          {t.sandbox_type} Sandbox
-                        </span>
-                        <span className="badge-tag tag-shell">
-                          ⚡ {t.execution_time_ms} ms
-                        </span>
-                      </div>
+                  <div key={idx} style={{ background: 'var(--bg-input)', border: '1px solid var(--border-subtle)', borderRadius: '10px', padding: '14px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '0.82rem', fontWeight: '600' }}>
+                      <span style={{ color: 'var(--primary-emerald)' }}>⚡ {t.tool_name}</span>
+                      <span style={{ color: 'var(--text-muted)' }}>{t.execution_time_ms}ms · Exit {t.exit_code}</span>
                     </div>
-
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                      <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)', fontWeight: '700', textTransform: 'uppercase' }}>Terminal Stdout / Stderr Output:</span>
-                      <pre className="code-display" style={{ maxHeight: '200px', fontSize: '0.82rem', margin: 0 }}>
-                        {(t.stdout || t.stderr || 'No output emitted. Shell process finished with exit code 0.').trim()}
-                      </pre>
-                    </div>
+                    <pre style={{ margin: 0, padding: '10px', background: '#080c14', borderRadius: '6px', fontSize: '0.74rem', color: '#38bdf8', overflowX: 'auto', fontFamily: 'var(--font-mono)' }}>
+                      {t.stdout || t.stderr || 'Success (no output)'}
+                    </pre>
                   </div>
                 ))
               )}
@@ -1508,6 +1544,7 @@ export default function ChatPlayground() {
           </div>
         </div>
       )}
+
     </div>
   );
 }
