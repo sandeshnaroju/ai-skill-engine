@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 46 46" width="100%" height="100%">
+  <defs>
+    <linearGradient id="favCyan" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00F2FE" />
+      <stop offset="100%" stop-color="#2563EB" />
+    </linearGradient>
+    <linearGradient id="favPurple" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38BDF8" />
+      <stop offset="100%" stop-color="#7C3AED" />
+    </linearGradient>
+    <linearGradient id="favViolet" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#8B5CF6" />
+      <stop offset="100%" stop-color="#00F2FE" />
+    </linearGradient>
+  </defs>
+
+  <!-- Edge-to-Edge Icon Mark (Zero Outer Padding) -->
+  <g transform="translate(23, 23)">
+    <!-- Pill 1 (Top) -->
+    <rect x="-4.5" y="-22" width="9" height="15" rx="4.5" fill="url(#favCyan)" />
+    <!-- Pill 2 (Bottom Right) -->
+    <g transform="rotate(120)">
+      <rect x="-4.5" y="-22" width="9" height="15" rx="4.5" fill="url(#favPurple)" />
+    </g>
+    <!-- Pill 3 (Bottom Left) -->
+    <g transform="rotate(240)">
+      <rect x="-4.5" y="-22" width="9" height="15" rx="4.5" fill="url(#favViolet)" />
+    </g>
+    <!-- Center AI Dot -->
+    <circle cx="0" cy="0" r="3" fill="#00F2FE" />
+  </g>
+</svg>

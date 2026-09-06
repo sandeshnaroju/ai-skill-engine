@@ -50,6 +50,7 @@ docker run -d \
   -e SMTP_USERNAME="$SMTP_USERNAME" \
   -e SMTP_PASSWORD="$SMTP_PASSWORD" \
   -e SMTP_SENDER="$SMTP_SENDER" \
+  -e ENCRYPTION_SECRET_KEY="$ENCRYPTION_SECRET_KEY" \
   --restart unless-stopped \
   "$DOCKER_IMAGE"
 

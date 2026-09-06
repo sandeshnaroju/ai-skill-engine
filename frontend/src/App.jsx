@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate, Routes, Route, Navigate } from 'react-router-dom';
-import { Key, Layers, MessageSquare, Database, ShieldCheck, Cpu, BookOpen, Sun, Moon, Activity, Box, PanelLeftClose, PanelLeftOpen, Zap, Terminal, FileText, DollarSign, LogOut, User as UserIcon, HardDrive, Mail, ChevronDown, ChevronUp } from 'lucide-react';
+import { Key, Layers, MessageSquare, Database, ShieldCheck, Cpu, BookOpen, Sun, Moon, Activity, Box, PanelLeftClose, PanelLeftOpen, Zap, Terminal, FileText, DollarSign, LogOut, User as UserIcon, HardDrive, Mail, ChevronDown, ChevronUp, ExternalLink } from 'lucide-react';
 import TenantManager from './components/TenantManager';
 import SkillCatalog from './components/SkillCatalog';
 import ChatPlayground from './components/ChatPlayground';
@@ -17,6 +17,8 @@ import StorageSettings from './components/StorageSettings';
 import SandboxSettings from './components/SandboxSettings';
 import UserDataTemplates from './components/UserDataTemplates';
 import EmailSettings from './components/EmailSettings';
+import Canvas from './components/Canvas';
+import ArtifactManager from './components/ArtifactManager';
 import { authApi, skillsApi, tenantsApi, logsApi, apiClient } from './api';
 import { ToastProvider, useToast } from './context/ToastContext';
 
@@ -25,6 +27,18 @@ function ApiErrorListenerBridge() {
 
   useEffect(() => {
     const unsubscribe = apiClient.onError((error) => {
+      // Do not popup a disruptive 401 error toast on public pages (/api-docs, /docs, /embed)
+      // or for silent unauthenticated session checks
+      const isPublicPath = typeof window !== 'undefined' && (
+        window.location.pathname === '/api-docs' ||
+        window.location.pathname === '/docs' ||
+        window.location.pathname.startsWith('/embed')
+      );
+
+      if (error.status === 401 && (isPublicPath || error.message?.includes('Authentication required') || error.message?.includes('Invalid session'))) {
+        return;
+      }
+
       showError(error.message || 'An unexpected API error occurred', error.status || null);
     });
     return unsubscribe;
@@ -39,6 +53,7 @@ function AppContent() {
     { id: 'tester', label: 'API Tester', icon: Terminal, order: 20 },
     { id: 'apps', label: 'Apps & Groups', icon: Box, order: 30 },
     { id: 'skills', label: 'Skills Catalog', icon: Layers, order: 40 },
+    { id: 'artifacts', label: 'Artifacts', icon: FileText, order: 45 },
     { id: 'mcp', label: 'MCP Servers', icon: Cpu, order: 50 },
     { id: 'user-data', label: 'User Data Profiles', icon: Layers, order: 60 },
     { id: 'tenants', label: 'Tenants & Keys', icon: Key, order: 70 },
@@ -49,7 +64,7 @@ function AppContent() {
     { id: 'logs', label: 'Sandbox Audit Logs', icon: Database, order: 120 },
     { id: 'apilogs', label: 'API Execution Logs', icon: Activity, order: 130 },
     { id: 'requestlogs', label: 'Request Logs', icon: FileText, order: 140 },
-    { id: 'docs', label: 'API Documentation', icon: BookOpen, order: 150 },
+    { id: 'api-docs', label: 'API Documentation', icon: BookOpen, order: 150 },
   ];
 
   const topNavItems = [
@@ -58,7 +73,7 @@ function AppContent() {
 
   const bottomNavItems = [
     { id: 'tester', label: 'API Tester', icon: Terminal, order: 10 },
-    { id: 'docs', label: 'API Documentation', icon: BookOpen, order: 20 },
+    { id: 'api-docs', label: 'API Documentation', icon: BookOpen, order: 20 },
   ];
 
   const navGroups = [
@@ -69,6 +84,7 @@ function AppContent() {
       items: [
         { id: 'apps', label: 'Apps & Groups', icon: Box, order: 10 },
         { id: 'skills', label: 'Skills Catalog', icon: Layers, order: 20 },
+        { id: 'artifacts', label: 'Artifacts', icon: FileText, order: 25 },
         { id: 'mcp', label: 'MCP Servers', icon: Cpu, order: 30 },
         { id: 'user-data', label: 'User Data Profiles', icon: Layers, order: 40 },
       ]
@@ -180,7 +196,34 @@ function AppContent() {
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
     localStorage.setItem('app_theme', theme);
+    window.dispatchEvent(new CustomEvent('app-theme-change', { detail: { theme } }));
+    // Broadcast theme to all embedded iframes
+    try {
+      document.querySelectorAll('iframe').forEach((frame) => {
+        frame.contentWindow?.postMessage({ type: 'THEME_CHANGE', theme }, '*');
+      });
+    } catch { }
   }, [theme]);
+
+  // Synchronize when theme changes from within an iframe or another tab
+  useEffect(() => {
+    const handleMessage = (e) => {
+      if (e.data?.type === 'THEME_CHANGE' && (e.data.theme === 'dark' || e.data.theme === 'light')) {
+        setTheme(e.data.theme);
+      }
+    };
+    const handleStorage = (e) => {
+      if (e.key === 'app_theme' && (e.newValue === 'dark' || e.newValue === 'light')) {
+        setTheme(e.newValue);
+      }
+    };
+    window.addEventListener('message', handleMessage);
+    window.addEventListener('storage', handleStorage);
+    return () => {
+      window.removeEventListener('message', handleMessage);
+      window.removeEventListener('storage', handleStorage);
+    };
+  }, []);
 
   useEffect(() => {
     const handleResize = () => {
@@ -188,10 +231,10 @@ function AppContent() {
         setIsSidebarOpen(false);
       }
     };
-    
+
     // Initial check on mount
     handleResize();
-    
+
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
@@ -213,7 +256,7 @@ function AppContent() {
   };
 
   const loadStats = async () => {
-    if (!dbStatus.ready) return;
+    if (!dbStatus.ready || !isAuthenticated) return;
     try {
       const [skillsData, tenantsData, logsData] = await Promise.all([
         skillsApi.list(),
@@ -236,13 +279,32 @@ function AppContent() {
   };
 
   useEffect(() => {
-    loadStats();
-  }, [activeTab, dbStatus.ready]);
+    if (isAuthenticated) {
+      loadStats();
+    }
+  }, [activeTab, dbStatus.ready, isAuthenticated]);
 
   const activeNavItem = activeTab === 'profile'
     ? { id: 'profile', label: 'User Profile', icon: UserIcon }
     : (navItems.find((n) => n.id === activeTab) || navItems[0]);
 
+
+  // If iframe embed canvas view, render directly without dashboard shell
+  if (location.pathname.startsWith('/embed/canvas')) {
+    return <Canvas isEmbed={true} initialTheme={theme} />;
+  }
+
+  // If public API documentation page, render directly outside the dashboard shell
+  if (location.pathname === '/api-docs' || location.pathname === '/docs') {
+    return (
+      <ApiDocs
+        isStandalone={true}
+        theme={theme}
+        toggleTheme={toggleTheme}
+        isAuthenticated={isAuthenticated}
+      />
+    );
+  }
 
   // Render database creation loader screen if DB is not ready (includes encryption key error state)
   if (!dbStatus.ready) {
@@ -467,38 +529,77 @@ function AppContent() {
       >
         <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, flex: 1 }}>
           {/* Top Brand & Sidebar Toggle */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: isSidebarOpen ? 'space-between' : 'center', marginBottom: '20px', flexShrink: 0 }}>
+          <div style={{
+            position: 'relative',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            marginBottom: '20px',
+            flexShrink: 0,
+            padding: '2px 0'
+          }}>
             {isSidebarOpen ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <div style={{ background: 'linear-gradient(135deg, var(--primary-violet), var(--primary-emerald))', padding: '9px', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: 'var(--shadow-glow)' }}>
-                  <Zap size={22} color="#ffffff" />
-                </div>
-                <div>
-                  <h1 style={{ fontSize: '1.1rem', fontWeight: '800', letterSpacing: '-0.3px', color: 'var(--text-main)' }}>
-                    AI Skill Engine
-                  </h1>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
-                    <span className="pulse-dot" />
-                    <span style={{ fontSize: '0.72rem', color: 'var(--primary-emerald)', fontWeight: '700' }}>
-                      Online
-                    </span>
-                  </div>
-                </div>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  width: '100%',
+                  marginRight: '28px',
+                  paddingLeft: '4px'
+                }}
+                onClick={() => navigate('/playground')}
+              >
+                <img
+                  src="/logo_navbar.svg"
+                  alt="AI Skill Engine"
+                  style={{
+                    height: '48px',
+                    maxWidth: '170px',
+                    width: 'auto',
+                    display: 'block',
+                    filter: 'drop-shadow(0 2px 10px rgba(0, 242, 254, 0.25))'
+                  }}
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none';
+                  }}
+                />
               </div>
             ) : (
-              <div style={{ background: 'linear-gradient(135deg, var(--primary-violet), var(--primary-emerald))', padding: '9px', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Zap size={22} color="#ffffff" />
+              <div
+                style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '4px' }}
+                onClick={() => setIsSidebarOpen(true)}
+                title="Expand Sidebar"
+              >
+                <img
+                  src="/favicon.svg"
+                  alt="AI Skill Engine"
+                  style={{ width: '36px', height: '36px', filter: 'drop-shadow(0 2px 12px rgba(0, 242, 254, 0.4))' }}
+                />
               </div>
             )}
 
-            <button
-              className="btn-outline"
-              onClick={toggleSidebar}
-              style={{ padding: '6px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-              title={isSidebarOpen ? 'Collapse Left Sidebar' : 'Expand Left Sidebar'}
-            >
-              {isSidebarOpen ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}
-            </button>
+            {isSidebarOpen && (
+              <button
+                className="btn-outline"
+                onClick={toggleSidebar}
+                style={{
+                  position: 'absolute',
+                  right: 0,
+                  top: '50%',
+                  transform: 'translateY(-60%)',
+                  padding: '6px',
+                  borderRadius: '8px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+                title="Collapse Left Sidebar"
+              >
+                <PanelLeftClose size={17} />
+              </button>
+            )}
           </div>
 
           {/* Navigation Items Menu */}
@@ -612,6 +713,7 @@ function AppContent() {
                 {[...bottomNavItems].sort((a, b) => a.order - b.order).map((item) => {
                   const Icon = item.icon;
                   const isActive = activeTab === item.id;
+                  const isApiDocs = item.id === 'api-docs';
                   return (
                     <button
                       key={item.id}
@@ -619,7 +721,7 @@ function AppContent() {
                       style={{
                         display: 'flex',
                         alignItems: 'center',
-                        justifyContent: 'flex-start',
+                        justifyContent: 'space-between',
                         gap: '12px',
                         padding: '10px 14px',
                         borderRadius: '11px',
@@ -637,8 +739,13 @@ function AppContent() {
                         marginTop: item.id === 'tester' ? '12px' : '0' // divider margin
                       }}
                     >
-                      <Icon size={18} color={isActive ? '#ffffff' : 'var(--text-sub)'} />
-                      <span>{item.label}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <Icon size={18} color={isActive ? '#ffffff' : 'var(--text-sub)'} />
+                        <span>{item.label}</span>
+                      </div>
+                      {isApiDocs && (
+                        <ExternalLink size={13} style={{ opacity: 0.6, flexShrink: 0 }} />
+                      )}
                     </button>
                   );
                 })}
@@ -757,59 +864,85 @@ function AppContent() {
       {/* ---------------------------------------------------------------- */}
       {/* MAIN VIEWPORT CONTENT AREA                                      */}
       {/* ---------------------------------------------------------------- */}
-      <div className="app-main-content" style={{ padding: '12px 18px', overflowX: 'hidden' }}>
-        {/* Top View Header */}
-        <header className="glass-box" style={{ padding: '12px 20px', marginBottom: '14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            {!isSidebarOpen && (
-              <button
-                className="btn-outline"
-                onClick={toggleSidebar}
-                style={{ padding: '6px', borderRadius: '8px' }}
-                title="Expand Left Sidebar"
-              >
-                <PanelLeftOpen size={18} />
-              </button>
-            )}
-            {React.createElement(activeNavItem.icon, { size: 20, color: 'var(--primary-violet)' })}
-            <h2 style={{ fontSize: '1.1rem', fontWeight: '700', color: 'var(--text-main)' }}>
-              {activeNavItem.label}
-            </h2>
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-            <div className="header-badge" style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-              Enterprise Skill Execution Gateway & MCP Hub
+      <div
+        className="app-main-content"
+        style={{
+          padding: activeTab === 'playground' ? '0' : '12px 18px',
+          height: '100vh',
+          maxHeight: '100vh',
+          overflow: activeTab === 'playground' ? 'hidden' : 'auto',
+          display: 'flex',
+          flexDirection: 'column',
+          boxSizing: 'border-box'
+        }}
+      >
+        {/* Top View Header (Hidden on Playground since Playground has its own contextual bar) */}
+        {activeTab !== 'playground' && (
+          <header className="glass-box" style={{ padding: '12px 20px', marginBottom: '14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              {!isSidebarOpen && (
+                <button
+                  className="btn-outline"
+                  onClick={toggleSidebar}
+                  style={{ padding: '6px', borderRadius: '8px' }}
+                  title="Expand Left Sidebar"
+                >
+                  <PanelLeftOpen size={18} />
+                </button>
+              )}
+              {React.createElement(activeNavItem.icon, { size: 20, color: 'var(--primary-violet)' })}
+              <h2 style={{ fontSize: '1.1rem', fontWeight: '700', color: 'var(--text-main)' }}>
+                {activeNavItem.label}
+              </h2>
             </div>
-            <button
-              onClick={() => handleTabChange('profile')}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                width: '36px',
-                height: '36px',
-                borderRadius: '50%',
-                border: activeTab === 'profile' ? '1px solid var(--primary-violet)' : '1px solid var(--border-subtle)',
-                background: activeTab === 'profile' ? 'rgba(139, 92, 246, 0.15)' : 'var(--bg-input)',
-                color: activeTab === 'profile' ? 'var(--primary-violet)' : 'var(--text-sub)',
-                cursor: 'pointer',
-                transition: 'all 0.2s ease',
-                boxShadow: activeTab === 'profile' ? '0 0 10px rgba(139, 92, 246, 0.2)' : 'none'
-              }}
-              title={`View User Profile (${userEmail})`}
-            >
-              <UserIcon size={18} />
-            </button>
-          </div>
-        </header>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+              <div className="header-badge" style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                Enterprise Skill Execution Gateway & MCP Hub
+              </div>
+              <button
+                onClick={() => handleTabChange('profile')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '50%',
+                  border: activeTab === 'profile' ? '1px solid var(--primary-violet)' : '1px solid var(--border-subtle)',
+                  background: activeTab === 'profile' ? 'rgba(139, 92, 246, 0.15)' : 'var(--bg-input)',
+                  color: activeTab === 'profile' ? 'var(--primary-violet)' : 'var(--text-sub)',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                  boxShadow: activeTab === 'profile' ? '0 0 10px rgba(139, 92, 246, 0.2)' : 'none'
+                }}
+                title={`View User Profile (${userEmail})`}
+              >
+                <UserIcon size={18} />
+              </button>
+            </div>
+          </header>
+        )}
 
         {/* Main Content Component */}
-        <main style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+        <main style={{
+          flex: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          minWidth: 0,
+          width: '100%',
+          maxWidth: '100%',
+          height: activeTab === 'playground' ? '100%' : 'auto',
+          maxHeight: activeTab === 'playground' ? '100%' : 'none',
+          overflow: activeTab === 'playground' ? 'hidden' : 'visible',
+          boxSizing: 'border-box'
+        }}>
           <Routes>
-            <Route path="/playground" element={<ChatPlayground />} />
+            <Route path="/embed/canvas" element={<Canvas isEmbed={true} />} />
+            <Route path="/playground" element={<ChatPlayground isSidebarOpen={isSidebarOpen} toggleSidebar={toggleSidebar} />} />
             <Route path="/apps" element={<AppManager />} />
             <Route path="/skills" element={<SkillCatalog />} />
+            <Route path="/artifacts" element={<ArtifactManager />} />
             <Route path="/mcp" element={<McpServerManager />} />
             <Route path="/user-data" element={<UserDataTemplates />} />
             <Route path="/tenants" element={<TenantManager />} />
@@ -835,7 +968,8 @@ function AppContent() {
               />
             } />
             <Route path="/requestlogs" element={<RequestLogs />} />
-            <Route path="/docs" element={<ApiDocs />} />
+            <Route path="/api-docs" element={<ApiDocs />} />
+            <Route path="/docs" element={<Navigate to="/api-docs" replace />} />
             <Route path="/tester" element={<ApiTester />} />
             <Route path="/profile" element={<Profile />} />
             <Route path="/" element={<Navigate to="/playground" replace />} />
