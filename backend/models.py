@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import Column, String, DateTime, Text, Integer, ForeignKey, Boolean, Float, UniqueConstraint
-from sqlalchemy.orm import relationship
+from sqlalchemy import Column, String, DateTime, Text, Integer, ForeignKey, Boolean, Float, UniqueConstraint, and_
+from sqlalchemy.orm import relationship, foreign
 from database import Base
 
 class User(Base):
@@ -100,7 +100,11 @@ class ConversationSession(Base):
 
     tenant = relationship("Tenant", back_populates="sessions")
     messages = relationship("ChatMessage", back_populates="session", cascade="all, delete-orphan")
-    artifacts = relationship("SessionArtifact", back_populates="session", cascade="all, delete-orphan")
+    artifacts = relationship(
+        "SessionArtifact",
+        primaryjoin="and_(ConversationSession.session_id == foreign(SessionArtifact.session_id), ConversationSession.tenant_id == foreign(SessionArtifact.tenant_id))",
+        viewonly=True
+    )
 
 class ChatMessage(Base):
     __tablename__ = "chat_messages"
@@ -334,7 +338,7 @@ class SessionArtifact(Base):
     __tablename__ = "session_artifacts"
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    session_id = Column(String, ForeignKey("conversation_sessions.id"), nullable=False, index=True)
+    session_id = Column(String, nullable=True, index=True)
     tenant_id = Column(String, ForeignKey("tenants.id"), nullable=False, index=True)
     title = Column(String, nullable=False)
     filename = Column(String, nullable=False)
@@ -345,7 +349,11 @@ class SessionArtifact(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    session = relationship("ConversationSession", back_populates="artifacts")
+    session = relationship(
+        "ConversationSession",
+        primaryjoin="and_(SessionArtifact.session_id == foreign(ConversationSession.session_id), SessionArtifact.tenant_id == foreign(ConversationSession.tenant_id))",
+        viewonly=True
+    )
     tenant = relationship("Tenant", back_populates="artifacts")
     blocks = relationship("ArtifactBlock", back_populates="artifact", cascade="all, delete-orphan", order_by="ArtifactBlock.order_index")
     commits = relationship("ArtifactCommit", back_populates="artifact", cascade="all, delete-orphan", order_by="ArtifactCommit.version.desc()")
