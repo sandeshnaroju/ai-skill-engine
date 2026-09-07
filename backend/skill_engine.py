@@ -208,7 +208,7 @@ def _normalize_multimodal_content(content):
     return normalized
 
 
-def _build_messages(db, persist, session_obj, user_message, allowed_skills, user_data, client_messages, tenant_id=None):
+def _build_messages(db, persist, session_obj, user_message, allowed_skills, user_data, client_messages, tenant_id=None, raw_session_id=None):
     """Build the messages list for the LLM call."""
     sys_content = skill_registry.get_system_instructions(allowed_skills=allowed_skills, tenant_id=tenant_id)
     if user_data:
@@ -252,9 +252,44 @@ def _build_messages(db, persist, session_obj, user_message, allowed_skills, user
                 msgs.append({"role": msg.role, "content": content_val})
 
         # Inject active canvas artifacts context into system prompt
-        if session_obj and hasattr(session_obj, 'id'):
+        from models import SessionArtifact
+        sess_keys = [session_obj.session_id, session_obj.id]
+        if raw_session_id and raw_session_id not in sess_keys:
+            sess_keys.append(raw_session_id)
+
+        artifacts = db.query(SessionArtifact).filter(
+            SessionArtifact.tenant_id == tenant_id,
+            SessionArtifact.session_id.in_(sess_keys)
+        ).all()
+        if artifacts:
+            artifact_context = "\n\n[ACTIVE CANVAS ARTIFACTS IN THIS CONVERSATION]\n"
+            for art in artifacts:
+                outline_items = ", ".join([f"{b.block_key} ('{b.title}')" for b in art.blocks])
+                artifact_context += f"- Artifact ID: {art.id} | Title: '{art.title}' | File: '{art.filename}' | Version: {art.current_version}\n  Blocks: {outline_items}\n"
+            artifact_context += (
+                "To modify existing documents or code, use `artifact_editor__edit_artifact_section` or `artifact_editor__patch_artifact` "
+                "with the exact `artifact_id` and `block_key`. Use `artifact_editor__artifact_search` or `artifact_editor__artifact_semantic_search` "
+                "if you need to find specific sections or concepts. Never regenerate the entire document if only a section needs editing."
+            )
+            msgs[0]["content"] += artifact_context
+    else:
+        if client_messages:
+            for m in client_messages:
+                if m.get("role") == "system":
+                    msgs[0]["content"] += "\n\n" + str(m.get("content", ""))
+                else:
+                    norm_content = _normalize_multimodal_content(m.get("content"))
+                    msgs.append({"role": m.get("role"), "content": norm_content})
+        else:
+            msgs.append({"role": "user", "content": _normalize_multimodal_content(user_message)})
+
+        # For stateless API calls, check if an existing artifact exists for this tenant & session_id
+        if tenant_id and raw_session_id:
             from models import SessionArtifact
-            artifacts = db.query(SessionArtifact).filter(SessionArtifact.session_id == session_obj.id).all()
+            artifacts = db.query(SessionArtifact).filter(
+                SessionArtifact.tenant_id == tenant_id,
+                SessionArtifact.session_id == raw_session_id
+            ).all()
             if artifacts:
                 artifact_context = "\n\n[ACTIVE CANVAS ARTIFACTS IN THIS CONVERSATION]\n"
                 for art in artifacts:
@@ -266,16 +301,6 @@ def _build_messages(db, persist, session_obj, user_message, allowed_skills, user
                     "if you need to find specific sections or concepts. Never regenerate the entire document if only a section needs editing."
                 )
                 msgs[0]["content"] += artifact_context
-    else:
-        if client_messages:
-            for m in client_messages:
-                if m.get("role") == "system":
-                    msgs[0]["content"] += "\n\n" + str(m.get("content", ""))
-                else:
-                    norm_content = _normalize_multimodal_content(m.get("content"))
-                    msgs.append({"role": m.get("role"), "content": norm_content})
-        else:
-            msgs.append({"role": "user", "content": _normalize_multimodal_content(user_message)})
 
     return msgs
 
@@ -644,7 +669,7 @@ class SkillEngine:
                 save_message(db, session_obj, "user", content=user_message_db)
 
             allowed_skills = resolve_allowed_skills(db, tenant, app_id, skill_names)
-            messages = _build_messages(db, persist, session_obj, user_message, allowed_skills, user_data, client_messages, tenant_id=tenant.id)
+            messages = _build_messages(db, persist, session_obj, user_message, allowed_skills, user_data, client_messages, tenant_id=tenant.id, raw_session_id=session_id)
             model_name = _resolve_model(db, tenant, model_name)
             chat_req.model_name = model_name
             db.commit()
@@ -914,7 +939,7 @@ class SkillEngine:
 
             yield _chunk(session_id, model_name, reasoning="Analyzing query & active skills...")
 
-            messages = _build_messages(db, persist, session_obj, user_message, allowed_skills, user_data, client_messages, tenant_id=tenant.id)
+            messages = _build_messages(db, persist, session_obj, user_message, allowed_skills, user_data, client_messages, tenant_id=tenant.id, raw_session_id=session_id)
             model_name = _resolve_model(db, tenant, model_name)
             chat_req.model_name = model_name
             db.commit()

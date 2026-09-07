@@ -308,7 +308,7 @@ def assemble_full_content(artifact: SessionArtifact) -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 def create_artifact(
     db: DbSession,
-    session_id: str,
+    session_id: Optional[str],
     tenant_id: str,
     title: str,
     filename: str,

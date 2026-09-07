@@ -1,5 +1,6 @@
 import os
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import create_engine, inspect, text, event
+from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 
 DEFAULT_DB = f"sqlite:///{os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'skill_manager.db')}"
@@ -16,6 +17,15 @@ engine = create_engine(
     DB_PATH,
     connect_args={"check_same_thread": False} if DB_PATH.startswith("sqlite") else {}
 )
+
+# Enforce SQLite foreign key constraints and WAL mode to mirror PostgreSQL behavior
+@event.listens_for(Engine, "connect")
+def _set_sqlite_pragmas(dbapi_connection, connection_record):
+    if type(dbapi_connection).__module__ == "sqlite3":
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.close()
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
@@ -309,6 +319,75 @@ def init_db():
                     print(f"Migration warning: Could not add 'tenant_id' to {table_name}: {e}")
                 finally:
                     db.close()
+
+    # Migrate session_artifacts table: drop any legacy foreign key constraint on conversation_sessions
+    if inspector.has_table("session_artifacts"):
+        db = SessionLocal()
+        try:
+            # Check foreign keys using SQLAlchemy inspector
+            fks = inspector.get_foreign_keys("session_artifacts")
+            has_session_fk = any(fk.get("referred_table") == "conversation_sessions" or "session_id" in fk.get("constrained_columns", []) for fk in fks)
+            
+            if has_session_fk:
+                if DB_PATH.startswith("sqlite"):
+                    # SQLite does not support ALTER TABLE DROP CONSTRAINT; recreate the table
+                    try:
+                        with engine.begin() as conn:
+                            conn.execute(text("PRAGMA foreign_keys=OFF"))
+                            conn.execute(text("""
+                                CREATE TABLE session_artifacts_migration_tmp (
+                                    id VARCHAR NOT NULL PRIMARY KEY,
+                                    session_id VARCHAR,
+                                    tenant_id VARCHAR NOT NULL,
+                                    title VARCHAR NOT NULL,
+                                    filename VARCHAR NOT NULL,
+                                    artifact_type VARCHAR NOT NULL,
+                                    media_url VARCHAR,
+                                    language VARCHAR,
+                                    current_version INTEGER NOT NULL,
+                                    created_at DATETIME,
+                                    updated_at DATETIME,
+                                    FOREIGN KEY(tenant_id) REFERENCES tenants (id)
+                                )
+                            """))
+                            conn.execute(text("""
+                                INSERT INTO session_artifacts_migration_tmp 
+                                SELECT id, session_id, tenant_id, title, filename, artifact_type, media_url, language, current_version, created_at, updated_at 
+                                FROM session_artifacts
+                            """))
+                            conn.execute(text("DROP TABLE session_artifacts"))
+                            conn.execute(text("ALTER TABLE session_artifacts_migration_tmp RENAME TO session_artifacts"))
+                            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_session_artifacts_session_id ON session_artifacts (session_id)"))
+                            conn.execute(text("PRAGMA foreign_keys=ON"))
+                        print("Migration: Removed legacy foreign key on session_artifacts(session_id) for SQLite")
+                    except Exception as sqle:
+                        print(f"Migration notice: SQLite table rebuild skipped/failed: {sqle}")
+                else:
+                    for fk in fks:
+                        referred_table = fk.get("referred_table")
+                        constrained_cols = fk.get("constrained_columns", [])
+                        fk_name = fk.get("name")
+                        if referred_table == "conversation_sessions" or "session_id" in constrained_cols:
+                            if fk_name:
+                                try:
+                                    db.execute(text(f"ALTER TABLE session_artifacts DROP CONSTRAINT IF EXISTS {fk_name}"))
+                                    db.commit()
+                                    print(f"Migration: Dropped foreign key constraint {fk_name} on session_artifacts(session_id)")
+                                except Exception as ex:
+                                    print(f"Migration notice: Could not drop constraint {fk_name}: {ex}")
+
+            # On PostgreSQL, also ensure session_id column is nullable
+            if not DB_PATH.startswith("sqlite"):
+                try:
+                    db.execute(text("ALTER TABLE session_artifacts ALTER COLUMN session_id DROP NOT NULL"))
+                    db.commit()
+                    print("Migration: Ensured session_artifacts.session_id is nullable on PostgreSQL")
+                except Exception as ex:
+                    pass
+        except Exception as e:
+            print(f"Migration warning for session_artifacts: {e}")
+        finally:
+            db.close()
 
     if db_creation_status["fresh_start"]:
         db_creation_status["details"] = "Creating database schemas and relational models..."

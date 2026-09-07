@@ -60,10 +60,14 @@ def run_open_or_update_artifact(db, args: dict, tenant, session_id: str) -> dict
             artifact_type = "document"
 
     # Check if artifact already exists in this session
-    existing = db.query(SessionArtifact).filter(
-        SessionArtifact.session_id == session_id,
+    filter_clauses = [
+        SessionArtifact.tenant_id == tenant_id,
         (SessionArtifact.filename == filename) | (SessionArtifact.title == title)
-    ).first()
+    ]
+    if session_id:
+        filter_clauses.append(SessionArtifact.session_id == session_id)
+
+    existing = db.query(SessionArtifact).filter(*filter_clauses).first()
 
     if existing:
         if content:
