@@ -222,16 +222,33 @@ function CanvasInner({ isEmbed = false, artifactId: propArtifactId, token: propT
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // DOM-level Fullscreen toggle handler (expands to fill the entire application viewport)
+  // DOM-level Fullscreen Toggle (expands within DOM without hijacking OS/hardware fullscreen)
   const toggleFullscreen = useCallback(() => {
-    setIsFullscreen((prev) => !prev);
+    setIsFullscreen((prev) => {
+      const nextState = !prev;
+      try {
+        window.parent?.postMessage({
+          type: 'CANVAS_FULLSCREEN_CHANGE',
+          isFullscreen: nextState
+        }, '*');
+      } catch {}
+      return nextState;
+    });
   }, []);
 
   // Keyboard Escape listener to exit fullscreen or close dropdown
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.key === 'Escape') {
-        if (isFullscreen) setIsFullscreen(false);
+        if (isFullscreen) {
+          setIsFullscreen(false);
+          try {
+            window.parent?.postMessage({
+              type: 'CANVAS_FULLSCREEN_CHANGE',
+              isFullscreen: false
+            }, '*');
+          } catch {}
+        }
         if (showDownloadMenu) setShowDownloadMenu(false);
       }
     };
