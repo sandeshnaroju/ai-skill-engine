@@ -628,16 +628,22 @@ Mount the Canvas inside any modal dialog, slide-over drawer, or split-pane conta
 | `theme` | Query parameter (`&theme=dark` or `&theme=light`) | String | Sets initial Canvas color theme matching your parent site. |
 | `THEME_CHANGE` | `window.postMessage` (Host ➔ Iframe) | `{ type: 'THEME_CHANGE', theme: 'light'\|'dark' }` | Send to the iframe window to update theme in real-time without reloading. |
 | `CANVAS_FULLSCREEN_CHANGE` | `window.postMessage` (Iframe ➔ Host) | `{ type: 'CANVAS_FULLSCREEN_CHANGE', isFullscreen: boolean }` | Emitted when user clicks Fullscreen/Minimize or presses `Esc`. Allows the parent page to expand the iframe across the page DOM. |
+| `CANVAS_CLOSE` | `window.postMessage` (Iframe ➔ Host) | `{ type: 'CANVAS_CLOSE', artifactId: string }` | Emitted when user clicks the **(X)** Close button in the Canvas header. Allows the parent page to close the drawer, modal, or unmount the iframe. |
 | `allow="clipboard-write"` | HTML `<iframe>` attribute | Attribute | Enables users to use one-click code/text copy buttons inside the Canvas. |
 
-#### Real-Time Theme & DOM Fullscreen Handling via JavaScript
+#### Real-Time Theme, Close & DOM Fullscreen Handling via JavaScript
 ```javascript
-// 1. Expand iframe across DOM when Canvas fullscreen button is clicked
 window.addEventListener("message", (e) => {
-  if (e.data?.type === "CANVAS_FULLSCREEN_CHANGE") {
-    const iframe = document.getElementById("canvas-frame");
-    if (!iframe) return;
+  const iframe = document.getElementById("canvas-frame");
+  if (!iframe) return;
 
+  // 1. Handle Close (X button inside Canvas header)
+  if (e.data?.type === "CANVAS_CLOSE") {
+    iframe.style.display = "none"; // or close your drawer/modal
+  }
+
+  // 2. Expand iframe across DOM when Canvas fullscreen button is clicked
+  if (e.data?.type === "CANVAS_FULLSCREEN_CHANGE") {
     if (e.data.isFullscreen) {
       // Expand iframe to cover entire browser viewport (DOM level, preserving browser tabs/URL bar)
       iframe.style.position = "fixed";
@@ -656,7 +662,7 @@ window.addEventListener("message", (e) => {
   }
 });
 
-// 2. Switch theme dynamically without reloading
+// 3. Switch theme dynamically without reloading
 function setCanvasTheme(theme) {
   const iframe = document.getElementById("canvas-frame");
   if (iframe && iframe.contentWindow) {

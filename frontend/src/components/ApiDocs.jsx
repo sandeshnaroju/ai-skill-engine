@@ -1274,6 +1274,14 @@ data: [DONE]`
                           Emitted when the user toggles Fullscreen or presses Esc. Allows the host page to expand the iframe across the page DOM.
                         </td>
                       </tr>
+                      <tr style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                        <td style={{ padding: '8px 10px', color: 'var(--primary-indigo)', fontFamily: 'var(--font-mono)' }}>CANVAS_CLOSE</td>
+                        <td style={{ padding: '8px 10px' }}>window.postMessage (Iframe ➔ Host)</td>
+                        <td style={{ padding: '8px 10px' }}><code>{`{ type: 'CANVAS_CLOSE', artifactId: string }`}</code></td>
+                        <td style={{ padding: '8px 10px', color: 'var(--text-sub)' }}>
+                          Emitted when the user clicks the close <strong>(X)</strong> button in the Canvas header. Allows the host page to close the drawer, modal, or unmount the iframe.
+                        </td>
+                      </tr>
                       <tr>
                         <td style={{ padding: '8px 10px', color: 'var(--primary-indigo)', fontFamily: 'var(--font-mono)' }}>allow="clipboard-write"</td>
                         <td style={{ padding: '8px 10px' }}>Iframe attribute</td>
@@ -1294,7 +1302,7 @@ data: [DONE]`
                 </span>
                 <button
                   className="btn-outline"
-                  onClick={() => copyCode(`<!-- HTML Iframe Embed Example with DOM Fullscreen -->
+                  onClick={() => copyCode(`<!-- HTML Iframe Embed Example with DOM Fullscreen & Close -->
 <iframe
   id="canvas-frame"
   src="https://api.yourdomain.com\${artifact.embed_url}&theme=dark"
@@ -1304,14 +1312,20 @@ data: [DONE]`
 ></iframe>
 
 <script>
-  // 1. Expand iframe across DOM when Canvas fullscreen button is clicked
+  // Listen for Canvas events (DOM Fullscreen, Close, etc.)
   window.addEventListener("message", (e) => {
-    if (e.data?.type === "CANVAS_FULLSCREEN_CHANGE") {
-      const iframe = document.getElementById("canvas-frame");
-      if (!iframe) return;
+    const iframe = document.getElementById("canvas-frame");
+    if (!iframe) return;
 
+    // 1. Close button clicked inside Canvas header
+    if (e.data?.type === "CANVAS_CLOSE") {
+      iframe.style.display = "none";
+      // or close your drawer/modal in your host framework
+    }
+
+    // 2. Expand iframe across DOM when Canvas fullscreen button is clicked
+    if (e.data?.type === "CANVAS_FULLSCREEN_CHANGE") {
       if (e.data.isFullscreen) {
-        // Expand iframe to cover entire browser viewport (DOM level, preserving browser tabs/URL bar)
         iframe.style.position = "fixed";
         iframe.style.top = "0";
         iframe.style.left = "0";
@@ -1319,7 +1333,6 @@ data: [DONE]`
         iframe.style.height = "100vh";
         iframe.style.zIndex = "99999";
       } else {
-        // Restore standard layout
         iframe.style.position = "static";
         iframe.style.width = "100%";
         iframe.style.height = "100%";
@@ -1328,7 +1341,7 @@ data: [DONE]`
     }
   });
 
-  // 2. Dynamically switch theme without reloading the iframe
+  // 3. Dynamically switch theme without reloading the iframe
   function setCanvasTheme(theme) {
     const iframe = document.getElementById("canvas-frame");
     if (iframe && iframe.contentWindow) {
@@ -1342,7 +1355,7 @@ data: [DONE]`
                 </button>
               </div>
 
-              <pre className="code-display" style={{ maxHeight: '380px' }}>
+              <pre className="code-display" style={{ maxHeight: '420px' }}>
                 {`<!-- 1. Mount iframe with full URL + theme query parameter -->
 <iframe
   id="canvas-frame"
@@ -1352,13 +1365,20 @@ data: [DONE]`
   allow="clipboard-write"
 />
 
-<!-- 2. Expand iframe across DOM when Canvas fullscreen button is clicked -->
+<!-- 2. Handle Canvas Close & DOM Fullscreen events -->
 <script>
   window.addEventListener("message", (e) => {
+    const iframe = document.getElementById("canvas-frame");
+    if (!iframe) return;
+
+    // Handle user clicking the (X) Close button inside Canvas
+    if (e.data?.type === "CANVAS_CLOSE") {
+      iframe.style.display = "none"; // or close your drawer/modal
+    }
+
+    // Handle user clicking the Fullscreen button or pressing Esc
     if (e.data?.type === "CANVAS_FULLSCREEN_CHANGE") {
-      const iframe = document.getElementById("canvas-frame");
       if (e.data.isFullscreen) {
-        // Expand iframe to cover entire browser viewport (DOM level)
         iframe.style.position = "fixed";
         iframe.style.top = "0";
         iframe.style.left = "0";
@@ -1366,7 +1386,6 @@ data: [DONE]`
         iframe.style.height = "100vh";
         iframe.style.zIndex = "99999";
       } else {
-        // Restore standard layout
         iframe.style.position = "static";
         iframe.style.width = "100%";
         iframe.style.height = "100%";

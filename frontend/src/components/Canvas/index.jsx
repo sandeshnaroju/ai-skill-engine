@@ -236,6 +236,19 @@ function CanvasInner({ isEmbed = false, artifactId: propArtifactId, token: propT
     });
   }, []);
 
+  // Close Canvas handler: calls onClose callback and broadcasts CANVAS_CLOSE to host iframe parent
+  const handleClose = useCallback(() => {
+    if (onClose) {
+      onClose();
+    }
+    try {
+      window.parent?.postMessage({
+        type: 'CANVAS_CLOSE',
+        artifactId: artifact?.id || artifactId || null
+      }, '*');
+    } catch {}
+  }, [onClose, artifact?.id, artifactId]);
+
   // Keyboard Escape listener to exit fullscreen or close dropdown
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -834,11 +847,11 @@ function CanvasInner({ isEmbed = false, artifactId: propArtifactId, token: propT
             )}
           </div>
 
-          {/* Close Button */}
-          {onClose && (
+          {/* Close Button (available both in dashboard components with onClose and in embedded iframes via postMessage) */}
+          {(inIframe || onClose) && (
             <button
               className="canvas-btn-icon canvas-close-btn"
-              onClick={onClose}
+              onClick={handleClose}
               title="Close Canvas"
             >
               <X size={15} />
