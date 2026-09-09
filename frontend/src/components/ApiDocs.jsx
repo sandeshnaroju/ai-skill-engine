@@ -1472,7 +1472,14 @@ curl -N -X GET "http://localhost:8000/api/v1/artifacts/{artifact_id}/stream?toke
 curl -O "http://localhost:8000/api/v1/artifacts/{artifact_id}/export?format=docx&token={embed_token}"
 curl -O "http://localhost:8000/api/v1/artifacts/{artifact_id}/export?format=pdf&token={embed_token}"
 curl -O "http://localhost:8000/api/v1/artifacts/{artifact_id}/export?format=xlsx&token={embed_token}"
-curl -O "http://localhost:8000/api/v1/artifacts/{artifact_id}/export?format=pptx&token={embed_token}"`}
+curl -O "http://localhost:8000/api/v1/artifacts/{artifact_id}/export?format=pptx&token={embed_token}"
+
+# ═══════════════════════════════════════════════════════════════════════
+# 6. DELETE ALL ARTIFACTS FOR A SESSION (Business Backend API)
+# Deletes all artifacts, blocks, and commits belonging to a session
+# ═══════════════════════════════════════════════════════════════════════
+curl -X DELETE "http://localhost:8000/api/v1/artifacts/session/{session_id}" \\
+  -H "X-API-Key: {TENANT_API_KEY}"`}
               </pre>
             </div>
           )}

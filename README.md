@@ -694,6 +694,10 @@ curl -O "https://api.yourdomain.com/api/v1/artifacts/ART_ID/export?format=docx&t
 curl -O "https://api.yourdomain.com/api/v1/artifacts/ART_ID/export?format=pdf&token=SIGNED_EMBED_TOKEN"
 curl -O "https://api.yourdomain.com/api/v1/artifacts/ART_ID/export?format=xlsx&token=SIGNED_EMBED_TOKEN"
 curl -O "https://api.yourdomain.com/api/v1/artifacts/ART_ID/export?format=pptx&token=SIGNED_EMBED_TOKEN"
+
+# 6. Delete All Artifacts for a Session (Business Backend API)
+curl -X DELETE "https://api.yourdomain.com/api/v1/artifacts/session/SESSION_ID" \
+  -H "X-API-Key: YOUR_TENANT_API_KEY"
 ```
 
 ---
