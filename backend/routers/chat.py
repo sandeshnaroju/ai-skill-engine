@@ -617,6 +617,15 @@ def delete_session(
 
     # Delete related chat messages
     db.query(ChatMessage).filter(ChatMessage.session_id == s.id).delete()
+
+    # Delete related session artifacts
+    artifacts = db.query(SessionArtifact).filter(
+        SessionArtifact.session_id == session_id,
+        SessionArtifact.tenant_id == tenant.id
+    ).all()
+    for art in artifacts:
+        db.delete(art)
+
     # Delete session
     db.delete(s)
     db.commit()

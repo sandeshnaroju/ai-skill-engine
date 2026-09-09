@@ -77,6 +77,11 @@ export const artifactsApi = {
     return res?.data !== undefined ? res.data : res;
   },
 
+  deleteSessionArtifacts: async (sessionId) => {
+    const res = await apiClient.delete(`/api/v1/artifacts/session/${sessionId}`);
+    return res?.data !== undefined ? res.data : res;
+  },
+
   getSessionArtifacts: async (sessionId) => {
     const res = await apiClient.get(`/api/v1/artifacts/session/${sessionId}`);
     return res?.data !== undefined ? res.data : res;

@@ -1260,10 +1260,18 @@ data: [DONE]`
                       </tr>
                       <tr style={{ borderBottom: '1px solid var(--border-subtle)' }}>
                         <td style={{ padding: '8px 10px', color: 'var(--primary-indigo)', fontFamily: 'var(--font-mono)' }}>THEME_CHANGE</td>
-                        <td style={{ padding: '8px 10px' }}>window.postMessage</td>
+                        <td style={{ padding: '8px 10px' }}>window.postMessage (Host ➔ Iframe)</td>
                         <td style={{ padding: '8px 10px' }}><code>{`{ type: 'THEME_CHANGE', theme: 'dark'|'light' }`}</code></td>
                         <td style={{ padding: '8px 10px', color: 'var(--text-sub)' }}>
-                          PostMessage sent to the iframe window to update theme dynamically without reloading the iframe.
+                          Sent to the iframe window to dynamically update theme without reloading.
+                        </td>
+                      </tr>
+                      <tr style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                        <td style={{ padding: '8px 10px', color: 'var(--primary-indigo)', fontFamily: 'var(--font-mono)' }}>CANVAS_FULLSCREEN_CHANGE</td>
+                        <td style={{ padding: '8px 10px' }}>window.postMessage (Iframe ➔ Host)</td>
+                        <td style={{ padding: '8px 10px' }}><code>{`{ type: 'CANVAS_FULLSCREEN_CHANGE', isFullscreen: boolean }`}</code></td>
+                        <td style={{ padding: '8px 10px', color: 'var(--text-sub)' }}>
+                          Emitted when the user toggles Fullscreen or presses Esc. Allows the host page to expand the iframe across the page DOM.
                         </td>
                       </tr>
                       <tr>
@@ -1286,17 +1294,41 @@ data: [DONE]`
                 </span>
                 <button
                   className="btn-outline"
-                  onClick={() => copyCode(`<!-- HTML Iframe Embed Example -->
+                  onClick={() => copyCode(`<!-- HTML Iframe Embed Example with DOM Fullscreen -->
 <iframe
   id="canvas-frame"
   src="https://api.yourdomain.com\${artifact.embed_url}&theme=dark"
-  style="width: 100%; height: 100%; border: none;"
+  style="width: 100%; height: 100%; border: none; transition: all 0.2s ease;"
   title="Document Canvas"
   allow="clipboard-write"
 ></iframe>
 
 <script>
-  // Dynamically switch theme without reloading the iframe
+  // 1. Expand iframe across DOM when Canvas fullscreen button is clicked
+  window.addEventListener("message", (e) => {
+    if (e.data?.type === "CANVAS_FULLSCREEN_CHANGE") {
+      const iframe = document.getElementById("canvas-frame");
+      if (!iframe) return;
+
+      if (e.data.isFullscreen) {
+        // Expand iframe to cover entire browser viewport (DOM level, preserving browser tabs/URL bar)
+        iframe.style.position = "fixed";
+        iframe.style.top = "0";
+        iframe.style.left = "0";
+        iframe.style.width = "100vw";
+        iframe.style.height = "100vh";
+        iframe.style.zIndex = "99999";
+      } else {
+        // Restore standard layout
+        iframe.style.position = "static";
+        iframe.style.width = "100%";
+        iframe.style.height = "100%";
+        iframe.style.zIndex = "auto";
+      }
+    }
+  });
+
+  // 2. Dynamically switch theme without reloading the iframe
   function setCanvasTheme(theme) {
     const iframe = document.getElementById("canvas-frame");
     if (iframe && iframe.contentWindow) {
@@ -1310,22 +1342,44 @@ data: [DONE]`
                 </button>
               </div>
 
-              <pre className="code-display" style={{ maxHeight: '280px' }}>
+              <pre className="code-display" style={{ maxHeight: '380px' }}>
                 {`<!-- 1. Mount iframe with full URL + theme query parameter -->
 <iframe
   id="canvas-frame"
   src={\`https://api.yourdomain.com\${artifact.embed_url}&theme=\${currentTheme}\`}
-  style="width: 100%; height: 100%; border: none;"
+  style="width: 100%; height: 100%; border: none; transition: all 0.2s ease;"
   title="Document Canvas"
   allow="clipboard-write"
 />
 
-<!-- 2. (Optional) Switch theme dynamically via postMessage -->
+<!-- 2. Expand iframe across DOM when Canvas fullscreen button is clicked -->
 <script>
-  iframeRef.contentWindow.postMessage({
-    type: "THEME_CHANGE",
-    theme: "light" // or "dark"
-  }, "*");
+  window.addEventListener("message", (e) => {
+    if (e.data?.type === "CANVAS_FULLSCREEN_CHANGE") {
+      const iframe = document.getElementById("canvas-frame");
+      if (e.data.isFullscreen) {
+        // Expand iframe to cover entire browser viewport (DOM level)
+        iframe.style.position = "fixed";
+        iframe.style.top = "0";
+        iframe.style.left = "0";
+        iframe.style.width = "100vw";
+        iframe.style.height = "100vh";
+        iframe.style.zIndex = "99999";
+      } else {
+        // Restore standard layout
+        iframe.style.position = "static";
+        iframe.style.width = "100%";
+        iframe.style.height = "100%";
+        iframe.style.zIndex = "auto";
+      }
+    }
+  });
+
+  // (Optional) Switch theme dynamically via postMessage
+  function setCanvasTheme(theme) {
+    const iframe = document.getElementById("canvas-frame");
+    iframe?.contentWindow?.postMessage({ type: "THEME_CHANGE", theme }, "*");
+  }
 </script>`}
               </pre>
             </div>
@@ -1418,7 +1472,14 @@ curl -N -X GET "http://localhost:8000/api/v1/artifacts/{artifact_id}/stream?toke
 curl -O "http://localhost:8000/api/v1/artifacts/{artifact_id}/export?format=docx&token={embed_token}"
 curl -O "http://localhost:8000/api/v1/artifacts/{artifact_id}/export?format=pdf&token={embed_token}"
 curl -O "http://localhost:8000/api/v1/artifacts/{artifact_id}/export?format=xlsx&token={embed_token}"
-curl -O "http://localhost:8000/api/v1/artifacts/{artifact_id}/export?format=pptx&token={embed_token}"`}
+curl -O "http://localhost:8000/api/v1/artifacts/{artifact_id}/export?format=pptx&token={embed_token}"
+
+# ═══════════════════════════════════════════════════════════════════════
+# 6. DELETE ALL ARTIFACTS FOR A SESSION (Business Backend API)
+# Deletes all artifacts, blocks, and commits belonging to a session
+# ═══════════════════════════════════════════════════════════════════════
+curl -X DELETE "http://localhost:8000/api/v1/artifacts/session/{session_id}" \\
+  -H "X-API-Key: {TENANT_API_KEY}"`}
               </pre>
             </div>
           )}
@@ -1452,8 +1513,44 @@ curl -O "http://localhost:8000/api/v1/artifacts/{artifact_id}/export?format=pptx
                     <span style={{ fontWeight: 650, fontSize: '0.86rem', color: 'var(--text-main)' }}>Silent Background Token Refresh</span>
                   </div>
                   <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: '1.5' }}>
-                    The Canvas iframe silently calls <code>POST /api/v1/artifacts/{'{id}'}/refresh-token</code> every 22 minutes, ensuring seamless editing sessions that never time out.
+                    The Canvas iframe silently calls <code>POST /api/v1/artifacts/{'{id}'}/refresh-token</code> every 22 minutes, ensuring active editing sessions never time out.
                   </p>
+                </div>
+
+                <div style={{ background: 'var(--bg-input)', padding: '14px', borderRadius: '8px', border: '1px solid var(--border-subtle)', gridColumn: '1 / -1' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                    <ShieldCheck size={16} color="var(--primary-cyan)" />
+                    <span style={{ fontWeight: 650, fontSize: '0.86rem', color: 'var(--text-main)' }}>Expired Token & Historical Chat Renewal Flow</span>
+                  </div>
+                  <p style={{ fontSize: '0.82rem', color: 'var(--text-sub)', lineHeight: '1.6', marginBottom: '10px' }}>
+                    When users browse older chat sessions, their stream embed tokens may already be expired. Rather than exposing master tenant keys to the frontend, your <strong>business backend</strong> requests a fresh embed token on demand and supplies it to the client:
+                  </p>
+                  <pre style={{
+                    background: 'var(--bg-dark)',
+                    border: '1px solid var(--border-subtle)',
+                    padding: '12px',
+                    borderRadius: '6px',
+                    fontSize: '0.78rem',
+                    color: 'var(--text-main)',
+                    overflowX: 'auto',
+                    fontFamily: 'monospace',
+                    lineHeight: '1.5'
+                  }}>
+{`# 1. Frontend detects expired token (or user clicks an old artifact) -> calls YOUR backend
+# 2. Your backend requests a fresh token from AI Skill Engine with master key:
+curl -X POST "http://localhost:8000/api/v1/artifacts/{artifact_id}/embed-token?expires_in_minutes=60" \\
+  -H "X-API-Key: {TENANT_API_KEY}"
+
+# Response:
+{
+  "token": "eyJhbGciOi...",
+  "expires_in_seconds": 3600,
+  "artifact_id": "{artifact_id}",
+  "embed_url": "/embed/canvas?token=eyJhbGciOi..."
+}
+
+# 3. Your backend forwards only this fresh "token" or "embed_url" to your frontend client.`}
+                  </pre>
                 </div>
               </div>
             </div>

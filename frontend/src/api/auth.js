@@ -11,7 +11,7 @@ export const authApi = {
     apiClient.post('/api/v1/auth/logout'),
 
   verifyOtp: (email, otpCode) =>
-    apiClient.post('/api/v1/auth/verify-otp', { email, otp_code: otpCode }),
+    apiClient.post('/api/v1/auth/verify-otp', { email, otp: otpCode, otp_code: otpCode }),
 
   resendOtp: (email) =>
     apiClient.post('/api/v1/auth/resend-otp', { email }),

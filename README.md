@@ -626,11 +626,37 @@ Mount the Canvas inside any modal dialog, slide-over drawer, or split-pane conta
 |---|---|---|---|
 | `token` | Query parameter (`in embed_url`) | String (JWT) | Pre-signed HMAC token authorizing secure access to this specific artifact without revealing master API keys. |
 | `theme` | Query parameter (`&theme=dark` or `&theme=light`) | String | Sets initial Canvas color theme matching your parent site. |
-| `THEME_CHANGE` | `window.postMessage` | `{ type: 'THEME_CHANGE', theme: 'light'\|'dark' }` | Send to the iframe window to update theme in real-time without reloading. |
+| `THEME_CHANGE` | `window.postMessage` (Host ➔ Iframe) | `{ type: 'THEME_CHANGE', theme: 'light'\|'dark' }` | Send to the iframe window to update theme in real-time without reloading. |
+| `CANVAS_FULLSCREEN_CHANGE` | `window.postMessage` (Iframe ➔ Host) | `{ type: 'CANVAS_FULLSCREEN_CHANGE', isFullscreen: boolean }` | Emitted when user clicks Fullscreen/Minimize or presses `Esc`. Allows the parent page to expand the iframe across the page DOM. |
 | `allow="clipboard-write"` | HTML `<iframe>` attribute | Attribute | Enables users to use one-click code/text copy buttons inside the Canvas. |
 
-#### Real-Time Theme Switching via JavaScript
+#### Real-Time Theme & DOM Fullscreen Handling via JavaScript
 ```javascript
+// 1. Expand iframe across DOM when Canvas fullscreen button is clicked
+window.addEventListener("message", (e) => {
+  if (e.data?.type === "CANVAS_FULLSCREEN_CHANGE") {
+    const iframe = document.getElementById("canvas-frame");
+    if (!iframe) return;
+
+    if (e.data.isFullscreen) {
+      // Expand iframe to cover entire browser viewport (DOM level, preserving browser tabs/URL bar)
+      iframe.style.position = "fixed";
+      iframe.style.top = "0";
+      iframe.style.left = "0";
+      iframe.style.width = "100vw";
+      iframe.style.height = "100vh";
+      iframe.style.zIndex = "99999";
+    } else {
+      // Restore standard layout
+      iframe.style.position = "static";
+      iframe.style.width = "100%";
+      iframe.style.height = "100%";
+      iframe.style.zIndex = "auto";
+    }
+  }
+});
+
+// 2. Switch theme dynamically without reloading
 function setCanvasTheme(theme) {
   const iframe = document.getElementById("canvas-frame");
   if (iframe && iframe.contentWindow) {
@@ -668,6 +694,10 @@ curl -O "https://api.yourdomain.com/api/v1/artifacts/ART_ID/export?format=docx&t
 curl -O "https://api.yourdomain.com/api/v1/artifacts/ART_ID/export?format=pdf&token=SIGNED_EMBED_TOKEN"
 curl -O "https://api.yourdomain.com/api/v1/artifacts/ART_ID/export?format=xlsx&token=SIGNED_EMBED_TOKEN"
 curl -O "https://api.yourdomain.com/api/v1/artifacts/ART_ID/export?format=pptx&token=SIGNED_EMBED_TOKEN"
+
+# 6. Delete All Artifacts for a Session (Business Backend API)
+curl -X DELETE "https://api.yourdomain.com/api/v1/artifacts/session/SESSION_ID" \
+  -H "X-API-Key: YOUR_TENANT_API_KEY"
 ```
 
 ---
@@ -693,6 +723,7 @@ Never expose your master tenant API key (`sk_mgr_...`) to end users in browser c
 2. **Ephemeral HMAC Token**: The engine generates a time-bounded (30 min) token scoped exclusively to the requested artifact.
 3. **Safe Forwarding**: Your server returns only `reply` and `artifact` (`embed_url` and `token`) to the browser.
 4. **Background Refresh**: The Canvas automatically calls `/refresh-token` every 22 minutes to maintain seamless sessions.
+5. **Historical / Expired Token Renewal**: When end-users browse older conversations where the embed token has expired, your backend calls `POST /api/v1/artifacts/{artifact_id}/embed-token?expires_in_minutes=60` with your tenant `X-API-Key` and provides the fresh token to the client.
 
 ---
 

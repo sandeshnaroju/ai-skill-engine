@@ -4,6 +4,7 @@ import secrets
 import datetime as dt
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -77,7 +78,8 @@ class ResetPasswordRequest(BaseModel):
 
 class VerifyOtpRequest(BaseModel):
     email: str
-    otp: str
+    otp: Optional[str] = None
+    otp_code: Optional[str] = None
 
 class ResendOtpRequest(BaseModel):
     email: str
@@ -179,6 +181,10 @@ def login_user(payload: UserLogin, response: Response, db: Session = Depends(get
 @router.post("/verify-otp")
 def verify_otp(payload: VerifyOtpRequest, db: Session = Depends(get_db)):
     email_clean = payload.email.strip().lower()
+    otp_val = (payload.otp or payload.otp_code or "").strip()
+    if not otp_val:
+        raise HTTPException(status_code=400, detail="OTP code is required")
+
     user = db.query(User).filter(User.email == email_clean).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -186,7 +192,7 @@ def verify_otp(payload: VerifyOtpRequest, db: Session = Depends(get_db)):
     if user.is_verified:
         return {"message": "User is already verified"}
         
-    if not user.verification_otp or user.verification_otp != payload.otp:
+    if not user.verification_otp or user.verification_otp != otp_val:
         raise HTTPException(status_code=400, detail="Invalid verification code")
         
     if user.verification_otp_expires and user.verification_otp_expires < dt.datetime.utcnow():
