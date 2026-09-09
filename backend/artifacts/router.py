@@ -305,6 +305,36 @@ def list_session_artifacts(
     return [serialize_artifact_summary(a) for a in artifacts]
 
 
+@router.delete("/session/{session_id}")
+def delete_session_artifacts(
+    session_id: str,
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: Session = Depends(get_db)
+):
+    """Delete all artifacts, blocks, and commits belonging to a session for the authenticated tenant."""
+    artifacts = db.query(SessionArtifact).filter(
+        SessionArtifact.session_id == session_id,
+        SessionArtifact.tenant_id == current_tenant.id
+    ).all()
+
+    deleted_ids = []
+    for art in artifacts:
+        # Broadcast deletion event
+        broadcaster.broadcast(art.id, "artifact_deleted", {"artifact_id": art.id})
+        deleted_ids.append(art.id)
+        db.delete(art)
+
+    db.commit()
+
+    return {
+        "success": True,
+        "session_id": session_id,
+        "deleted_count": len(deleted_ids),
+        "deleted_artifact_ids": deleted_ids,
+        "message": f"Successfully deleted {len(deleted_ids)} artifact(s) for session {session_id}"
+    }
+
+
 @router.delete("/{artifact_id}")
 def delete_artifact(
     artifact_id: str,
@@ -312,7 +342,10 @@ def delete_artifact(
     db: Session = Depends(get_db)
 ):
     """Delete an artifact and its associated blocks, commits, and broadcaster subscribers."""
-    artifact = db.query(SessionArtifact).filter(SessionArtifact.id == artifact_id).first()
+    artifact = db.query(SessionArtifact).filter(
+        SessionArtifact.id == artifact_id,
+        SessionArtifact.tenant_id == current_tenant.id
+    ).first()
     if not artifact:
         raise HTTPException(status_code=404, detail="Artifact not found")
 
