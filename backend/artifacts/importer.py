@@ -307,69 +307,58 @@ def _parse_docx(filepath: str, title: str) -> Tuple[str, List[Dict[str, Any]]]:
 
 
 def _parse_pdf(filepath: str, title: str) -> Tuple[str, List[Dict[str, Any]]]:
-    """Extracts PDF text page by page into structured blocks, with image rendering fallback for scanned documents."""
+    """
+    Extracts PDF documents into structured, beautifully formatted Markdown sections.
+    - Preserves tables as clean Markdown tables using table bounding-box detection.
+    - Decomposes multi-section reports into logical outline sections (e.g. Executive Summary, Milestones, Next Steps).
+    - Cleans up CID / bullet artifacts ((cid:127) -> •).
+    - Falls back to high-resolution page rendering for purely scanned / image-based PDFs.
+    """
     import base64
     full_content_parts = []
     blocks = []
 
-    # 1. Try extracting text via pdfplumber or pypdf
-    page_texts = []
+    doc = None
+    plumber_pdf = None
+    try:
+        import fitz
+        doc = fitz.open(filepath)
+    except Exception:
+        pass
+
     try:
         import pdfplumber
-        with pdfplumber.open(filepath) as pdf:
-            for page in pdf.pages:
-                page_texts.append((page.extract_text() or "").strip())
+        plumber_pdf = pdfplumber.open(filepath)
     except Exception:
-        try:
-            import pypdf
-            reader = pypdf.PdfReader(filepath)
-            for page in reader.pages:
-                page_texts.append((page.extract_text() or "").strip())
-        except Exception:
-            page_texts = []
+        pass
 
-    # 2. Check if any text was extracted
-    has_text = any(len(t) > 0 for t in page_texts)
+    # 1. Check if PDF has extractable text
+    total_text_len = 0
+    if doc:
+        total_text_len = sum(len(page.get_text().strip()) for page in doc)
+    elif plumber_pdf:
+        total_text_len = sum(len((p.extract_text() or "").strip()) for p in plumber_pdf.pages)
 
-    if has_text and len(page_texts) > 0:
-        for idx, page_text in enumerate(page_texts):
-            block_title = f"Page {idx + 1}"
-            if page_text:
-                page_md = f"## {block_title}\n\n{page_text}"
-            else:
-                page_md = f"## {block_title}\n\n*(Page contains non-text or graphical content)*"
-            full_content_parts.append(page_md)
-            blocks.append({
-                "block_key": f"page_{idx + 1}",
-                "title": block_title,
-                "content": page_md,
-                "order_index": idx
-            })
-    else:
-        # 3. Scanned / Graphical PDF fallback: render pages to images using pymupdf or pypdfium2
+    # 2. Purely scanned / image-based PDF fallback: render to crisp PNG images
+    if total_text_len == 0:
         rendered_images = []
-        try:
-            import fitz
-            doc = fitz.open(filepath)
+        if doc:
             for idx, page in enumerate(doc):
                 pix = page.get_pixmap(dpi=150)
                 png_bytes = pix.tobytes("png")
                 b64_data = base64.b64encode(png_bytes).decode("ascii")
-                data_uri = f"data:image/png;base64,{b64_data}"
-                rendered_images.append((idx + 1, data_uri))
-        except Exception:
+                rendered_images.append((idx + 1, f"data:image/png;base64,{b64_data}"))
+        elif plumber_pdf:
             try:
                 import pypdfium2 as pdfium
-                pdf = pdfium.PdfDocument(filepath)
-                for idx in range(len(pdf)):
-                    page = pdf[idx]
-                    image = page.render(scale=2).to_pil()
+                pdf_doc = pdfium.PdfDocument(filepath)
+                for idx in range(len(pdf_doc)):
+                    image = pdf_doc[idx].render(scale=2).to_pil()
                     import io
                     buf = io.BytesIO()
                     image.save(buf, format="PNG")
                     b64_data = base64.b64encode(buf.getvalue()).decode("ascii")
-                    data_uri = f"data:image/png;base64,{b64_data}"
-                    rendered_images.append((idx + 1, data_uri))
+                    rendered_images.append((idx + 1, f"data:image/png;base64,{b64_data}"))
             except Exception:
                 pass
 
@@ -394,6 +383,134 @@ def _parse_pdf(filepath: str, title: str) -> Tuple[str, List[Dict[str, Any]]]:
                 "content": page_md,
                 "order_index": 0
             })
+        return "\n\n".join(full_content_parts).strip(), blocks
+
+    # 3. PDF with text: extract tables and text blocks in vertical layout order
+    sec_idx = 0
+    page_count = len(doc) if doc else len(plumber_pdf.pages)
+
+    for page_idx in range(page_count):
+        fitz_page = doc[page_idx] if doc else None
+        plumber_page = plumber_pdf.pages[page_idx] if plumber_pdf and page_idx < len(plumber_pdf.pages) else None
+
+        # Extract markdown tables with bounding boxes
+        tables_data = []
+        if plumber_page:
+            try:
+                found_tables = plumber_page.find_tables()
+                for ft in found_tables:
+                    raw_t = ft.extract()
+                    clean_t = []
+                    for row in raw_t:
+                        clean_row = [" ".join(str(c or "").split()) for c in row]
+                        if any(clean_row):
+                            clean_t.append(clean_row)
+                    if clean_t and len(clean_t) >= 2:
+                        headers = clean_t[0]
+                        cols = len(headers)
+                        t_md = ["| " + " | ".join(headers) + " |", "| " + " | ".join(["---"] * cols) + " |"]
+                        for r in clean_t[1:]:
+                            padded = r + [""] * (cols - len(r))
+                            t_md.append("| " + " | ".join(padded[:cols]) + " |")
+                        table_str = "\n".join(t_md)
+                        tables_data.append({"bbox": ft.bbox, "md": table_str})
+            except Exception:
+                pass
+
+        # Extract text blocks
+        content_items = []
+        if fitz_page:
+            raw_blocks = fitz_page.get_text("blocks")
+            for b in raw_blocks:
+                if b[6] != 0:  # non-text block
+                    continue
+                bx0, by0, bx1, by1, btext = b[0], b[1], b[2], b[3], b[4].strip()
+                if not btext:
+                    continue
+
+                # Check if block falls inside any table bbox
+                in_table = False
+                for td in tables_data:
+                    tx0, ty0, tx1, ty1 = td["bbox"]
+                    if not (by1 < ty0 or by0 > ty1):
+                        in_table = True
+                        break
+                if not in_table:
+                    content_items.append({"y0": by0, "type": "text", "text": btext})
+        elif plumber_page:
+            p_text = (plumber_page.extract_text() or "").strip()
+            if p_text:
+                content_items.append({"y0": 0, "type": "text", "text": p_text})
+
+        # Add tables at their vertical position y0
+        for td in tables_data:
+            content_items.append({"y0": td["bbox"][1], "type": "table", "text": td["md"]})
+
+        content_items.sort(key=lambda x: x["y0"])
+
+        # Group into logical sections based on headings
+        current_sec = None
+        for item in content_items:
+            t = item["text"]
+            # Clean CID and bullet artifacts ((cid:127) -> •)
+            t = re.sub(r'\(cid:\d+\)', '•', t)
+
+            is_heading = False
+            heading_title = ""
+            if item["type"] == "text":
+                first_line = t.splitlines()[0].strip()
+                # Numbered section (e.g. 1. Executive Summary, 2. Program Milestones)
+                if re.match(r'^\d+\.\s+[A-Za-z]', first_line):
+                    is_heading = True
+                    heading_title = first_line
+                elif len(t.splitlines()) == 1 and len(first_line) < 60 and not first_line.endswith('.') and not first_line.startswith(('•', '-', '*')):
+                    is_heading = True
+                    heading_title = first_line
+
+            if is_heading:
+                if current_sec and current_sec["lines"]:
+                    sec_body = "\n\n".join(current_sec["lines"]).strip()
+                    full_content_parts.append(sec_body)
+                    blocks.append({
+                        "block_key": f"sec_{sec_idx + 1}",
+                        "title": current_sec["title"],
+                        "content": sec_body,
+                        "order_index": sec_idx
+                    })
+                    sec_idx += 1
+
+                rest_lines = "\n".join(t.splitlines()[1:]).strip()
+                current_sec = {
+                    "title": heading_title,
+                    "lines": [f"### {heading_title}"]
+                }
+                if rest_lines:
+                    current_sec["lines"].append(rest_lines)
+            else:
+                if not current_sec:
+                    page_title = f"Page {page_idx + 1}" if page_count > 1 else "Document Overview"
+                    current_sec = {"title": page_title, "lines": []}
+                current_sec["lines"].append(t)
+
+        if current_sec and current_sec["lines"]:
+            sec_body = "\n\n".join(current_sec["lines"]).strip()
+            full_content_parts.append(sec_body)
+            blocks.append({
+                "block_key": f"sec_{sec_idx + 1}",
+                "title": current_sec["title"],
+                "content": sec_body,
+                "order_index": sec_idx
+            })
+            sec_idx += 1
+
+    if not blocks:
+        blocks.append({
+            "block_key": "doc_main",
+            "title": title,
+            "content": f"# {title}\n\n*(Document loaded)*",
+            "order_index": 0
+        })
+        full_content_parts = [blocks[0]["content"]]
 
     full_content = "\n\n".join(full_content_parts).strip()
     return full_content, blocks
