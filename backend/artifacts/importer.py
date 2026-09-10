@@ -814,16 +814,29 @@ def _parse_diagram(filepath: str, filename: str, ext: str) -> Tuple[str, List[Di
         return content, [{"block_key": "diag_error", "title": "Error", "content": content, "order_index": 0}]
 
     if ext == ".svg":
+        # Always preserve the complete valid SVG document as the primary block
+        # so Canvas SvgViewer can render the complete graphic including <svg>, <defs>, and viewports.
+        blocks.append({
+            "block_key": "diag_main",
+            "title": f"Vector Graphic: {filename}",
+            "content": raw_text,
+            "order_index": 0
+        })
+
+        # Also extract major named layers/groups for surgical editing & inspection
         g_pattern = re.compile(r'(<g\s+[^>]*id="([^"]+)"[^>]*>[\s\S]*?<\/g>)', re.IGNORECASE)
         matches = list(g_pattern.finditer(raw_text))
         if matches:
-            idx = 0
+            idx = 1
             for m in matches[:15]:
                 g_full = m.group(1).strip()
                 g_id = m.group(2).strip()
+                # Avoid polluting the outline with internal font glyph IDs
+                if "glyph" in g_id.lower() and idx > 3:
+                    continue
                 blocks.append({
                     "block_key": f"layer_{g_id.lower()}",
-                    "title": f"SVG Layer: {g_id}",
+                    "title": f"SVG Group: {g_id}",
                     "content": g_full,
                     "order_index": idx
                 })

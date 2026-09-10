@@ -958,6 +958,7 @@ function CanvasInner({ isEmbed = false, artifactId: propArtifactId, token: propT
             <SvgViewer
               fullContent={artifact?.full_content || (blocks && blocks.length ? blocks.map(b => b.content || '').join('\n') : '')}
               blocks={blocks}
+              activeBlockKey={activeBlockKey}
             />
           )}
 

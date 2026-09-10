@@ -4,7 +4,7 @@ import {
   Move, Maximize2, ArrowUp, ArrowDown, ArrowLeft, ArrowRight
 } from 'lucide-react';
 
-export default function SvgViewer({ fullContent = '', blocks = [] }) {
+export default function SvgViewer({ fullContent = '', blocks = [], activeBlockKey = null }) {
   const [viewSource, setViewSource] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -12,8 +12,32 @@ export default function SvgViewer({ fullContent = '', blocks = [] }) {
   const dragStartRef = useRef({ x: 0, y: 0 });
   const containerRef = useRef(null);
 
-  // 1. Extract content from fullContent, blocks, or markdown code fences
-  let rawContent = fullContent || (blocks && blocks[0] ? blocks[0].content : '') || '';
+  // 1. Locate the full document if present in blocks (e.g. diag_main or first block with <svg)
+  let baseSvg = '';
+  if (fullContent && fullContent.includes('<svg')) {
+    baseSvg = fullContent;
+  } else if (blocks && blocks.length > 0) {
+    const mainBlock = blocks.find(b => b.block_key === 'diag_main' || b.block_key === 'main_block' || (b.content && b.content.includes('<svg')));
+    if (mainBlock) {
+      baseSvg = mainBlock.content;
+    } else {
+      baseSvg = blocks.map(b => b.content || '').join('\n');
+    }
+  }
+
+  let rawContent = baseSvg;
+
+  // If user selected a specific block that is an isolated <g> group, wrap it in a viewBox-enabled SVG wrapper so it renders
+  if (activeBlockKey && blocks && blocks.length > 0) {
+    const activeBlock = blocks.find(b => b.block_key === activeBlockKey);
+    if (activeBlock && activeBlock.content) {
+      if (activeBlock.content.includes('<svg')) {
+        rawContent = activeBlock.content;
+      } else if (activeBlock.content.startsWith('<g')) {
+        rawContent = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000" width="100%" height="100%">${activeBlock.content}</svg>`;
+      }
+    }
+  }
 
   // If content is wrapped in markdown ```xml or ```svg code fences, extract the inner code
   const cleanSvgCode = (str) => {
