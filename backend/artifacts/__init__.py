@@ -25,6 +25,7 @@ from .compiler import export_artifact, compile_to_docx, compile_to_xlsx, compile
 from .search import keyword_search_artifact, semantic_search_artifact
 from .tools import (
     run_open_or_update_artifact,
+    run_open_uploaded_file_as_artifact,
     run_artifact_search,
     run_artifact_semantic_search,
     run_edit_artifact_section,
@@ -54,6 +55,7 @@ __all__ = [
     "keyword_search_artifact",
     "semantic_search_artifact",
     "run_open_or_update_artifact",
+    "run_open_uploaded_file_as_artifact",
     "run_artifact_search",
     "run_artifact_semantic_search",
     "run_edit_artifact_section",

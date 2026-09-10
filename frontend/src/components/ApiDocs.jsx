@@ -1087,6 +1087,14 @@ data: [DONE]`
                   sub: 'HMAC signature patterns',
                   icon: <Lock size={18} />,
                   accent: 'var(--accent-rose)'
+                },
+                {
+                  id: 'uploaded_files',
+                  step: '05',
+                  label: 'Uploaded File Canvas',
+                  sub: 'Open Word, Excel, PPTX, CAD',
+                  icon: <Download size={18} />,
+                  accent: 'var(--primary-cyan)'
                 }
               ].map(tab => {
                 const isActive = activeArtifactTab === tab.id;
@@ -1619,6 +1627,104 @@ if (isEmbedTokenExpired(artifact.token)) {
                   </pre>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* Tab 5: Opening Uploaded Files in Canvas */}
+          {activeArtifactTab === 'uploaded_files' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div style={{ background: 'rgba(6, 182, 212, 0.08)', borderLeft: '3px solid var(--primary-cyan)', padding: '14px 18px', borderRadius: '8px', border: '1px solid var(--border-subtle)' }}>
+                <h4 style={{ fontSize: '0.96rem', fontWeight: '700', color: 'var(--text-main)', marginBottom: '6px' }}>
+                  📂 Opening Existing Uploaded Files in Canvas (Skill-Driven)
+                </h4>
+                <p style={{ fontSize: '0.86rem', color: 'var(--text-sub)', lineHeight: '1.6' }}>
+                  When chatbot users upload an existing document, spreadsheet, or presentation and ask to inspect, edit, or view it in the Canvas (e.g. <em>"open this report in canvas"</em>, <em>"edit slide 2"</em>, <em>"review this spreadsheet"</em>), the <code>artifact_editor</code> skill invokes <code>open_uploaded_file_as_artifact</code>. Files are <strong>not</strong> opened automatically upon upload; opening is <strong>intent-driven</strong> via the AI model.
+                </p>
+              </div>
+
+              {/* Supported Formats Grid */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '12px' }}>
+                {[
+                  { title: 'Documents & PDFs', badge: 'document / pdf', exts: '.docx, .doc, .pdf, .md, .txt', desc: 'Parses headings into surgical sections; extracts full tables and page blocks.' },
+                  { title: 'Spreadsheets', badge: 'spreadsheet', exts: '.xlsx, .xls, .csv, .tsv', desc: 'Converts sheets, formulas, and cells into the Canvas interactive SheetGrid.' },
+                  { title: 'Presentations', badge: 'presentation', exts: '.pptx, .ppt', desc: 'Parses slides, titles, bullet hierarchy, and speaker notes into SlidePlayer.' },
+                  { title: 'Engineering & CAD', badge: 'cad_2d / cad_3d', exts: '.dxf, .dwg, .step, .stl, .obj', desc: 'Parses DXF entity layers and 3D solids for WebGL/Three.js CAD viewports.' },
+                  { title: 'GIS & Industrial', badge: 'gis / engineering_data', exts: '.geojson, .kml, .l5x, .xer', desc: 'Spatial feature inspection, Rockwell PLC logic rungs, and Primavera P6 schedules.' },
+                  { title: 'Code & Media', badge: 'code / audio / video', exts: '.py, .js, .ts, .mp3, .mp4', desc: 'Monaco code editor with syntax highlighting or embedded media player.' },
+                ].map((f, i) => (
+                  <div key={i} style={{ background: 'var(--bg-input)', padding: '12px 14px', borderRadius: '8px', border: '1px solid var(--border-subtle)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                      <span style={{ fontWeight: 650, fontSize: '0.84rem', color: 'var(--text-main)' }}>{f.title}</span>
+                      <span style={{ fontSize: '0.7rem', padding: '2px 6px', borderRadius: '4px', background: 'rgba(99, 102, 241, 0.15)', color: 'var(--primary-violet)', fontFamily: 'var(--font-mono)' }}>{f.badge}</span>
+                    </div>
+                    <div style={{ fontSize: '0.74rem', color: 'var(--primary-cyan)', fontFamily: 'var(--font-mono)', marginBottom: '4px' }}>{f.exts}</div>
+                    <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: 0, lineHeight: '1.4' }}>{f.desc}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* Chat Request & Python / cURL Examples */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px' }}>
+                <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+                  Conversational Prompting Flow:
+                </span>
+                <button
+                  className="btn-outline"
+                  onClick={() => copyCode(`# Step 1: User uploads a file via the standard file upload API
+# POST /api/v1/files/upload -> returns {"filename": "a1b2c3..._sales_q3.xlsx", "sandbox_path": "sandbox/uploads/tenant/..."}
+
+# Step 2: User says in chat: "Open sales_q3.xlsx in canvas so I can review it"
+curl -N -X POST http://localhost:8000/api/v1/chat/completions \\
+  -H "Content-Type: application/json" \\
+  -H "Authorization: Bearer sk_mgr_YOUR_TENANT_API_KEY" \\
+  -d '{
+    "messages": [
+      {"role": "user", "content": "I uploaded sales_q3.xlsx. Please open it in the canvas editor."}
+    ],
+    "model": "gemini-2.5-flash",
+    "stream": true,
+    "session_id": "client_session_801",
+    "skill_names": ["artifact_editor"]
+  }'`, 'snippet_uploaded_file')}
+                  style={{ padding: '4px 10px', fontSize: '0.78rem' }}
+                >
+                  {copiedSection === 'snippet_uploaded_file' ? <Check size={14} color="var(--accent-emerald)" /> : <Copy size={14} />} Copy Prompting Example
+                </button>
+              </div>
+
+              <pre className="code-display" style={{ maxHeight: '340px' }}>
+{`# ═══════════════════════════════════════════════════════════════════════
+# STEP 1: UPLOAD FILE VIA REST API
+# ═══════════════════════════════════════════════════════════════════════
+curl -X POST http://localhost:8000/api/v1/files/upload \\
+  -H "Authorization: Bearer sk_mgr_YOUR_TENANT_API_KEY" \\
+  -F "file=@financial_report.docx"
+
+# Response:
+# {
+#   "filename": "7a3f9e42_financial_report.docx",
+#   "original_name": "financial_report.docx",
+#   "sandbox_path": "sandbox/uploads/tenant/7a3f9e42_financial_report.docx"
+# }
+
+# ═══════════════════════════════════════════════════════════════════════
+# STEP 2: CHATBOT CALLS open_uploaded_file_as_artifact ON USER REQUEST
+# ═══════════════════════════════════════════════════════════════════════
+# The user types: "Open financial_report.docx in canvas and show me the executive summary"
+# The assistant invokes open_uploaded_file_as_artifact(filename="financial_report.docx")
+# It returns the active Canvas iframe embed URL with real-time editing enabled!
+
+# SSE Response Chunk:
+# data: {"choices": [{"delta": {"artifact": {
+#   "artifact_id": "b182ef01-382a-4421-99af-2c8b8813098e",
+#   "title": "Financial Report",
+#   "filename": "financial_report.docx",
+#   "artifact_type": "document",
+#   "current_version": 1,
+#   "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+#   "embed_url": "/embed/canvas?token=eyJhbGci..."
+# }}}}]}`}
+              </pre>
             </div>
           )}
         </div>

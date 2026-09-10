@@ -315,7 +315,8 @@ def create_artifact(
     artifact_type: str,
     content: str,
     language: Optional[str] = None,
-    media_url: Optional[str] = None
+    media_url: Optional[str] = None,
+    blocks: Optional[List[Dict]] = None
 ) -> SessionArtifact:
     """Create a new artifact, decompose into blocks, and log initial commit."""
     artifact = SessionArtifact(
@@ -331,7 +332,7 @@ def create_artifact(
     db.add(artifact)
     db.flush()
 
-    blocks_data = decompose_content(content, artifact_type)
+    blocks_data = blocks if blocks else decompose_content(content, artifact_type)
     for b in blocks_data:
         block_row = ArtifactBlock(
             artifact_id=artifact.id,
@@ -367,7 +368,8 @@ def update_full_artifact(
     content: str,
     title: Optional[str] = None,
     author: str = "assistant",
-    summary: str = "Updated full document content"
+    summary: str = "Updated full document content",
+    blocks: Optional[List[Dict]] = None
 ) -> SessionArtifact:
     """
     Update the full content of an existing artifact cleanly.
@@ -384,8 +386,8 @@ def update_full_artifact(
     artifact.current_version += 1
     artifact.updated_at = datetime.utcnow()
 
-    # Decompose the new content into fresh blocks
-    new_blocks_data = decompose_content(content, artifact.artifact_type)
+    # Decompose the new content into fresh blocks or use supplied blocks
+    new_blocks_data = blocks if blocks else decompose_content(content, artifact.artifact_type)
 
     # Clean out existing blocks for this artifact to prevent stale/duplicate sections
     db.query(ArtifactBlock).filter(ArtifactBlock.artifact_id == artifact.id).delete()

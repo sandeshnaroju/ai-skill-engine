@@ -3,6 +3,7 @@ backend/artifacts/tools.py
 Built-in tool execution handlers for the artifact_editor skill.
 Dispatched by the Skill Engine / Tool Executor.
 """
+import os
 import json
 import time
 from models import SessionArtifact, ArtifactBlock
@@ -15,6 +16,7 @@ from .manager import (
     serialize_artifact_summary,
 )
 from .search import keyword_search_artifact, semantic_search_artifact
+from .importer import import_file_to_artifact_data
 
 
 def run_open_or_update_artifact(db, args: dict, tenant, session_id: str) -> dict:
@@ -339,3 +341,178 @@ def run_rollback_artifact_block(db, args: dict, author: str = "assistant", sessi
             "execution_time_ms": int((time.time() - start_time) * 1000),
             "sandbox_type": "artifact_editor"
         }
+
+
+def run_open_uploaded_file_as_artifact(db, args: dict, tenant, session_id: str) -> dict:
+    """
+    Locates an uploaded user file in the sandbox uploads directory, parses it via
+    the importer module into structured content & sections, and registers it as an
+    active SessionArtifact with live Canvas embed tokens and SSE synchronization.
+    """
+    start_time = time.time()
+    tenant_name = tenant.name if tenant else "default"
+    tenant_id = tenant.id if tenant else "default"
+
+    raw_filename = (args.get("filename") or "").strip()
+    file_path_arg = (args.get("file_path") or "").strip()
+    title = (args.get("title") or "").strip() or None
+    artifact_type = (args.get("artifact_type") or "").strip() or None
+
+    if not raw_filename and not file_path_arg:
+        return {
+            "stdout": "",
+            "stderr": "Either 'filename' or 'file_path' must be provided to open an uploaded file.",
+            "exit_code": 1,
+            "sandbox_type": "artifact_editor"
+        }
+
+    # Determine base root directory for sandbox uploads
+    # Path resolution: backend/artifacts/tools.py -> ../../sandbox/uploads
+    backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    repo_root = os.path.dirname(backend_dir)
+    uploads_base = os.path.join(repo_root, "sandbox", "uploads")
+    tenant_upload_dir = os.path.join(uploads_base, tenant_name)
+
+    resolved_path = None
+
+    # 1. If explicit file_path was given and exists directly
+    if file_path_arg:
+        candidates = [
+            file_path_arg,
+            os.path.join(repo_root, file_path_arg.lstrip("/")),
+            os.path.join(uploads_base, file_path_arg.lstrip("/")),
+            os.path.join(tenant_upload_dir, os.path.basename(file_path_arg))
+        ]
+        for c in candidates:
+            if os.path.isfile(c):
+                resolved_path = os.path.abspath(c)
+                break
+
+    # 2. If not yet resolved, search by raw_filename
+    if not resolved_path and raw_filename:
+        # Check direct filename in tenant upload directory
+        candidate = os.path.join(tenant_upload_dir, raw_filename)
+        if os.path.isfile(candidate):
+            resolved_path = os.path.abspath(candidate)
+        else:
+            # Check default upload directory
+            default_cand = os.path.join(uploads_base, "default", raw_filename)
+            if os.path.isfile(default_cand):
+                resolved_path = os.path.abspath(default_cand)
+
+    # 3. Check for UUID-prefixed file in tenant directory (e.g. "a1b2..._sales_report.xlsx" matching "sales_report.xlsx")
+    target_name = raw_filename or os.path.basename(file_path_arg)
+    target_clean = target_name.lower().strip()
+
+    if not resolved_path and os.path.isdir(tenant_upload_dir):
+        for f in os.listdir(tenant_upload_dir):
+            clean_f = f.lower()
+            if clean_f == target_clean or clean_f.endswith(f"_{target_clean}") or target_clean in clean_f:
+                resolved_path = os.path.abspath(os.path.join(tenant_upload_dir, f))
+                break
+
+    # 4. Fallback: search across all tenant upload directories and root uploads
+    if not resolved_path and os.path.isdir(uploads_base):
+        for root, _, files in os.walk(uploads_base):
+            for f in files:
+                clean_f = f.lower()
+                if clean_f == target_clean or clean_f.endswith(f"_{target_clean}") or target_clean in clean_f:
+                    resolved_path = os.path.abspath(os.path.join(root, f))
+                    break
+            if resolved_path:
+                break
+
+    if not resolved_path or not os.path.isfile(resolved_path):
+        return {
+            "stdout": "",
+            "stderr": f"Uploaded file '{raw_filename or file_path_arg}' could not be found in tenant storage.",
+            "exit_code": 1,
+            "sandbox_type": "artifact_editor"
+        }
+
+    try:
+        imported = import_file_to_artifact_data(resolved_path, title=title, explicit_type=artifact_type)
+    except Exception as e:
+        return {
+            "stdout": "",
+            "stderr": f"Failed to parse and import uploaded file: {str(e)}",
+            "exit_code": 1,
+            "sandbox_type": "artifact_editor"
+        }
+
+    art_title = imported["title"]
+    art_filename = imported["filename"]
+    art_type = imported["artifact_type"]
+    art_content = imported["content"]
+    art_language = imported.get("language")
+    art_media_url = imported.get("media_url")
+    art_blocks = imported.get("blocks") or []
+
+    # Check if this artifact already exists in the current session
+    filter_clauses = [
+        SessionArtifact.tenant_id == tenant_id,
+        (SessionArtifact.filename == art_filename) | (SessionArtifact.title == art_title)
+    ]
+    if session_id:
+        filter_clauses.append(SessionArtifact.session_id == session_id)
+
+    existing = db.query(SessionArtifact).filter(*filter_clauses).first()
+
+    if existing:
+        artifact = update_full_artifact(
+            db=db,
+            artifact_id=existing.id,
+            content=art_content,
+            title=art_title,
+            author="assistant",
+            summary=f"Imported updated file: {art_filename}",
+            blocks=art_blocks if art_blocks else None
+        )
+    else:
+        artifact = create_artifact(
+            db=db,
+            session_id=session_id,
+            tenant_id=tenant_id,
+            title=art_title,
+            filename=art_filename,
+            artifact_type=art_type,
+            content=art_content,
+            language=art_language,
+            media_url=art_media_url,
+            blocks=art_blocks if art_blocks else None
+        )
+
+    summary = serialize_artifact_summary(artifact)
+    token = mint_embed_token(artifact.id, tenant_id)
+    embed_url = f"/embed/canvas?token={token}"
+
+    res_data = {
+        "id": artifact.id,
+        "artifact_id": artifact.id,
+        "title": artifact.title,
+        "filename": artifact.filename,
+        "artifact_type": artifact.artifact_type,
+        "current_version": artifact.current_version,
+        "blocks": summary["outline"],
+        "embed_url": embed_url,
+        "token": token
+    }
+
+    outline_lines = [f"- [{b['block_key']}] {b['title']}" for b in summary["outline"][:12]]
+    if len(summary["outline"]) > 12:
+        outline_lines.append(f"... and {len(summary['outline']) - 12} more sections")
+
+    return {
+        "stdout": (
+            f"Successfully opened uploaded file '{artifact.title}' ({artifact.filename}) in the Canvas Artifact Editor!\n"
+            f"Type: {artifact.artifact_type.upper()}\n"
+            f"Total Sections/Blocks: {len(summary['outline'])}\n"
+            f"Embed URL: {embed_url}\n\n"
+            f"Sections Outline:\n" + "\n".join(outline_lines)
+        ),
+        "stderr": "",
+        "exit_code": 0,
+        "execution_time_ms": int((time.time() - start_time) * 1000),
+        "sandbox_type": "artifact_editor",
+        "artifact_data": res_data
+    }
