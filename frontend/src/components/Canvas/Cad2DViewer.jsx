@@ -99,6 +99,8 @@ function parseDxfContent(dxfText) {
         const entityType = val.toUpperCase();
         const entity = { type: entityType, layer: '0', color: null, vertices: [] };
 
+        let currentVertex = null;
+
         while (i < n - 1) {
           const eCode = parseInt(lines[i], 10);
           const eVal = lines[i + 1];
@@ -112,17 +114,31 @@ function parseDxfContent(dxfText) {
             entity.color = ACI_COLORS[Math.abs(aci)] || null;
           } else if (eCode === 10) {
             entity.x = parseFloat(eVal);
-            if (!entity.vertices) entity.vertices = [];
-            entity.currentVertex = { x: parseFloat(eVal), y: 0, z: 0 };
+            if (currentVertex) {
+              entity.vertices.push(currentVertex);
+            }
+            currentVertex = { x: parseFloat(eVal), y: 0, z: 0 };
           } else if (eCode === 20) {
             entity.y = parseFloat(eVal);
-            if (entity.currentVertex) entity.currentVertex.y = parseFloat(eVal);
+            if (currentVertex) {
+              currentVertex.y = parseFloat(eVal);
+              if (entityType === 'LWPOLYLINE') {
+                entity.vertices.push(currentVertex);
+                currentVertex = null;
+              }
+            } else {
+              currentVertex = { x: 0, y: parseFloat(eVal), z: 0 };
+              if (entityType === 'LWPOLYLINE') {
+                entity.vertices.push(currentVertex);
+                currentVertex = null;
+              }
+            }
           } else if (eCode === 30) {
             entity.z = parseFloat(eVal);
-            if (entity.currentVertex) {
-              entity.currentVertex.z = parseFloat(eVal);
-              entity.vertices.push({ ...entity.currentVertex });
-              entity.currentVertex = null;
+            if (currentVertex) {
+              currentVertex.z = parseFloat(eVal);
+              entity.vertices.push(currentVertex);
+              currentVertex = null;
             }
           } else if (eCode === 11) {
             entity.x2 = parseFloat(eVal);
@@ -145,7 +161,7 @@ function parseDxfContent(dxfText) {
           }
         }
 
-        if (entity.currentVertex) entity.vertices.push(entity.currentVertex);
+        if (currentVertex) entity.vertices.push(currentVertex);
 
         if (!layers.has(entity.layer)) {
           layers.set(entity.layer, { name: entity.layer, color: '#38bdf8', visible: true, count: 0 });

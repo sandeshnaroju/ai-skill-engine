@@ -477,12 +477,21 @@ def _parse_cad_2d(filepath: str, filename: str, ext: str) -> Tuple[str, List[Dic
         return content, [{"block_key": "cad_error", "title": "Error", "content": content, "order_index": 0}]
 
     if ext == ".dxf" and "SECTION" in raw_text:
-        # Split into DXF sections
+        # Always preserve the complete valid DXF drawing as the primary block
+        # so Canvas Cad2DViewer has immediate access to the full drawing data
+        blocks.append({
+            "block_key": "main_drawing",
+            "title": f"2D Drawing: {filename}",
+            "content": raw_text,
+            "order_index": 0
+        })
+
+        # Split into DXF sections for surgical inspection and co-editing
         section_pattern = re.compile(r'(0\s*\n\s*SECTION\s*\n\s*2\s*\n\s*[^\n]+)', flags=re.IGNORECASE)
         splits = section_pattern.split(raw_text)
 
         if len(splits) > 1:
-            idx = 0
+            idx = 1
             # If there is a header or preamble before the first SECTION
             preamble = splits[0].strip()
             if preamble:

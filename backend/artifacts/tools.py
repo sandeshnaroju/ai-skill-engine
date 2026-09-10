@@ -4,6 +4,7 @@ Built-in tool execution handlers for the artifact_editor skill.
 Dispatched by the Skill Engine / Tool Executor.
 """
 import os
+import re
 import json
 import time
 from models import SessionArtifact, ArtifactBlock
@@ -366,12 +367,27 @@ def run_open_uploaded_file_as_artifact(db, args: dict, tenant, session_id: str) 
             "sandbox_type": "artifact_editor"
         }
 
-    # Determine base root directory for sandbox uploads
-    # Path resolution: backend/artifacts/tools.py -> ../../sandbox/uploads
+    # Determine base root directories for sandbox files
+    # Support both host repository layout and container layout (/app/sandbox or /sandbox)
     backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     repo_root = os.path.dirname(backend_dir)
-    uploads_base = os.path.join(repo_root, "sandbox", "uploads")
+    possible_sandbox_roots = [
+        os.path.join(repo_root, "sandbox"),
+        os.path.join(backend_dir, "sandbox"),
+        "/app/sandbox",
+        "/sandbox",
+        os.path.abspath("sandbox")
+    ]
+    # Pick root that actually contains 'uploads' or 'outputs'
+    sandbox_root = next(
+        (p for p in possible_sandbox_roots if os.path.isdir(os.path.join(p, "uploads")) or os.path.isdir(os.path.join(p, "outputs"))),
+        next((p for p in possible_sandbox_roots if os.path.isdir(p)), os.path.join(repo_root, "sandbox"))
+    )
+
+    uploads_base = os.path.join(sandbox_root, "uploads")
+    outputs_base = os.path.join(sandbox_root, "outputs")
     tenant_upload_dir = os.path.join(uploads_base, tenant_name)
+    tenant_output_dir = os.path.join(outputs_base, tenant_name)
 
     resolved_path = None
 
@@ -381,46 +397,70 @@ def run_open_uploaded_file_as_artifact(db, args: dict, tenant, session_id: str) 
             file_path_arg,
             os.path.join(repo_root, file_path_arg.lstrip("/")),
             os.path.join(uploads_base, file_path_arg.lstrip("/")),
-            os.path.join(tenant_upload_dir, os.path.basename(file_path_arg))
+            os.path.join(outputs_base, file_path_arg.lstrip("/")),
+            os.path.join(tenant_upload_dir, os.path.basename(file_path_arg)),
+            os.path.join(tenant_output_dir, os.path.basename(file_path_arg))
         ]
         for c in candidates:
             if os.path.isfile(c):
                 resolved_path = os.path.abspath(c)
                 break
 
-    # 2. If not yet resolved, search by raw_filename
-    if not resolved_path and raw_filename:
-        # Check direct filename in tenant upload directory
-        candidate = os.path.join(tenant_upload_dir, raw_filename)
-        if os.path.isfile(candidate):
-            resolved_path = os.path.abspath(candidate)
-        else:
-            # Check default upload directory
-            default_cand = os.path.join(uploads_base, "default", raw_filename)
-            if os.path.isfile(default_cand):
-                resolved_path = os.path.abspath(default_cand)
-
-    # 3. Check for UUID-prefixed file in tenant directory (e.g. "a1b2..._sales_report.xlsx" matching "sales_report.xlsx")
+    # 2. Extract clean target names (original filename, stripped UUIDs, and basename)
     target_name = raw_filename or os.path.basename(file_path_arg)
     target_clean = target_name.lower().strip()
+    
+    # Strip leading hex/uuid patterns (e.g. 'f6355d38100e40a38b603167f2a35ab7_..._pid.dxf' -> 'pid.dxf')
+    stripped_name = target_clean
+    while re.match(r'^[a-f0-9]{32}_', stripped_name) or re.match(r'^[a-f0-9\-]{36}_', stripped_name):
+        stripped_name = re.sub(r'^[a-f0-9]{32}_|^[a-f0-9\-]{36}_', '', stripped_name)
 
-    if not resolved_path and os.path.isdir(tenant_upload_dir):
-        for f in os.listdir(tenant_upload_dir):
-            clean_f = f.lower()
-            if clean_f == target_clean or clean_f.endswith(f"_{target_clean}") or target_clean in clean_f:
-                resolved_path = os.path.abspath(os.path.join(tenant_upload_dir, f))
-                break
-
-    # 4. Fallback: search across all tenant upload directories and root uploads
-    if not resolved_path and os.path.isdir(uploads_base):
-        for root, _, files in os.walk(uploads_base):
-            for f in files:
-                clean_f = f.lower()
-                if clean_f == target_clean or clean_f.endswith(f"_{target_clean}") or target_clean in clean_f:
-                    resolved_path = os.path.abspath(os.path.join(root, f))
+    # 3. Search locally in uploads and outputs directories (including subdirectories like Default Workspace)
+    search_dirs = [tenant_upload_dir, tenant_output_dir, uploads_base, outputs_base]
+    if not resolved_path:
+        for s_dir in search_dirs:
+            if not os.path.isdir(s_dir):
+                continue
+            for root, _, files in os.walk(s_dir):
+                for f in files:
+                    clean_f = f.lower()
+                    if (
+                        clean_f == target_clean
+                        or clean_f == stripped_name
+                        or clean_f.endswith(f"_{target_clean}")
+                        or clean_f.endswith(f"_{stripped_name}")
+                        or (target_clean in clean_f and len(target_clean) > 8)
+                        or (stripped_name in clean_f and len(stripped_name) > 8)
+                    ):
+                        resolved_path = os.path.abspath(os.path.join(root, f))
+                        break
+                if resolved_path:
                     break
             if resolved_path:
                 break
+
+    # 4. If not found locally, query StorageBackend (Azure Blob Storage, S3, etc.)
+    if not resolved_path:
+        try:
+            from storage import get_storage_backend
+            storage_backend = get_storage_backend(db, tenant_id=tenant_id)
+            if storage_backend.__class__.__name__ != "LocalStorage":
+                # Try downloading by raw_filename, target_clean, and stripped_name
+                try_names = [raw_filename, target_clean, stripped_name]
+                os.makedirs(tenant_upload_dir, exist_ok=True)
+                for name_to_try in try_names:
+                    if not name_to_try:
+                        continue
+                    downloaded_bytes = storage_backend.download(name_to_try, tenant_name=tenant_name)
+                    if downloaded_bytes:
+                        save_filename = os.path.basename(name_to_try)
+                        dest_path = os.path.join(tenant_upload_dir, save_filename)
+                        with open(dest_path, "wb") as f_out:
+                            f_out.write(downloaded_bytes)
+                        resolved_path = os.path.abspath(dest_path)
+                        break
+        except Exception as storage_err:
+            pass
 
     if not resolved_path or not os.path.isfile(resolved_path):
         return {
