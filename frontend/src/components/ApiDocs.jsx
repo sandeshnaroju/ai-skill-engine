@@ -1571,6 +1571,53 @@ curl -X POST "http://localhost:8000/api/v1/artifacts/{artifact_id}/embed-token?e
 # 3. Your backend forwards only this fresh "token" or "embed_url" to your frontend client.`}
                   </pre>
                 </div>
+
+                <div style={{ background: 'var(--bg-input)', padding: '14px', borderRadius: '8px', border: '1px solid var(--border-subtle)', gridColumn: '1 / -1' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                    <Zap size={16} color="var(--primary-violet)" />
+                    <span style={{ fontWeight: 650, fontSize: '0.86rem', color: 'var(--text-main)' }}>Client-Side Expiration Check (JavaScript / React)</span>
+                  </div>
+                  <p style={{ fontSize: '0.82rem', color: 'var(--text-sub)', lineHeight: '1.6', marginBottom: '10px' }}>
+                    Embed tokens are signed two-part URL-safe tokens (<code>payload.signature</code>). You can verify if a token is expired directly in your frontend without making any network requests:
+                  </p>
+                  <pre style={{
+                    background: 'var(--bg-dark)',
+                    border: '1px solid var(--border-subtle)',
+                    padding: '12px',
+                    borderRadius: '6px',
+                    fontSize: '0.78rem',
+                    color: 'var(--text-main)',
+                    overflowX: 'auto',
+                    fontFamily: 'monospace',
+                    lineHeight: '1.5'
+                  }}>
+{`// Decode embed token payload without external libraries
+function decodeEmbedToken(token) {
+  if (!token || typeof token !== 'string' || !token.includes('.')) return null;
+  try {
+    const rawB64 = token.split('.')[0].replace(/-/g, '+').replace(/_/g, '/');
+    const padded = rawB64.padEnd(rawB64.length + ((4 - (rawB64.length % 4)) % 4), '=');
+    return JSON.parse(atob(padded));
+  } catch {
+    return null;
+  }
+}
+
+// Returns true if token is expired or expiring within bufferSeconds (e.g. 60s)
+export function isEmbedTokenExpired(token, bufferSeconds = 0) {
+  const payload = decodeEmbedToken(token);
+  if (!payload || !payload.exp) return true;
+  const now = Math.floor(Date.now() / 1000);
+  return payload.exp <= (now + bufferSeconds);
+}
+
+// React usage example:
+if (isEmbedTokenExpired(artifact.token)) {
+  // Token has expired -> request fresh token from your backend before mounting iframe
+  fetchFreshToken(artifact.id);
+}`}
+                  </pre>
+                </div>
               </div>
             </div>
           )}

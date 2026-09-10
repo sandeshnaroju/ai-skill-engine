@@ -730,6 +730,17 @@ Never expose your master tenant API key (`sk_mgr_...`) to end users in browser c
 3. **Safe Forwarding**: Your server returns only `reply` and `artifact` (`embed_url` and `token`) to the browser.
 4. **Background Refresh**: The Canvas automatically calls `/refresh-token` every 22 minutes to maintain seamless sessions.
 5. **Historical / Expired Token Renewal**: When end-users browse older conversations where the embed token has expired, your backend calls `POST /api/v1/artifacts/{artifact_id}/embed-token?expires_in_minutes=60` with your tenant `X-API-Key` and provides the fresh token to the client.
+6. **Client-Side Expiration Check (Zero Network Calls)**: Frontends can decode the embed token without external libraries to check if `exp` has passed:
+   ```javascript
+   function isEmbedTokenExpired(token) {
+     if (!token || !token.includes('.')) return true;
+     try {
+       const raw = token.split('.')[0].replace(/-/g, '+').replace(/_/g, '/');
+       const payload = JSON.parse(atob(raw.padEnd(raw.length + ((4 - (raw.length % 4)) % 4), '=')));
+       return (payload.exp || 0) <= Math.floor(Date.now() / 1000);
+     } catch { return true; }
+   }
+   ```
 
 ---
 
