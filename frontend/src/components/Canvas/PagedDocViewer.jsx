@@ -3,7 +3,7 @@ import {
   Edit2, Check, X, History, Copy, CheckCheck, Clock, AlignLeft, Sparkles,
   Bold, Italic, Strikethrough, Code, Heading1, Heading2, Heading3,
   List, ListOrdered, CheckSquare, Table, Link as LinkIcon, Image as ImageIcon,
-  Quote, AlertCircle, Palette, Minus, ExternalLink
+  Quote, AlertCircle, Palette, Minus, ExternalLink, Eye, Columns, Plus
 } from 'lucide-react';
 import { artifactsApi } from '../../api';
 import { replaceMathAndSymbols } from '../MarkdownViewer';
@@ -98,6 +98,22 @@ function formatInline(str) {
   });
 }
 
+// ── Helper to sanitize and format HTML Table markup safely ──
+function formatHtmlTable(htmlStr) {
+  if (!htmlStr) return '';
+  // Ensure the table element has doc-render-table class
+  let cleaned = htmlStr.trim();
+  if (/<table(?![^>]*class=)/i.test(cleaned)) {
+    cleaned = cleaned.replace(/<table/i, '<table class="doc-render-table"');
+  } else {
+    cleaned = cleaned.replace(/<table([^>]*class=["'])([^"']*)(["'])/i, (m, p1, p2, p3) => {
+      const cls = p2.includes('doc-render-table') ? p2 : `${p2} doc-render-table`.trim();
+      return `<table${p1}${cls}${p3}`;
+    });
+  }
+  return cleaned;
+}
+
 // ── Complete Markdown Block Renderer (Headings, Tables, Lists, Callouts, Images) ──
 function renderMarkdownContent(text, sectionTitle) {
   if (text == null) return null;
@@ -113,6 +129,8 @@ function renderMarkdownContent(text, sectionTitle) {
   let inCodeBlock = false;
   let codeBlockLang = '';
   let codeBlockLines = [];
+  let inHtmlTable = false;
+  let htmlTableLines = [];
 
   const normalizeTitle = (t) => (t || '').toLowerCase().replace(/^[#\s\d\.\-–—]+/, '').replace(/[^a-z0-9]/g, '');
   const normSecTitle = normalizeTitle(sectionTitle);
@@ -180,6 +198,22 @@ function renderMarkdownContent(text, sectionTitle) {
     }
   };
 
+  const flushHtmlTable = () => {
+    if (inHtmlTable && htmlTableLines.length > 0) {
+      const rawHtml = htmlTableLines.join('\n');
+      const formattedHtml = formatHtmlTable(rawHtml);
+      elements.push(
+        <div
+          key={`html-table-${elements.length}`}
+          className="doc-table-wrapper doc-html-table-wrapper"
+          dangerouslySetInnerHTML={{ __html: formattedHtml }}
+        />
+      );
+      htmlTableLines = [];
+      inHtmlTable = false;
+    }
+  };
+
   const flushCodeBlock = () => {
     if (inCodeBlock) {
       const codeStr = codeBlockLines.join('\n');
@@ -210,6 +244,7 @@ function renderMarkdownContent(text, sectionTitle) {
       } else {
         flushList();
         flushTable();
+        flushHtmlTable();
         inCodeBlock = true;
         codeBlockLang = trimmed.slice(3).trim();
       }
@@ -221,6 +256,26 @@ function renderMarkdownContent(text, sectionTitle) {
       continue;
     }
 
+    // Handle Raw HTML Table block (<table ... </table>)
+    if (inHtmlTable) {
+      htmlTableLines.push(line);
+      if (/<\/table>/i.test(trimmed)) {
+        flushHtmlTable();
+      }
+      continue;
+    }
+
+    if (/<table[\s>]/i.test(trimmed)) {
+      flushList();
+      flushTable();
+      inHtmlTable = true;
+      htmlTableLines = [line];
+      if (/<\/table>/i.test(trimmed)) {
+        flushHtmlTable();
+      }
+      continue;
+    }
+
     // Empty line flushes active blocks
     if (!trimmed) {
       flushList();
@@ -228,13 +283,19 @@ function renderMarkdownContent(text, sectionTitle) {
       continue;
     }
 
-    // Markdown Table lines: | cell | cell |
-    if (trimmed.startsWith('|') && trimmed.endsWith('|')) {
+    // Markdown Table lines: supports | cell | cell | as well as cell | cell
+    const isPipeRow = (trimmed.startsWith('|') && trimmed.endsWith('|')) ||
+      (trimmed.includes('|') && (inTable || (idx + 1 < lines.length && /^[ \t]*\|?[-:\s|]+?\|?[ \t]*$/.test(lines[idx + 1].trim()))));
+
+    if (isPipeRow) {
       flushList();
-      const cells = trimmed.slice(1, -1).split('|').map(c => c.trim());
+      flushHtmlTable();
+      // Clean leading and trailing pipes
+      const cleanLine = trimmed.replace(/^\|/, '').replace(/\|$/, '');
+      const cells = cleanLine.split('|').map(c => c.trim());
       // Check if divider row |---|---|
       if (cells.every(c => /^:?-+:?$/.test(c))) {
-        // Just divider, don't push as data row
+        // Divider row, indicates active table mode
         inTable = true;
       } else {
         inTable = true;
@@ -349,6 +410,7 @@ function renderMarkdownContent(text, sectionTitle) {
 
   flushList();
   flushTable();
+  flushHtmlTable();
   flushCodeBlock();
   return elements;
 }
@@ -368,12 +430,18 @@ export default function PagedDocViewer({
   const [saving, setSaving] = useState(false);
   const [copiedKey, setCopiedKey] = useState(null);
   const [showColorMenu, setShowColorMenu] = useState(false);
+  const [showTableModal, setShowTableModal] = useState(false);
+  const [tableFormat, setTableFormat] = useState('html'); // 'html' | 'markdown'
+  const [tableRowsCount, setTableRowsCount] = useState(3);
+  const [tableColsCount, setTableColsCount] = useState(3);
+  const [editPreviewMode, setEditPreviewMode] = useState(false);
   const textareaRef = useRef(null);
   const blockRefs = useRef({});
 
   const handleStartEdit = (block) => {
     setEditingKey(block.block_key);
     setEditContent(block.content || '');
+    setEditPreviewMode(false);
   };
 
   const handleSaveEdit = async (blockKey) => {
@@ -423,9 +491,46 @@ export default function PagedDocViewer({
     }, 0);
   };
 
-  const insertTableTemplate = () => {
-    const tableTemplate = `\n| Column 1 | Column 2 | Column 3 |\n| --- | --- | --- |\n| Item 1 | Value A | 100 |\n| Item 2 | Value B | 200 |\n`;
-    insertTextAtCursor('', '', tableTemplate);
+  const handleBuildAndInsertTable = () => {
+    const rows = Math.max(1, Math.min(20, parseInt(tableRowsCount, 10) || 3));
+    const cols = Math.max(1, Math.min(10, parseInt(tableColsCount, 10) || 3));
+
+    let markup = '';
+    if (tableFormat === 'html') {
+      let headers = '';
+      for (let c = 1; c <= cols; c++) {
+        headers += `      <th>Column ${c}</th>\n`;
+      }
+      let bodyRows = '';
+      for (let r = 1; r <= rows; r++) {
+        bodyRows += '    <tr>\n';
+        for (let c = 1; c <= cols; c++) {
+          bodyRows += `      <td>Item ${r}-${c}</td>\n`;
+        }
+        bodyRows += '    </tr>\n';
+      }
+      markup = `\n<table class="doc-render-table">\n  <thead>\n    <tr>\n${headers}    </tr>\n  </thead>\n  <tbody>\n${bodyRows}  </tbody>\n</table>\n`;
+    } else {
+      // Markdown Table
+      let headerRow = '|';
+      let dividerRow = '|';
+      for (let c = 1; c <= cols; c++) {
+        headerRow += ` Column ${c} |`;
+        dividerRow += ' --- |';
+      }
+      let rowsList = [];
+      for (let r = 1; r <= rows; r++) {
+        let rowStr = '|';
+        for (let c = 1; c <= cols; c++) {
+          rowStr += ` Item ${r}-${c} |`;
+        }
+        rowsList.push(rowStr);
+      }
+      markup = `\n${headerRow}\n${dividerRow}\n${rowsList.join('\n')}\n`;
+    }
+
+    insertTextAtCursor('', '', markup);
+    setShowTableModal(false);
   };
 
   const insertLinkTemplate = () => {
@@ -615,10 +720,77 @@ export default function PagedDocViewer({
                         </div>
 
                         {/* Rich Insertions (Table, Image, Link, Callout, Colors) */}
-                        <div className="doc-toolbar-group">
-                          <button type="button" className="doc-toolbar-btn doc-toolbar-btn-highlight" onClick={insertTableTemplate} title="Insert Markdown Table">
+                        <div className="doc-toolbar-group" style={{ position: 'relative' }}>
+                          <button
+                            type="button"
+                            className={`doc-toolbar-btn doc-toolbar-btn-highlight ${showTableModal ? 'active' : ''}`}
+                            onClick={() => setShowTableModal(!showTableModal)}
+                            title="Insert Table (HTML or Markdown)"
+                          >
                             <Table size={13} /> Table
                           </button>
+
+                          {showTableModal && (
+                            <div className="doc-table-builder-popover">
+                              <div className="doc-table-builder-header">
+                                <span>Table Builder</span>
+                                <button type="button" className="doc-mini-btn" onClick={() => setShowTableModal(false)}><X size={12} /></button>
+                              </div>
+                              <div className="doc-table-builder-body">
+                                <div className="doc-table-builder-field">
+                                  <label>Format:</label>
+                                  <div className="doc-table-format-tabs">
+                                    <button
+                                      type="button"
+                                      className={`doc-table-tab ${tableFormat === 'html' ? 'active' : ''}`}
+                                      onClick={() => setTableFormat('html')}
+                                    >
+                                      HTML Table
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className={`doc-table-tab ${tableFormat === 'markdown' ? 'active' : ''}`}
+                                      onClick={() => setTableFormat('markdown')}
+                                    >
+                                      Markdown
+                                    </button>
+                                  </div>
+                                </div>
+                                <div className="doc-table-builder-grid">
+                                  <div className="doc-table-builder-field">
+                                    <label>Columns:</label>
+                                    <input
+                                      type="number"
+                                      min="1"
+                                      max="8"
+                                      value={tableColsCount}
+                                      onChange={(e) => setTableColsCount(e.target.value)}
+                                      className="doc-table-input"
+                                    />
+                                  </div>
+                                  <div className="doc-table-builder-field">
+                                    <label>Rows:</label>
+                                    <input
+                                      type="number"
+                                      min="1"
+                                      max="15"
+                                      value={tableRowsCount}
+                                      onChange={(e) => setTableRowsCount(e.target.value)}
+                                      className="doc-table-input"
+                                    />
+                                  </div>
+                                </div>
+                                <button
+                                  type="button"
+                                  className="doc-table-insert-btn"
+                                  onClick={handleBuildAndInsertTable}
+                                >
+                                  <Plus size={13} /> Insert {tableFormat.toUpperCase()} Table
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
                           <button type="button" className="doc-toolbar-btn" onClick={insertLinkTemplate} title="Insert Link">
                             <LinkIcon size={13} /> Link
                           </button>
@@ -666,19 +838,41 @@ export default function PagedDocViewer({
                             </div>
                           )}
                         </div>
+
+                        {/* Live Preview Toggle Button */}
+                        <div className="doc-toolbar-group" style={{ marginLeft: 'auto', borderRight: 'none' }}>
+                          <button
+                            type="button"
+                            className={`doc-toolbar-btn ${editPreviewMode ? 'active' : ''}`}
+                            onClick={() => setEditPreviewMode(!editPreviewMode)}
+                            title="Toggle Live Rendered Preview"
+                            style={{ gap: '5px' }}
+                          >
+                            <Eye size={13} /> {editPreviewMode ? 'Edit Source' : 'Live Preview'}
+                          </button>
+                        </div>
                       </div>
 
-                      {/* Textarea Editor */}
-                      <textarea
-                        ref={textareaRef}
-                        className="doc-paper-textarea"
-                        value={editContent}
-                        onChange={(e) => setEditContent(e.target.value)}
-                        disabled={saving}
-                        rows={Math.max(7, String(editContent || '').split('\n').length + 2)}
-                        placeholder="Write your section content in Markdown (use the toolbar above for tables, images, links, alerts, colors)..."
-                        autoFocus
-                      />
+                      {/* Textarea Editor or Live Preview */}
+                      {editPreviewMode ? (
+                        <div className="doc-edit-live-preview">
+                          <div className="doc-live-preview-badge">Live Preview Mode</div>
+                          <div className="doc-prose-content">
+                            {renderMarkdownContent(editContent, block.title)}
+                          </div>
+                        </div>
+                      ) : (
+                        <textarea
+                          ref={textareaRef}
+                          className="doc-paper-textarea"
+                          value={editContent}
+                          onChange={(e) => setEditContent(e.target.value)}
+                          disabled={saving}
+                          rows={Math.max(7, String(editContent || '').split('\n').length + 2)}
+                          placeholder="Write your section content in Markdown or HTML (use the toolbar above for tables, images, links, alerts, colors)..."
+                          autoFocus
+                        />
+                      )}
 
                       <div className="doc-editor-actions">
                         <button
