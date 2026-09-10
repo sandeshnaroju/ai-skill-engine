@@ -61,11 +61,22 @@ class LocalStorage(StorageBackend):
         return f"/api/v1/files/download/{urllib.parse.quote(tenant_name)}/{urllib.parse.quote(filename)}"
 
     def download(self, filename: str, tenant_name: str = "default") -> Optional[bytes]:
+        clean_name = filename.lower().strip()
         for directory in (UPLOAD_DIR, OUTPUT_DIR):
-            path = os.path.join(directory, tenant_name, filename)
+            tenant_dir = os.path.join(directory, tenant_name)
+            if not os.path.exists(tenant_dir):
+                continue
+            # 1. Exact match
+            path = os.path.join(tenant_dir, filename)
             if os.path.exists(path):
                 with open(path, "rb") as f:
                     return f.read()
+            # 2. Suffix / UUID prefix match
+            for fname in os.listdir(tenant_dir):
+                cf = fname.lower()
+                if cf == clean_name or cf.endswith(f"_{clean_name}") or clean_name in cf:
+                    with open(os.path.join(tenant_dir, fname), "rb") as f:
+                        return f.read()
         return None
 
     def get_download_url(self, filename: str, tenant_name: str = "default") -> Optional[str]:
@@ -136,12 +147,32 @@ class S3Storage(StorageBackend):
 
     def download(self, filename: str, tenant_name: str = "default") -> Optional[bytes]:
         key = f"{tenant_name}/{filename}"
+        # 1. Direct match
         try:
             resp = self.client.get_object(Bucket=self.bucket_name, Key=key)
             return resp["Body"].read()
+        except Exception:
+            pass
+
+        # 2. Suffix / UUID prefix match via listing
+        try:
+            clean_name = filename.lower().strip()
+            prefix = f"{tenant_name}/"
+            paginator = self.client.get_paginator("list_objects_v2")
+            for page in paginator.paginate(Bucket=self.bucket_name, Prefix=prefix):
+                for obj in page.get("Contents", []):
+                    k_sub = obj["Key"][len(prefix):].lower()
+                    if (
+                        k_sub == clean_name
+                        or k_sub.endswith(f"_{clean_name}")
+                        or (clean_name in k_sub and len(clean_name) > 6)
+                    ):
+                        resp = self.client.get_object(Bucket=self.bucket_name, Key=obj["Key"])
+                        return resp["Body"].read()
         except Exception as e:
-            logger.warning(f"S3Storage.download failed for {key}: {e}")
-            return None
+            logger.warning(f"S3Storage.download listing failed for {key}: {e}")
+
+        return None
 
     def get_download_url(self, filename: str, tenant_name: str = "default") -> str:
         import urllib.parse
@@ -230,12 +261,30 @@ class AzureStorage(StorageBackend):
 
     def download(self, filename: str, tenant_name: str = "default") -> Optional[bytes]:
         blob_name = f"{tenant_name}/{filename}"
+        # 1. Direct match
         try:
             blob_client = self.container_client.get_blob_client(blob_name)
             return blob_client.download_blob().readall()
+        except Exception:
+            pass
+
+        # 2. Suffix / UUID prefix match via listing
+        try:
+            clean_name = filename.lower().strip()
+            prefix = f"{tenant_name}/"
+            for b in self.container_client.list_blobs(name_starts_with=prefix):
+                b_sub = b.name[len(prefix):].lower()
+                if (
+                    b_sub == clean_name
+                    or b_sub.endswith(f"_{clean_name}")
+                    or (clean_name in b_sub and len(clean_name) > 6)
+                ):
+                    matched_client = self.container_client.get_blob_client(b.name)
+                    return matched_client.download_blob().readall()
         except Exception as e:
-            logger.warning(f"AzureStorage.download failed for {blob_name}: {e}")
-            return None
+            logger.warning(f"AzureStorage.download listing failed for {filename}: {e}")
+
+        return None
 
     def _content_settings(self, content_type: str):
         from azure.storage.blob import ContentSettings

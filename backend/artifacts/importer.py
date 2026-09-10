@@ -307,46 +307,93 @@ def _parse_docx(filepath: str, title: str) -> Tuple[str, List[Dict[str, Any]]]:
 
 
 def _parse_pdf(filepath: str, title: str) -> Tuple[str, List[Dict[str, Any]]]:
-    """Extracts PDF text page by page into structured blocks."""
+    """Extracts PDF text page by page into structured blocks, with image rendering fallback for scanned documents."""
+    import base64
     full_content_parts = []
     blocks = []
 
+    # 1. Try extracting text via pdfplumber or pypdf
+    page_texts = []
     try:
         import pdfplumber
         with pdfplumber.open(filepath) as pdf:
-            for idx, page in enumerate(pdf.pages):
-                page_text = (page.extract_text() or "").strip()
-                if not page_text:
-                    continue
-                block_title = f"Page {idx + 1}"
-                page_md = f"## {block_title}\n\n{page_text}"
-                full_content_parts.append(page_md)
-                blocks.append({
-                    "block_key": f"page_{idx + 1}",
-                    "title": block_title,
-                    "content": page_md,
-                    "order_index": idx
-                })
+            for page in pdf.pages:
+                page_texts.append((page.extract_text() or "").strip())
     except Exception:
         try:
             import pypdf
             reader = pypdf.PdfReader(filepath)
-            for idx, page in enumerate(reader.pages):
-                page_text = (page.extract_text() or "").strip()
-                if not page_text:
-                    continue
-                block_title = f"Page {idx + 1}"
+            for page in reader.pages:
+                page_texts.append((page.extract_text() or "").strip())
+        except Exception:
+            page_texts = []
+
+    # 2. Check if any text was extracted
+    has_text = any(len(t) > 0 for t in page_texts)
+
+    if has_text and len(page_texts) > 0:
+        for idx, page_text in enumerate(page_texts):
+            block_title = f"Page {idx + 1}"
+            if page_text:
                 page_md = f"## {block_title}\n\n{page_text}"
+            else:
+                page_md = f"## {block_title}\n\n*(Page contains non-text or graphical content)*"
+            full_content_parts.append(page_md)
+            blocks.append({
+                "block_key": f"page_{idx + 1}",
+                "title": block_title,
+                "content": page_md,
+                "order_index": idx
+            })
+    else:
+        # 3. Scanned / Graphical PDF fallback: render pages to images using pymupdf or pypdfium2
+        rendered_images = []
+        try:
+            import fitz
+            doc = fitz.open(filepath)
+            for idx, page in enumerate(doc):
+                pix = page.get_pixmap(dpi=150)
+                png_bytes = pix.tobytes("png")
+                b64_data = base64.b64encode(png_bytes).decode("ascii")
+                data_uri = f"data:image/png;base64,{b64_data}"
+                rendered_images.append((idx + 1, data_uri))
+        except Exception:
+            try:
+                import pypdfium2 as pdfium
+                pdf = pdfium.PdfDocument(filepath)
+                for idx in range(len(pdf)):
+                    page = pdf[idx]
+                    image = page.render(scale=2).to_pil()
+                    import io
+                    buf = io.BytesIO()
+                    image.save(buf, format="PNG")
+                    b64_data = base64.b64encode(buf.getvalue()).decode("ascii")
+                    data_uri = f"data:image/png;base64,{b64_data}"
+                    rendered_images.append((idx + 1, data_uri))
+            except Exception:
+                pass
+
+        if rendered_images:
+            for page_num, img_src in rendered_images:
+                block_title = f"Page {page_num}"
+                page_md = f"## {block_title}\n\n![{block_title}]({img_src})"
                 full_content_parts.append(page_md)
                 blocks.append({
-                    "block_key": f"page_{idx + 1}",
+                    "block_key": f"page_{page_num}",
                     "title": block_title,
                     "content": page_md,
-                    "order_index": idx
+                    "order_index": page_num - 1
                 })
-        except Exception as e:
-            err_msg = f"# {title}\n\n*Error extracting PDF content: {str(e)}*"
-            return err_msg, []
+        else:
+            block_title = "Document Overview"
+            page_md = f"# {title}\n\n*(Document loaded. Page content is graphical or scanned)*"
+            full_content_parts.append(page_md)
+            blocks.append({
+                "block_key": "page_1",
+                "title": block_title,
+                "content": page_md,
+                "order_index": 0
+            })
 
     full_content = "\n\n".join(full_content_parts).strip()
     return full_content, blocks
