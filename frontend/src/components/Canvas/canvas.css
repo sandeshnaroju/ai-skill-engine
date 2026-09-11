@@ -806,25 +806,57 @@
   width: 100%;
 }
 
+.doc-section-h1 {
+  font-size: 22px;
+  font-weight: 750;
+  color: var(--doc-heading-color);
+  margin: 22px 0 10px 0;
+  line-height: 1.3;
+}
+
 .doc-section-h2 {
-  font-size: 18px;
-  font-weight: 650;
+  font-size: 19px;
+  font-weight: 700;
   color: var(--doc-heading-color);
   margin: 18px 0 8px 0;
+  line-height: 1.35;
 }
 
 .doc-section-h3 {
-  font-size: 16px;
-  font-weight: 600;
+  font-size: 16.5px;
+  font-weight: 650;
   color: var(--doc-heading-color);
   margin: 14px 0 6px 0;
+  line-height: 1.35;
 }
 
+.doc-section-h4,
 .doc-subheading {
-  font-size: 14.5px;
+  font-size: 15px;
   font-weight: 600;
   color: var(--doc-heading-color);
+  margin: 12px 0 5px 0;
+  line-height: 1.4;
+}
+
+.doc-section-h5 {
+  font-size: 13.5px;
+  font-weight: 650;
+  color: var(--doc-heading-color);
   margin: 10px 0 4px 0;
+  line-height: 1.4;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.doc-section-h6 {
+  font-size: 12.5px;
+  font-weight: 650;
+  color: var(--doc-text-muted);
+  margin: 8px 0 4px 0;
+  line-height: 1.4;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .doc-list {
@@ -1997,27 +2029,55 @@
 
 /* Headings inside unified WYSIWYG */
 .doc-unified-wysiwyg h1 {
-  font-size: 20px;
-  font-weight: 700;
+  font-size: 22px;
+  font-weight: 750;
   color: var(--doc-heading-color);
-  margin: 14px 0 6px;
-  line-height: 1.35;
+  margin: 18px 0 8px;
+  line-height: 1.3;
 }
 
 .doc-unified-wysiwyg h2 {
-  font-size: 17px;
-  font-weight: 650;
+  font-size: 19px;
+  font-weight: 700;
   color: var(--doc-heading-color);
-  margin: 12px 0 4px;
+  margin: 15px 0 6px;
   line-height: 1.35;
 }
 
 .doc-unified-wysiwyg h3 {
+  font-size: 16.5px;
+  font-weight: 650;
+  color: var(--doc-heading-color);
+  margin: 12px 0 5px;
+  line-height: 1.35;
+}
+
+.doc-unified-wysiwyg h4 {
   font-size: 15px;
   font-weight: 600;
   color: var(--doc-heading-color);
   margin: 10px 0 4px;
-  line-height: 1.35;
+  line-height: 1.4;
+}
+
+.doc-unified-wysiwyg h5 {
+  font-size: 13.5px;
+  font-weight: 650;
+  color: var(--doc-heading-color);
+  margin: 8px 0 4px;
+  line-height: 1.4;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.doc-unified-wysiwyg h6 {
+  font-size: 12.5px;
+  font-weight: 650;
+  color: var(--doc-text-muted);
+  margin: 8px 0 3px;
+  line-height: 1.4;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .doc-unified-wysiwyg p,

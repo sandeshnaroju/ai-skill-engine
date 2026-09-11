@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import {
   Edit2, Check, X, History, Copy, CheckCheck, Clock, AlignLeft, AlignCenter, AlignRight, AlignJustify, MoveVertical, Sparkles,
-  Bold, Italic, Strikethrough, Code, Heading1, Heading2, Heading3,
+  Bold, Italic, Strikethrough, Code, Heading, Heading1, Heading2, Heading3, Heading4, Heading5, Heading6,
   List, ListOrdered, CheckSquare, Table, Link as LinkIcon, Image as ImageIcon,
   Quote, AlertCircle, Palette, Minus, ExternalLink, Eye, Columns, Plus,
   Trash2, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Grid, ChevronDown
@@ -393,7 +393,22 @@ function rawTextToWysiwygHtml(text) {
       continue;
     }
 
-    // Headings
+    // Headings (checked in order from 6 to 1)
+    if (trimmed.startsWith('###### ')) {
+      closeList();
+      outLines.push(`<h6>${formatInlineToHtml(trimmed.slice(7))}</h6>`);
+      continue;
+    }
+    if (trimmed.startsWith('##### ')) {
+      closeList();
+      outLines.push(`<h5>${formatInlineToHtml(trimmed.slice(6))}</h5>`);
+      continue;
+    }
+    if (trimmed.startsWith('#### ')) {
+      closeList();
+      outLines.push(`<h4>${formatInlineToHtml(trimmed.slice(5))}</h4>`);
+      continue;
+    }
     if (trimmed.startsWith('### ')) {
       closeList();
       outLines.push(`<h3>${formatInlineToHtml(trimmed.slice(4))}</h3>`);
@@ -563,6 +578,18 @@ function wysiwygHtmlToContent(html) {
     if (tag === 'h3') {
       if (styles.length > 0) return `\n<h3${styleAttr}>${childrenText.trim()}</h3>\n`;
       return `\n### ${childrenText.trim()}\n`;
+    }
+    if (tag === 'h4') {
+      if (styles.length > 0) return `\n<h4${styleAttr}>${childrenText.trim()}</h4>\n`;
+      return `\n#### ${childrenText.trim()}\n`;
+    }
+    if (tag === 'h5') {
+      if (styles.length > 0) return `\n<h5${styleAttr}>${childrenText.trim()}</h5>\n`;
+      return `\n##### ${childrenText.trim()}\n`;
+    }
+    if (tag === 'h6') {
+      if (styles.length > 0) return `\n<h6${styleAttr}>${childrenText.trim()}</h6>\n`;
+      return `\n###### ${childrenText.trim()}\n`;
     }
     if (tag === 'blockquote') {
       if (styles.length > 0) return `\n<blockquote${styleAttr}>${childrenText.trim()}</blockquote>\n`;
@@ -891,11 +918,17 @@ function renderMarkdownContent(text, sectionTitle) {
       const emptyClass = isEmptyPara ? ' doc-empty-paragraph' : '';
 
       if (htmlBlockTag === 'h1') {
-        elements.push(<h2 key={idx} className="doc-section-h2" style={styleProp}>{inlineFormatted}</h2>);
+        elements.push(<h1 key={idx} className="doc-section-h1" style={styleProp}>{inlineFormatted}</h1>);
       } else if (htmlBlockTag === 'h2') {
+        elements.push(<h2 key={idx} className="doc-section-h2" style={styleProp}>{inlineFormatted}</h2>);
+      } else if (htmlBlockTag === 'h3') {
         elements.push(<h3 key={idx} className="doc-section-h3" style={styleProp}>{inlineFormatted}</h3>);
-      } else if (htmlBlockTag === 'h3' || htmlBlockTag === 'h4') {
-        elements.push(<h4 key={idx} className="doc-subheading" style={styleProp}>{inlineFormatted}</h4>);
+      } else if (htmlBlockTag === 'h4') {
+        elements.push(<h4 key={idx} className="doc-section-h4" style={styleProp}>{inlineFormatted}</h4>);
+      } else if (htmlBlockTag === 'h5') {
+        elements.push(<h5 key={idx} className="doc-section-h5" style={styleProp}>{inlineFormatted}</h5>);
+      } else if (htmlBlockTag === 'h6') {
+        elements.push(<h6 key={idx} className="doc-section-h6" style={styleProp}>{inlineFormatted}</h6>);
       } else if (htmlBlockTag === 'blockquote') {
         elements.push(<blockquote key={idx} className="doc-quote" style={styleProp}>{inlineFormatted}</blockquote>);
       } else {
@@ -1044,9 +1077,9 @@ function renderMarkdownContent(text, sectionTitle) {
     }
 
     // Skip initial heading line if it duplicates the section header title
-    if (!checkedFirstHeading && normSecTitle && (trimmed.startsWith('# ') || trimmed.startsWith('## ') || trimmed.startsWith('### '))) {
+    if (!checkedFirstHeading && normSecTitle && /^#{1,6}\s+/.test(trimmed)) {
       checkedFirstHeading = true;
-      const headingText = trimmed.replace(/^#{1,3}\s+/, '');
+      const headingText = trimmed.replace(/^#{1,6}\s+/, '');
       if (normalizeTitle(headingText) === normSecTitle) {
         continue;
       }
@@ -1070,19 +1103,31 @@ function renderMarkdownContent(text, sectionTitle) {
       continue;
     }
 
-    // Headings
-    if (trimmed.startsWith('### ')) {
+    // Headings (checked in order from 6 to 1)
+    if (trimmed.startsWith('###### ')) {
       flushParagraph();
       flushList();
-      elements.push(<h4 key={idx} className="doc-subheading">{formatInline(trimmed.slice(4))}</h4>);
+      elements.push(<h6 key={idx} className="doc-section-h6">{formatInline(trimmed.slice(7))}</h6>);
+    } else if (trimmed.startsWith('##### ')) {
+      flushParagraph();
+      flushList();
+      elements.push(<h5 key={idx} className="doc-section-h5">{formatInline(trimmed.slice(6))}</h5>);
+    } else if (trimmed.startsWith('#### ')) {
+      flushParagraph();
+      flushList();
+      elements.push(<h4 key={idx} className="doc-section-h4">{formatInline(trimmed.slice(5))}</h4>);
+    } else if (trimmed.startsWith('### ')) {
+      flushParagraph();
+      flushList();
+      elements.push(<h3 key={idx} className="doc-section-h3">{formatInline(trimmed.slice(4))}</h3>);
     } else if (trimmed.startsWith('## ')) {
       flushParagraph();
       flushList();
-      elements.push(<h3 key={idx} className="doc-section-h3">{formatInline(trimmed.slice(3))}</h3>);
+      elements.push(<h2 key={idx} className="doc-section-h2">{formatInline(trimmed.slice(3))}</h2>);
     } else if (trimmed.startsWith('# ')) {
       flushParagraph();
       flushList();
-      elements.push(<h2 key={idx} className="doc-section-h2">{formatInline(trimmed.slice(2))}</h2>);
+      elements.push(<h1 key={idx} className="doc-section-h1">{formatInline(trimmed.slice(2))}</h1>);
     }
 
     // Task Checkboxes: - [ ] or - [x]
@@ -1194,6 +1239,8 @@ export default function PagedDocViewer({
   const [tableColsCount, setTableColsCount] = useState(3);
   const [editPreviewMode, setEditPreviewMode] = useState(false);
   const [currentAlignment, setCurrentAlignment] = useState('left');
+  const [currentHeading, setCurrentHeading] = useState('p');
+  const [showHeadingMenu, setShowHeadingMenu] = useState(false);
   const [currentLineHeight, setCurrentLineHeight] = useState('normal');
   const [currentParagraphSpacing, setCurrentParagraphSpacing] = useState('normal');
   const [showSpacingMenu, setShowSpacingMenu] = useState(false);
@@ -1209,6 +1256,7 @@ export default function PagedDocViewer({
       activeTextareaRef.current = unifiedEditorRef.current;
       checkActiveTable();
       checkCurrentAlignment();
+      checkCurrentHeading();
       checkCurrentSpacing();
     }
   }, [editingKey, editorInitialHtml]);
@@ -1543,6 +1591,46 @@ export default function PagedDocViewer({
 
     setCurrentParagraphSpacing(mb);
     setShowSpacingMenu(false);
+    saveCurrentSelection();
+  };
+
+  const checkCurrentHeading = () => {
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount > 0) {
+      let node = sel.getRangeAt(0).commonAncestorContainer;
+      if (node.nodeType === Node.TEXT_NODE) node = node.parentNode;
+      const blockEl = node?.closest?.('h1, h2, h3, h4, h5, h6, p, div, blockquote, th, td');
+      if (blockEl && blockEl !== unifiedEditorRef.current && unifiedEditorRef.current?.contains(blockEl)) {
+        const tag = blockEl.tagName.toLowerCase();
+        if (['h1', 'h2', 'h3', 'h4', 'h5', 'h6'].includes(tag)) {
+          setCurrentHeading(tag);
+          return;
+        }
+      }
+    }
+    setCurrentHeading('p');
+  };
+
+  const handleSetHeading = (tag) => {
+    const editor = unifiedEditorRef.current;
+    if (!editor) return;
+
+    restoreSavedSelection();
+    editor.focus({ preventScroll: true });
+    restoreSavedSelection();
+
+    const targetBlock = tag === 'p' ? '<p>' : `<${tag}>`;
+    if (!executeWysiwygCommand('formatBlock', targetBlock)) {
+      if (tag === 'p') {
+        insertTextAtCursor('', '', 'Paragraph');
+      } else {
+        const hashes = '#'.repeat(parseInt(tag.slice(1), 10));
+        insertTextAtCursor(`${hashes} `, '', `Heading ${tag.slice(1)}`);
+      }
+    }
+
+    setCurrentHeading(tag);
+    setShowHeadingMenu(false);
     saveCurrentSelection();
   };
 
@@ -2161,34 +2249,84 @@ export default function PagedDocViewer({
                           </button>
                         </div>
 
-                        {/* Headings */}
-                        <div className="doc-toolbar-group">
+                        {/* Headings H1 - H6 */}
+                        <div className="doc-toolbar-group" style={{ position: 'relative' }}>
                           <button
                             type="button"
-                            className="doc-toolbar-btn"
+                            className={`doc-toolbar-btn ${['h1', 'h2', 'h3', 'h4', 'h5', 'h6'].includes(currentHeading) ? 'active' : ''}`}
                             onMouseDown={(e) => {
                               e.preventDefault();
-                              if (!executeWysiwygCommand('formatBlock', '<h2>')) {
-                                insertTextAtCursor('## ', '', 'Heading 2');
-                              }
+                              saveCurrentSelection();
+                              setShowHeadingMenu(prev => !prev);
+                              setShowSpacingMenu(false);
+                              setShowTableModal(false);
+                              setShowLinkModal(false);
+                              setShowImageModal(false);
                             }}
-                            title="Heading 2"
+                            title="Heading Styles (H1 to H6)"
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', fontWeight: 600 }}
                           >
-                            <Heading2 size={13} />
+                            <Heading size={13} />
+                            <span style={{ fontSize: '11px', textTransform: 'uppercase' }}>
+                              {currentHeading === 'p' ? 'Text' : currentHeading.toUpperCase()}
+                            </span>
+                            <ChevronDown size={10} />
                           </button>
-                          <button
-                            type="button"
-                            className="doc-toolbar-btn"
-                            onMouseDown={(e) => {
-                              e.preventDefault();
-                              if (!executeWysiwygCommand('formatBlock', '<h3>')) {
-                                insertTextAtCursor('### ', '', 'Heading 3');
-                              }
-                            }}
-                            title="Heading 3"
-                          >
-                            <Heading3 size={13} />
-                          </button>
+
+                          {showHeadingMenu && (
+                            <div
+                              className="doc-line-spacing-menu"
+                              onMouseDown={(e) => e.stopPropagation()}
+                              style={{ width: '175px' }}
+                            >
+                              <div className="doc-spacing-section-title">Heading Styles</div>
+                              {[
+                                { label: 'Paragraph (Normal)', tag: 'p', preview: '13px', bold: false },
+                                { label: 'Heading 1', tag: 'h1', preview: '18px', bold: true },
+                                { label: 'Heading 2', tag: 'h2', preview: '16px', bold: true },
+                                { label: 'Heading 3', tag: 'h3', preview: '14.5px', bold: true },
+                                { label: 'Heading 4', tag: 'h4', preview: '13.5px', bold: true },
+                                { label: 'Heading 5', tag: 'h5', preview: '12.5px', bold: true },
+                                { label: 'Heading 6', tag: 'h6', preview: '11.5px', bold: true },
+                              ].map((opt) => (
+                                <button
+                                  key={opt.tag}
+                                  type="button"
+                                  className={`doc-spacing-option ${currentHeading === opt.tag ? 'selected' : ''}`}
+                                  onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    handleSetHeading(opt.tag);
+                                  }}
+                                >
+                                  <span style={{ fontSize: opt.preview, fontWeight: opt.bold ? 650 : 400 }}>{opt.label}</span>
+                                  {currentHeading === opt.tag && <span className="doc-spacing-check">✓</span>}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* Quick 1-click Buttons for H1, H2, H3, H4, H5, H6 */}
+                          {[
+                            { tag: 'h1', icon: Heading1, title: 'Heading 1 (#)' },
+                            { tag: 'h2', icon: Heading2, title: 'Heading 2 (##)' },
+                            { tag: 'h3', icon: Heading3, title: 'Heading 3 (###)' },
+                            { tag: 'h4', icon: Heading4, title: 'Heading 4 (####)' },
+                            { tag: 'h5', icon: Heading5, title: 'Heading 5 (#####)' },
+                            { tag: 'h6', icon: Heading6, title: 'Heading 6 (######)' },
+                          ].map(({ tag, icon: Icon, title }) => (
+                            <button
+                              key={tag}
+                              type="button"
+                              className={`doc-toolbar-btn ${currentHeading === tag ? 'active' : ''}`}
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                handleSetHeading(currentHeading === tag ? 'p' : tag);
+                              }}
+                              title={title}
+                            >
+                              <Icon size={13} />
+                            </button>
+                          ))}
                         </div>
 
                         {/* Lists */}
@@ -2639,12 +2777,14 @@ export default function PagedDocViewer({
                             saveCurrentSelection();
                             checkActiveTable();
                             checkCurrentAlignment();
+                            checkCurrentHeading();
                             checkCurrentSpacing();
                           }}
                           onBlur={() => {
                             saveCurrentSelection();
                             checkActiveTable();
                             checkCurrentAlignment();
+                            checkCurrentHeading();
                             checkCurrentSpacing();
                           }}
                           onFocus={(e) => {
@@ -2652,18 +2792,21 @@ export default function PagedDocViewer({
                             saveCurrentSelection();
                             checkActiveTable();
                             checkCurrentAlignment();
+                            checkCurrentHeading();
                             checkCurrentSpacing();
                           }}
                           onKeyUp={() => {
                             saveCurrentSelection();
                             checkActiveTable();
                             checkCurrentAlignment();
+                            checkCurrentHeading();
                             checkCurrentSpacing();
                           }}
                           onMouseUp={() => {
                             saveCurrentSelection();
                             checkActiveTable();
                             checkCurrentAlignment();
+                            checkCurrentHeading();
                             checkCurrentSpacing();
                           }}
                           onKeyDown={handleUnifiedKeyDown}

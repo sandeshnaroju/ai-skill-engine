@@ -435,6 +435,18 @@ def _parse_docx(filepath: str, title: str) -> Tuple[str, List[Dict[str, Any]]]:
                 line = f'<h3{style_attr}>{formatted_text}</h3>' if styles else f"### {formatted_text}"
                 current_block_lines.append(line)
                 md_lines.append(line)
+            elif "heading 4" in style_name:
+                line = f'<h4{style_attr}>{formatted_text}</h4>' if styles else f"#### {formatted_text}"
+                current_block_lines.append(line)
+                md_lines.append(line)
+            elif "heading 5" in style_name:
+                line = f'<h5{style_attr}>{formatted_text}</h5>' if styles else f"##### {formatted_text}"
+                current_block_lines.append(line)
+                md_lines.append(line)
+            elif "heading 6" in style_name:
+                line = f'<h6{style_attr}>{formatted_text}</h6>' if styles else f"###### {formatted_text}"
+                current_block_lines.append(line)
+                md_lines.append(line)
             else:
                 line = f'<p{style_attr}>{formatted_text}</p>' if styles else formatted_text
                 current_block_lines.append(line)
