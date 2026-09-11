@@ -240,6 +240,8 @@ You can run the pre-built image directly from Docker Hub without cloning the sou
      -v /var/run/docker.sock:/var/run/docker.sock \
      -v "$(pwd)/sandbox:/app/sandbox" \
      -v "$(pwd)/skill_manager.db:/app/skill_manager.db" \
+     -v "$(pwd)/skill_manager.db-wal:/app/skill_manager.db-wal" \
+     -v "$(pwd)/skill_manager.db-shm:/app/skill_manager.db-shm" \
      -e HOST_SANDBOX_DIR="$(pwd)/sandbox" \
      -e DATABASE_URL="sqlite:////app/skill_manager.db" \
      -e ENCRYPTION_SECRET_KEY="YOUR_GENERATED_FERNET_KEY" \
@@ -352,6 +354,8 @@ Running with Docker compiles the React frontend and packages the FastAPI server 
        -v /var/run/docker.sock:/var/run/docker.sock \
        -v "$(pwd)/sandbox:/app/sandbox" \
        -v "$(pwd)/skill_manager.db:/app/skill_manager.db" \
+       -v "$(pwd)/skill_manager.db-wal:/app/skill_manager.db-wal" \
+       -v "$(pwd)/skill_manager.db-shm:/app/skill_manager.db-shm" \
        --env-file "$(pwd)/.env" \
        -e HOST_SANDBOX_DIR="$(pwd)/sandbox" \
        --restart unless-stopped \
@@ -366,6 +370,8 @@ docker run -d \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -v "$(pwd)/sandbox:/app/sandbox" \
   -v "$(pwd)/skill_manager.db:/app/skill_manager.db" \
+  -v "$(pwd)/skill_manager.db-wal:/app/skill_manager.db-wal" \
+  -v "$(pwd)/skill_manager.db-shm:/app/skill_manager.db-shm" \
   -e HOST_SANDBOX_DIR="$(pwd)/sandbox" \
   -e ENCRYPTION_SECRET_KEY="YOUR_GENERATED_FERNET_KEY" \
   -e SMTP_HOST="smtp.gmail.com" \

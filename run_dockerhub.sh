@@ -5,9 +5,9 @@ DOCKER_IMAGE="sandeshnaroju/ai-skill-engine:latest"
 
 echo "🐳 Starting AI Skill Engine from Docker Hub..."
 
-# Ensure persistent host folders exist so Docker doesn't create them as root
+# Ensure persistent host folders and database files exist so Docker doesn't create them as root
 mkdir -p sandbox/uploads sandbox/outputs
-touch skill_manager.db
+touch skill_manager.db skill_manager.db-wal skill_manager.db-shm
 
 # Ensure configuration file exists
 if [ ! -f .env ]; then
@@ -22,6 +22,12 @@ if [ -f .env ]; then
     set -a
     source .env
     set +a
+fi
+
+# Flush SQLite WAL database changes to disk before stopping container
+if [ "$(docker ps -q -f name=ai_skill_engine)" ]; then
+    echo "Flushing database changes to disk..."
+    docker exec ai_skill_engine python -c "import sqlite3; con = sqlite3.connect('/app/skill_manager.db'); con.execute('PRAGMA wal_checkpoint(TRUNCATE)'); con.close()" 2>/dev/null || true
 fi
 
 # Stop and remove any running container with the same name to prevent conflicts
@@ -41,6 +47,8 @@ docker run -d \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -v "$(pwd)/sandbox:/app/sandbox" \
   -v "$(pwd)/skill_manager.db:/app/skill_manager.db" \
+  -v "$(pwd)/skill_manager.db-wal:/app/skill_manager.db-wal" \
+  -v "$(pwd)/skill_manager.db-shm:/app/skill_manager.db-shm" \
   -e HOST_SANDBOX_DIR="$(pwd)/sandbox" \
   -e DATABASE_URL="$DATABASE_URL" \
   -e GEMINI_API_KEY="$GEMINI_API_KEY" \
