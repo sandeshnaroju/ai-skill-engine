@@ -26,8 +26,10 @@ fi
 
 # Flush SQLite WAL database changes to disk before stopping container
 if [ "$(docker ps -q -f name=ai_skill_engine)" ]; then
-    echo "Flushing database changes to disk..."
-    docker exec ai_skill_engine python -c "import sqlite3; con = sqlite3.connect('/app/skill_manager.db'); con.execute('PRAGMA wal_checkpoint(TRUNCATE)'); con.close()" 2>/dev/null || true
+    if [ -z "$DATABASE_URL" ] || [[ "$DATABASE_URL" == sqlite* ]]; then
+        echo "Flushing database changes to disk..."
+        docker exec ai_skill_engine python -c "import sqlite3; con = sqlite3.connect('/app/skill_manager.db'); con.execute('PRAGMA wal_checkpoint(TRUNCATE)'); con.close()" 2>/dev/null || true
+    fi
 fi
 
 # Stop and remove any running container with the same name to prevent conflicts

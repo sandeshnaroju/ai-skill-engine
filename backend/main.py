@@ -37,9 +37,10 @@ def on_startup():
 def on_shutdown():
     try:
         from database import engine
-        from sqlalchemy import text
-        with engine.connect() as conn:
-            conn.execute(text("PRAGMA wal_checkpoint(TRUNCATE)"))
+        if engine.dialect.name == "sqlite":
+            from sqlalchemy import text
+            with engine.connect() as conn:
+                conn.execute(text("PRAGMA wal_checkpoint(TRUNCATE)"))
     except Exception:
         pass
 
