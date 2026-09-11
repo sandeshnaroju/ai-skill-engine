@@ -492,6 +492,7 @@ def rollback_artifact_block_endpoint(
 def export_artifact_file(
     artifact_id: str,
     format: Optional[str] = Query(None),
+    inline: bool = Query(False),
     auth: dict = Depends(authenticate_canvas_access),
     db: Session = Depends(get_db)
 ):
@@ -501,11 +502,13 @@ def export_artifact_file(
 
     data_bytes, mime_type, filename = export_artifact(artifact, target_format=format)
 
+    disposition = "inline" if (inline or mime_type.startswith(("image/", "video/", "audio/"))) else "attachment"
+
     return Response(
         content=data_bytes,
         media_type=mime_type,
         headers={
-            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Disposition": f'{disposition}; filename="{filename}"',
             "Cache-Control": "no-cache",
             "Content-Length": str(len(data_bytes))
         }
