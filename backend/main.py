@@ -33,6 +33,17 @@ app = FastAPI(
 def on_startup():
     init_db()
 
+@app.on_event("shutdown")
+def on_shutdown():
+    try:
+        from database import engine
+        if engine.dialect.name == "sqlite":
+            from sqlalchemy import text
+            with engine.connect() as conn:
+                conn.execute(text("PRAGMA wal_checkpoint(TRUNCATE)"))
+    except Exception:
+        pass
+
 # Enable CORS for frontend development
 app.add_middleware(
     CORSMiddleware,

@@ -14,6 +14,7 @@ import SheetGrid from './SheetGrid';
 import SvgViewer from './SvgViewer';
 import HtmlViewer from './HtmlViewer';
 import MediaViewer from './MediaViewer';
+import ImageViewer from './ImageViewer';
 import Cad2DViewer from './Cad2DViewer';
 import Cad3DViewer from './Cad3DViewer';
 import GisViewer from './GisViewer';
@@ -194,6 +195,26 @@ function CanvasInner({ isEmbed = false, artifactId: propArtifactId, token: propT
           desc: 'Geographic vector dataset',
           color: '#34d399',
           bg: 'rgba(52, 211, 153, 0.15)'
+        }
+      ];
+    }
+
+    if (
+      type === 'image' ||
+      type === 'img' ||
+      type === 'photo' ||
+      type === 'raster' ||
+      /\.(png|jpe?g|gif|webp|bmp|tiff)$/i.test(fn)
+    ) {
+      const ext = fn.includes('.') ? fn.split('.').pop().toLowerCase() : 'png';
+      return [
+        {
+          label: `Image File (.${ext})`,
+          format: ext,
+          icon: Image,
+          desc: `Original high-resolution ${ext.toUpperCase()} image`,
+          color: '#ec4899',
+          bg: 'rgba(236, 72, 153, 0.15)'
         }
       ];
     }
@@ -500,11 +521,20 @@ function CanvasInner({ isEmbed = false, artifactId: propArtifactId, token: propT
     const lang = (art.language || '').toLowerCase();
 
     if (
+      type === 'image' ||
+      type === 'img' ||
+      type === 'photo' ||
+      type === 'raster' ||
+      /\.(png|jpe?g|gif|webp|bmp|tiff)$/i.test(filename)
+    ) {
+      return 'image';
+    }
+
+    if (
       type === 'diagram_svg' ||
       type === 'svg' ||
       type === 'diagram' ||
       type === 'vector' ||
-      type === 'image' ||
       lang === 'svg' ||
       filename.endsWith('.svg')
     ) {
@@ -627,6 +657,7 @@ function CanvasInner({ isEmbed = false, artifactId: propArtifactId, token: propT
         return <Table size={15} />;
       case 'presentation':
         return <Presentation size={15} />;
+      case 'image':
       case 'svg':
         return <Image size={15} />;
       case 'audio':
@@ -958,6 +989,14 @@ function CanvasInner({ isEmbed = false, artifactId: propArtifactId, token: propT
             <SvgViewer
               fullContent={artifact?.full_content || (blocks && blocks.length ? blocks.map(b => b.content || '').join('\n') : '')}
               blocks={blocks}
+              activeBlockKey={activeBlockKey}
+            />
+          )}
+
+          {artType === 'image' && (
+            <ImageViewer
+              artifact={artifact}
+              token={currentToken}
             />
           )}
 

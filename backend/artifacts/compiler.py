@@ -8,6 +8,7 @@ Compiles Artifacts into native binary and text files:
 - Plain text / code (.py, .js, .svg, .json, .csv, .html)
 """
 import io
+import os
 import re
 import json
 import base64
@@ -43,7 +44,7 @@ def _strip_html(text: str) -> str:
 
 
 def _fetch_image_bytes(url_or_data: str) -> Optional[bytes]:
-    """Fetch image bytes from data URI or HTTP(S) URL with a safe timeout."""
+    """Fetch image bytes from data URI, local sandbox path, or HTTP(S) URL."""
     if not url_or_data:
         return None
     url_clean = url_or_data.strip()
@@ -64,6 +65,29 @@ def _fetch_image_bytes(url_or_data: str) -> Optional[bytes]:
                 return resp.read()
         except Exception:
             return None
+    else:
+        # Local file path or relative download URL
+        clean_name = os.path.basename(url_clean.split("?")[0])
+        if os.path.isfile(url_clean):
+            try:
+                with open(url_clean, "rb") as f:
+                    return f.read()
+            except Exception:
+                pass
+        for s_dir in [
+            os.path.join(os.getcwd(), "sandbox", "uploads"),
+            os.path.join(os.getcwd(), "sandbox", "outputs"),
+            "/app/sandbox/uploads",
+            "/app/sandbox/outputs",
+        ]:
+            if os.path.exists(s_dir):
+                for root, _, files in os.walk(s_dir):
+                    if clean_name in files:
+                        try:
+                            with open(os.path.join(root, clean_name), "rb") as f:
+                                return f.read()
+                        except Exception:
+                            pass
     return None
 
 
@@ -1548,6 +1572,35 @@ def export_artifact(artifact: SessionArtifact, target_format: str = None) -> Tup
     elif ext == "pdf":
         buf = compile_to_pdf(artifact)
         return buf.read(), "application/pdf", f"{base_name}.pdf"
+
+    elif ext in ("png", "jpg", "jpeg", "webp", "gif", "bmp") or getattr(artifact, "artifact_type", None) == "image":
+        mime_map = {
+            "png": "image/png",
+            "jpg": "image/jpeg",
+            "jpeg": "image/jpeg",
+            "webp": "image/webp",
+            "gif": "image/gif",
+            "bmp": "image/bmp"
+        }
+        mime = mime_map.get(ext, "image/png")
+        img_bytes = None
+        if getattr(artifact, "media_url", None):
+            img_bytes = _fetch_image_bytes(artifact.media_url)
+        if not img_bytes and getattr(artifact, "filename", None):
+            img_bytes = _fetch_image_bytes(artifact.filename)
+        if not img_bytes:
+            full_text = assemble_full_content(artifact)
+            match = re.search(r'(data:image/[a-zA-Z]+;base64,[A-Za-z0-9+/=]+)', full_text)
+            if match:
+                img_bytes = _fetch_image_bytes(match.group(1))
+            else:
+                img_match = re.search(r'!\[.*?\]\((.*?)\)', full_text)
+                if img_match:
+                    img_bytes = _fetch_image_bytes(img_match.group(1))
+
+        if img_bytes:
+            out_name = f"{base_name}.{ext}" if not artifact.filename.endswith(f".{ext}") else artifact.filename
+            return img_bytes, mime, out_name
 
     # Default: raw text/code
     full_text = assemble_full_content(artifact)

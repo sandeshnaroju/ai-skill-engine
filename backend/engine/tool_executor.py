@@ -21,6 +21,7 @@ from engine.tools_builtin import (
 )
 from artifacts.tools import (
     run_open_or_update_artifact,
+    run_open_uploaded_file_as_artifact,
     run_artifact_search,
     run_artifact_semantic_search,
     run_edit_artifact_section,
@@ -131,6 +132,8 @@ def execute_tool(fn_name: str, args: dict, tool_def: dict, user_data: dict,
             exec_res = run_send_email_tool(db, exec_args, tenant)
         elif fn_name == "artifact_editor__open_or_update_artifact":
             exec_res = run_open_or_update_artifact(db, exec_args, tenant, session_id)
+        elif fn_name == "artifact_editor__open_uploaded_file_as_artifact":
+            exec_res = run_open_uploaded_file_as_artifact(db, exec_args, tenant, session_id)
         elif fn_name == "artifact_editor__artifact_search":
             exec_res = run_artifact_search(db, exec_args)
         elif fn_name == "artifact_editor__artifact_semantic_search":

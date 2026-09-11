@@ -28,7 +28,27 @@ tools:
         - title
         - filename
         - artifact_type
-        - content
+  - name: open_uploaded_file_as_artifact
+    description: Open an uploaded user file (document, spreadsheet, presentation, PDF, CAD drawing, 3D model, GIS map, industrial engineering file, audio/video, or code script) in the interactive Canvas Artifact Editor. Call this whenever the user asks to inspect, open, view, or edit a file they previously uploaded or provided in chat (e.g. "open this report in canvas", "edit slide 2 in this presentation", "review this spreadsheet", "inspect this 3D model").
+    type: code
+    parameters:
+      type: object
+      properties:
+        filename:
+          type: string
+          description: Name of the uploaded file (e.g. "quarterly_earnings.xlsx", "contract.docx", "pitch.pptx", "part.step", "model.dxf").
+        file_path:
+          type: string
+          description: Optional sandbox path of the file if known (e.g. "sandbox/uploads/tenant/file.pdf").
+        title:
+          type: string
+          description: Optional display title for the Canvas header.
+        artifact_type:
+          type: string
+          enum: ["code", "document", "spreadsheet", "presentation", "pdf", "cad_2d", "cad_3d", "gis", "diagram", "engineering_data", "audio", "video"]
+          description: Optional explicit artifact type override.
+      required:
+        - filename
 
   - name: artifact_search
     description: Fast keyword/phrase search across all sections of an active artifact to locate target clauses, variables, entities, or functions when the user's request doesn't specify a section ID.
@@ -172,6 +192,15 @@ Use this skill whenever generating, modifying, or refining digital artifacts for
    - Set `artifact_type="engineering_data"`.
    - For Rockwell Studio 5000 / ControlLogix (`.l5x`): Emit valid RSLogix XML containing `<RSLogix5000Content>`, `<Controller>`, `<Tags>`, and `<Routines>`.
    - For Primavera P6 (`.xer`): Emit valid P6 exchange format tables (`%T`, `%F`, `CALENDAR`, `TASK`, `PROJWBS`).
+
+### 📂 Guidelines for Opening Uploaded User Files:
+When a user uploads a file in the chat and asks to inspect, open, review, or edit it (e.g. *"open this report in canvas"*, *"edit slide 3"*, *"show me the budget spreadsheet in editor"*, *"inspect this CAD drawing"*):
+1. **Call `open_uploaded_file_as_artifact`**:
+   - Provide the file name or path mentioned by the user (e.g. `filename="quarterly_report.docx"`, `filename="budget.xlsx"`, `filename="presentation.pptx"`).
+   - You do NOT need to wait or do manual conversion—the tool automatically extracts document structure, slides, spreadsheets, CAD entities, or media, assigns section block keys, mints a real-time embed token, and launches the interactive Canvas editor.
+2. **Subsequent Edits & Searches**:
+   - Once opened via `open_uploaded_file_as_artifact`, all surgical editing tools work immediately (`edit_artifact_section`, `patch_artifact`, `artifact_search`, `rollback_artifact_block`).
+   - For example, if the user then says *"Change slide 2 title to Executive Summary"*, simply call `edit_artifact_section` with `block_key="slide_2"`.
 
 ### 🛠️ Guidelines for Editing Artifacts:
 1. **Prefer surgical tools over full document re-generation**:
