@@ -59,11 +59,13 @@ def import_file_to_artifact_data(filepath: str, title: Optional[str] = None, exp
         artifact_type = "pdf"
         content, blocks = _parse_pdf(filepath, effective_title)
 
-    elif ext in (".md", ".markdown", ".txt", ".text", ".rst"):
+    elif ext in (".md", ".markdown", ".txt", ".text", ".rst", ".html", ".htm"):
         artifact_type = "document"
         with open(filepath, "r", encoding="utf-8", errors="replace") as f:
             content = f.read()
-        language = "markdown" if ext in (".md", ".markdown") else "text"
+        language = "html" if ext in (".html", ".htm") else ("markdown" if ext in (".md", ".markdown") else "text")
+        if ext in (".html", ".htm"):
+            content, blocks = _parse_html_doc(content, effective_title)
 
     # ─────────────────────────────────────────────────────────────────────────
     # 2. Spreadsheets: Excel (.xlsx, .xls), CSV (.csv), TSV (.tsv)
@@ -161,7 +163,7 @@ def import_file_to_artifact_data(filepath: str, title: Optional[str] = None, exp
 def infer_artifact_type(filename: str) -> str:
     """Infers artifact_type from filename extension."""
     fn = filename.lower()
-    if fn.endswith((".docx", ".doc")):
+    if fn.endswith((".docx", ".doc", ".html", ".htm")):
         return "document"
     elif fn.endswith((".xlsx", ".xls", ".csv", ".tsv")):
         return "spreadsheet"
@@ -185,7 +187,7 @@ def infer_artifact_type(filename: str) -> str:
         return "diagram"
     elif fn.endswith((".l5x", ".l5k", ".s7p", ".xer", ".m", ".slx")):
         return "engineering_data"
-    elif fn.endswith((".py", ".js", ".jsx", ".ts", ".tsx", ".html", ".css", ".json", ".sql", ".sh", ".yaml", ".yml", ".xml", ".go", ".rs", ".java", ".cpp", ".c", ".rb", ".php")):
+    elif fn.endswith((".py", ".js", ".jsx", ".ts", ".tsx", ".css", ".json", ".sql", ".sh", ".yaml", ".yml", ".xml", ".go", ".rs", ".java", ".cpp", ".c", ".rb", ".php")):
         return "code"
     elif fn.endswith((".md", ".markdown", ".txt")):
         return "document"
@@ -233,10 +235,116 @@ def infer_code_language(filename: str) -> str:
 # Internal Parsers
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _get_docx_para_alignment(para) -> Optional[str]:
+    """Returns 'center', 'right', 'justify', or None."""
+    align = getattr(para, "alignment", None)
+    if align is None and hasattr(para, "paragraph_format"):
+        align = para.paragraph_format.alignment
+    if align is None and getattr(para, "style", None) and hasattr(para.style, "paragraph_format"):
+        align = para.style.paragraph_format.alignment
+    if align is not None:
+        try:
+            val = int(align)
+            if val == 1:
+                return "center"
+            elif val == 2:
+                return "right"
+            elif val == 3:
+                return "justify"
+            elif val == 0:
+                return None
+        except Exception:
+            pass
+        name = str(align).upper()
+        if "CENTER" in name:
+            return "center"
+        if "RIGHT" in name:
+            return "right"
+        if "JUSTIFY" in name:
+            return "justify"
+    return None
+
+
+def _format_docx_runs(para) -> str:
+    """Extracts text while preserving bold, italic, code formatting across runs."""
+    if not getattr(para, "runs", None):
+        return para.text.strip()
+    parts = []
+    for run in para.runs:
+        t = run.text
+        if not t:
+            continue
+        lspace = " " if t.startswith(" ") and len(t.strip()) > 0 else ""
+        rspace = " " if t.endswith(" ") and len(t.strip()) > 0 else ""
+        core = t.strip()
+        if not core:
+            parts.append(t)
+            continue
+        if run.bold and run.italic:
+            formatted = f"***{core}***"
+        elif run.bold:
+            formatted = f"**{core}**"
+        elif run.italic:
+            formatted = f"*{core}*"
+        else:
+            formatted = core
+        parts.append(f"{lspace}{formatted}{rspace}")
+    res = "".join(parts).strip()
+    return res if res else para.text.strip()
+
+
+def _format_docx_table(table) -> str:
+    """Formats docx table with cell alignments and headers."""
+    if not table.rows:
+        return ""
+    has_custom_align = False
+    for row in table.rows:
+        for cell in row.cells:
+            for p in cell.paragraphs:
+                if _get_docx_para_alignment(p):
+                    has_custom_align = True
+                    break
+            if has_custom_align:
+                break
+        if has_custom_align:
+            break
+
+    if has_custom_align:
+        html_rows = []
+        is_first = True
+        for row in table.rows:
+            tag = "th" if is_first else "td"
+            cell_htmls = []
+            for cell in row.cells:
+                cell_text = " ".join([_format_docx_runs(p) for p in cell.paragraphs if p.text.strip()]).strip()
+                cell_align = None
+                for p in cell.paragraphs:
+                    a = _get_docx_para_alignment(p)
+                    if a:
+                        cell_align = a
+                        break
+                style_attr = f' style="text-align: {cell_align};"' if cell_align else ""
+                cell_htmls.append(f"    <{tag}{style_attr}>{cell_text or '&nbsp;'}</{tag}>")
+            html_rows.append("  <tr>\n" + "\n".join(cell_htmls) + "\n  </tr>")
+            is_first = False
+        return '<table class="doc-render-table">\n' + "\n".join(html_rows) + "\n</table>"
+    else:
+        table_md = []
+        headers = [" ".join([p.text.strip() for p in cell.paragraphs if p.text.strip()]).replace("\n", " ") for cell in table.rows[0].cells]
+        table_md.append("| " + " | ".join(headers) + " |")
+        table_md.append("| " + " | ".join(["---"] * len(headers)) + " |")
+        for row in table.rows[1:]:
+            row_vals = [" ".join([p.text.strip() for p in cell.paragraphs if p.text.strip()]).replace("\n", " ") for cell in row.cells]
+            table_md.append("| " + " | ".join(row_vals) + " |")
+        return "\n".join(table_md)
+
+
 def _parse_docx(filepath: str, title: str) -> Tuple[str, List[Dict[str, Any]]]:
-    """Extracts Word document paragraphs, headings, and tables into structured markdown."""
+    """Extracts Word document paragraphs, headings, and tables in natural order while preserving alignment."""
     try:
         import docx
+        from docx.text.paragraph import Paragraph
+        from docx.table import Table
         doc = docx.Document(filepath)
     except Exception as e:
         return f"# {title}\n\n*Error reading docx: {str(e)}*", []
@@ -262,48 +370,138 @@ def _parse_docx(filepath: str, title: str) -> Tuple[str, List[Dict[str, Any]]]:
                 sec_idx += 1
             current_block_lines = []
 
-    for para in doc.paragraphs:
-        text = para.text.strip()
-        if not text:
-            continue
+    # Extract body elements in document order
+    body_elements = []
+    try:
+        for child in doc.element.body:
+            if child.tag.endswith('p'):
+                body_elements.append(('p', Paragraph(child, doc)))
+            elif child.tag.endswith('tbl'):
+                body_elements.append(('tbl', Table(child, doc)))
+    except Exception:
+        body_elements = [('p', p) for p in doc.paragraphs] + [('tbl', t) for t in doc.tables]
 
-        style_name = (para.style.name or "").lower()
-        if "heading 1" in style_name or style_name == "title":
-            commit_block()
-            current_block_title = text
-            current_block_key = f"sec_{sec_idx + 1}"
-            current_block_lines.append(f"# {text}")
-            md_lines.append(f"# {text}")
-        elif "heading 2" in style_name:
-            commit_block()
-            current_block_title = text
-            current_block_key = f"sec_{sec_idx + 1}"
-            current_block_lines.append(f"## {text}")
-            md_lines.append(f"## {text}")
-        elif "heading 3" in style_name:
-            current_block_lines.append(f"### {text}")
-            md_lines.append(f"### {text}")
-        else:
-            current_block_lines.append(text)
-            md_lines.append(text)
+    for elem_type, elem in body_elements:
+        if elem_type == 'p':
+            para = elem
+            plain_text = para.text.strip()
+            if not plain_text:
+                # Preserve deliberate blank line / empty paragraph gap from Word
+                gap_line = '<p><br></p>'
+                current_block_lines.append(gap_line)
+                md_lines.append(gap_line)
+                continue
 
-    # Tables extraction
-    for table in doc.tables:
-        table_md = []
-        headers = [cell.text.strip().replace("\n", " ") for cell in table.rows[0].cells] if table.rows else []
-        if headers:
-            table_md.append("| " + " | ".join(headers) + " |")
-            table_md.append("| " + " | ".join(["---"] * len(headers)) + " |")
-            for row in table.rows[1:]:
-                row_vals = [cell.text.strip().replace("\n", " ") for cell in row.cells]
-                table_md.append("| " + " | ".join(row_vals) + " |")
-            table_str = "\n".join(table_md)
-            current_block_lines.append(table_str)
-            md_lines.append(table_str)
+            align = _get_docx_para_alignment(para)
+            formatted_text = _format_docx_runs(para)
+            style_name = (para.style.name or "").lower()
+
+            styles = []
+            if align:
+                styles.append(f"text-align: {align}")
+
+            # Extract line spacing (line height) and paragraph margins
+            try:
+                pf = para.paragraph_format
+                if pf.line_spacing is not None:
+                    if isinstance(pf.line_spacing, (float, int)) and pf.line_spacing <= 4.0:
+                        styles.append(f"line-height: {pf.line_spacing}")
+                    elif isinstance(pf.line_spacing, int) and pf.line_spacing > 4.0:
+                        styles.append(f"line-height: {round(pf.line_spacing / 12700, 1)}pt")
+                if pf.space_after is not None and int(pf.space_after) > 0:
+                    styles.append(f"margin-bottom: {round(int(pf.space_after) / 12700, 1)}pt")
+                if pf.space_before is not None and int(pf.space_before) > 0:
+                    styles.append(f"margin-top: {round(int(pf.space_before) / 12700, 1)}pt")
+            except Exception:
+                pass
+
+            style_attr = f' style="{"; ".join(styles)};"' if styles else ""
+
+            if "heading 1" in style_name or style_name == "title":
+                commit_block()
+                current_block_title = plain_text
+                current_block_key = f"sec_{sec_idx + 1}"
+                line = f'<h1{style_attr}>{formatted_text}</h1>' if styles else f"# {formatted_text}"
+                current_block_lines.append(line)
+                md_lines.append(line)
+            elif "heading 2" in style_name:
+                commit_block()
+                current_block_title = plain_text
+                current_block_key = f"sec_{sec_idx + 1}"
+                line = f'<h2{style_attr}>{formatted_text}</h2>' if styles else f"## {formatted_text}"
+                current_block_lines.append(line)
+                md_lines.append(line)
+            elif "heading 3" in style_name:
+                line = f'<h3{style_attr}>{formatted_text}</h3>' if styles else f"### {formatted_text}"
+                current_block_lines.append(line)
+                md_lines.append(line)
+            else:
+                line = f'<p{style_attr}>{formatted_text}</p>' if styles else formatted_text
+                current_block_lines.append(line)
+                md_lines.append(line)
+
+        elif elem_type == 'tbl':
+            tbl_str = _format_docx_table(elem)
+            if tbl_str:
+                current_block_lines.append(tbl_str)
+                md_lines.append(tbl_str)
 
     commit_block()
     full_content = "\n\n".join(md_lines).strip()
     return full_content, blocks
+
+
+def _parse_html_doc(raw_html: str, title: str) -> Tuple[str, List[Dict[str, Any]]]:
+    """Extracts HTML document into structured sections while preserving all styling & alignment."""
+    import re
+    blocks = []
+    body_match = re.search(r"<body[^>]*>(.*?)</body>", raw_html, re.DOTALL | re.IGNORECASE)
+    content = body_match.group(1).strip() if body_match else raw_html.strip()
+    
+    pattern = re.compile(r"(<h[12][^>]*>.*?</h[12]>)", re.IGNORECASE | re.DOTALL)
+    parts = pattern.split(content)
+    
+    if len(parts) > 2:
+        sec_idx = 0
+        current_title = "Overview"
+        current_part = []
+        for p in parts:
+            p_strip = p.strip()
+            if not p_strip:
+                continue
+            h_match = re.match(r"<h[12][^>]*>(.*?)</h[12]>", p_strip, re.IGNORECASE | re.DOTALL)
+            if h_match:
+                if current_part:
+                    sec_content = "\n\n".join(current_part).strip()
+                    if sec_content:
+                        blocks.append({
+                            "block_key": f"sec_{sec_idx}",
+                            "title": current_title,
+                            "content": sec_content,
+                            "order_index": sec_idx
+                        })
+                        sec_idx += 1
+                current_title = re.sub(r"<[^>]+>", "", h_match.group(1)).strip() or f"Section {sec_idx + 1}"
+                current_part = [p_strip]
+            else:
+                current_part.append(p_strip)
+        if current_part:
+            sec_content = "\n\n".join(current_part).strip()
+            if sec_content:
+                blocks.append({
+                    "block_key": f"sec_{sec_idx}",
+                    "title": current_title,
+                    "content": sec_content,
+                    "order_index": sec_idx
+                })
+    else:
+        blocks = [{
+            "block_key": "sec_main",
+            "title": title or "Document Content",
+            "content": content,
+            "order_index": 0
+        }]
+    return content, blocks
 
 
 def _parse_pdf(filepath: str, title: str) -> Tuple[str, List[Dict[str, Any]]]:
@@ -421,6 +619,7 @@ def _parse_pdf(filepath: str, title: str) -> Tuple[str, List[Dict[str, Any]]]:
         content_items = []
         if fitz_page:
             raw_blocks = fitz_page.get_text("blocks")
+            page_width = fitz_page.rect.width
             for b in raw_blocks:
                 if b[6] != 0:  # non-text block
                     continue
@@ -436,15 +635,23 @@ def _parse_pdf(filepath: str, title: str) -> Tuple[str, List[Dict[str, Any]]]:
                         in_table = True
                         break
                 if not in_table:
-                    content_items.append({"y0": by0, "type": "text", "text": btext})
+                    block_align = None
+                    mid_x = (bx0 + bx1) / 2.0
+                    block_width = bx1 - bx0
+                    if page_width > 0:
+                        if abs(mid_x - (page_width / 2.0)) < 25 and block_width < page_width * 0.75:
+                            block_align = "center"
+                        elif bx0 > page_width * 0.55:
+                            block_align = "right"
+                    content_items.append({"y0": by0, "type": "text", "text": btext, "align": block_align})
         elif plumber_page:
             p_text = (plumber_page.extract_text() or "").strip()
             if p_text:
-                content_items.append({"y0": 0, "type": "text", "text": p_text})
+                content_items.append({"y0": 0, "type": "text", "text": p_text, "align": None})
 
         # Add tables at their vertical position y0
         for td in tables_data:
-            content_items.append({"y0": td["bbox"][1], "type": "table", "text": td["md"]})
+            content_items.append({"y0": td["bbox"][1], "type": "table", "text": td["md"], "align": None})
 
         content_items.sort(key=lambda x: x["y0"])
 
@@ -466,6 +673,11 @@ def _parse_pdf(filepath: str, title: str) -> Tuple[str, List[Dict[str, Any]]]:
                 elif len(t.splitlines()) == 1 and len(first_line) < 60 and not first_line.endswith('.') and not first_line.startswith(('•', '-', '*')):
                     is_heading = True
                     heading_title = first_line
+
+            if item.get("align") and not is_heading and item["type"] == "text":
+                lines = [l.strip() for l in t.splitlines() if l.strip()]
+                joined_text = "<br />".join(lines)
+                t = f'<p style="text-align: {item["align"]};">{joined_text}</p>'
 
             if is_heading:
                 if current_sec and current_sec["lines"]:
