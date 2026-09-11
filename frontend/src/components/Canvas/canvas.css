@@ -828,12 +828,14 @@
 }
 
 .doc-list {
-  margin: 0 0 14px 20px;
+  margin: 0 0 14px 26px;
   padding: 0;
+  list-style-type: disc;
 }
 
 .doc-list li {
   margin-bottom: 6px;
+  line-height: 1.7;
 }
 
 .doc-numbered-item {
@@ -1858,12 +1860,14 @@
 }
 
 .doc-ordered-list {
-  margin: 0 0 14px 20px;
+  margin: 0 0 14px 26px;
   padding: 0;
+  list-style-type: decimal;
 }
 
 .doc-ordered-list li {
   margin-bottom: 6px;
+  line-height: 1.7;
 }
 
 .doc-code-block-container {
@@ -2049,8 +2053,21 @@
 
 .doc-unified-wysiwyg ul,
 .doc-unified-wysiwyg ol {
-  margin: 6px 0;
-  padding-left: 22px;
+  margin: 6px 0 12px 0;
+  padding-left: 26px;
+}
+
+.doc-unified-wysiwyg ol {
+  list-style-type: decimal !important;
+}
+
+.doc-unified-wysiwyg ul {
+  list-style-type: disc !important;
+}
+
+.doc-unified-wysiwyg li {
+  margin-bottom: 4px;
+  line-height: 1.7;
 }
 
 /* ── Visual Document Tables in Unified Editor ── */

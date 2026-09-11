@@ -410,6 +410,20 @@ function rawTextToWysiwygHtml(text) {
       continue;
     }
 
+    // Task Checkboxes: - [ ] or - [x]
+    const taskMatch = trimmed.match(/^[-*]\s+\[([ xX])\]\s+(.*)/);
+    if (taskMatch) {
+      if (!inList || listType !== 'ul') {
+        closeList();
+        outLines.push('<ul>');
+        inList = true;
+        listType = 'ul';
+      }
+      const checked = taskMatch[1].toLowerCase() === 'x' ? 'checked' : '';
+      outLines.push(`<li class="doc-task-item"><input type="checkbox" ${checked} disabled class="doc-task-checkbox" /> ${formatInlineToHtml(taskMatch[2])}</li>`);
+      continue;
+    }
+
     // Bullet Lists
     if (trimmed.startsWith('- ') || trimmed.startsWith('* ') || trimmed.startsWith('• ')) {
       if (!inList || listType !== 'ul') {
@@ -423,15 +437,16 @@ function rawTextToWysiwygHtml(text) {
     }
 
     // Numbered Lists
-    const numMatch = trimmed.match(/^(\d+)\.\s+(.*)/);
+    const numMatch = trimmed.match(/^(\d+)[\.\)]\s+(.*)/);
     if (numMatch) {
+      const curNum = parseInt(numMatch[1], 10);
       if (!inList || listType !== 'ol') {
         closeList();
-        outLines.push('<ol>');
+        outLines.push(curNum > 1 ? `<ol start="${curNum}">` : '<ol>');
         inList = true;
         listType = 'ol';
       }
-      outLines.push(`<li>${formatInlineToHtml(numMatch[2])}</li>`);
+      outLines.push(`<li value="${curNum}">${formatInlineToHtml(numMatch[2])}</li>`);
       continue;
     }
 
@@ -556,11 +571,48 @@ function wysiwygHtmlToContent(html) {
     if (tag === 'hr') return '\n---\n';
     if (tag === 'br') return '\n';
 
-    if (tag === 'li') {
-      return `\n- ${childrenText.trim()}`;
-    }
-    if (tag === 'ul' || tag === 'ol') {
+    if (tag === 'ol') {
+      const startAttr = parseInt(node.getAttribute('start') || '1', 10);
+      let count = isNaN(startAttr) ? 1 : startAttr;
+      const items = Array.from(node.children).filter(c => c.tagName.toLowerCase() === 'li');
+      if (items.length > 0) {
+        const itemLines = items.map(li => {
+          const valAttr = parseInt(li.getAttribute('value') || '', 10);
+          const num = !isNaN(valAttr) ? valAttr : count++;
+          const liText = Array.from(li.childNodes).map(nodeToText).join('').trim();
+          return `${num}. ${liText}`;
+        });
+        return `\n${itemLines.join('\n')}\n\n`;
+      }
       return `${childrenText}\n`;
+    }
+
+    if (tag === 'ul') {
+      const items = Array.from(node.children).filter(c => c.tagName.toLowerCase() === 'li');
+      if (items.length > 0) {
+        const itemLines = items.map(li => {
+          const taskCb = li.querySelector('input[type="checkbox"]');
+          let prefix = '- ';
+          if (taskCb) {
+            prefix = taskCb.checked ? '- [x] ' : '- [ ] ';
+          }
+          const liText = Array.from(li.childNodes)
+            .filter(n => n !== taskCb)
+            .map(nodeToText).join('').trim();
+          return `${prefix}${liText}`;
+        });
+        return `\n${itemLines.join('\n')}\n\n`;
+      }
+      return `${childrenText}\n`;
+    }
+
+    if (tag === 'li') {
+      const parentTag = node.parentElement?.tagName.toLowerCase();
+      if (parentTag === 'ol') {
+        const val = node.getAttribute('value');
+        return `\n${val ? val + '.' : '1.'} ${childrenText.trim()}`;
+      }
+      return `\n- ${childrenText.trim()}`;
     }
 
     // Color or highlight span
@@ -666,6 +718,7 @@ function renderMarkdownContent(text, sectionTitle) {
   let inList = false;
   let listItems = [];
   let listType = 'ul'; // 'ul' | 'ol'
+  let listStartNumber = 1;
   let checkedFirstHeading = false;
   let inTable = false;
   let tableRows = [];
@@ -704,33 +757,43 @@ function renderMarkdownContent(text, sectionTitle) {
 
   const flushList = () => {
     if (inList && listItems.length > 0) {
+      const idxKey = elements.length;
       if (listType === 'ol') {
         elements.push(
-          <ol key={`list-${elements.length}`} className="doc-ordered-list">
-            {listItems.map((item, idx) => (
-              <li key={idx}>{formatInline(item)}</li>
-            ))}
+          <ol key={`list-${idxKey}`} start={listStartNumber || 1} className="doc-ordered-list">
+            {listItems.map((item, idx) => {
+              const text = typeof item === 'object' && item !== null ? (item.text ?? '') : String(item);
+              const val = typeof item === 'object' && item !== null && item.num != null ? item.num : (listStartNumber + idx);
+              return (
+                <li key={idx} value={val}>
+                  {formatInline(text)}
+                </li>
+              );
+            })}
           </ol>
         );
       } else {
         elements.push(
-          <ul key={`list-${elements.length}`} className="doc-list">
+          <ul key={`list-${idxKey}`} className="doc-list">
             {listItems.map((item, idx) => {
-              if (item.isTask) {
+              const isTask = typeof item === 'object' && item !== null && !!item.isTask;
+              const text = typeof item === 'object' && item !== null ? (item.text ?? '') : String(item);
+              if (isTask) {
                 return (
                   <li key={idx} className="doc-task-item">
-                    <input type="checkbox" checked={item.checked} readOnly className="doc-task-checkbox" />
-                    <span>{formatInline(item.text)}</span>
+                    <input type="checkbox" checked={!!item.checked} readOnly className="doc-task-checkbox" />
+                    <span>{formatInline(text)}</span>
                   </li>
                 );
               }
-              return <li key={idx}>{formatInline(item.text)}</li>;
+              return <li key={idx}>{formatInline(text)}</li>;
             })}
           </ul>
         );
       }
       listItems = [];
       inList = false;
+      listStartNumber = 1;
     }
   };
 
@@ -1025,6 +1088,9 @@ function renderMarkdownContent(text, sectionTitle) {
     // Task Checkboxes: - [ ] or - [x]
     else if (/^[-*]\s+\[([ xX])\]\s+(.*)/.test(trimmed)) {
       flushParagraph();
+      if (inList && listType !== 'ul') {
+        flushList();
+      }
       const match = trimmed.match(/^[-*]\s+\[([ xX])\]\s+(.*)/);
       inList = true;
       listType = 'ul';
@@ -1034,17 +1100,28 @@ function renderMarkdownContent(text, sectionTitle) {
     // Bullet Lists: - item or * item
     else if (trimmed.startsWith('- ') || trimmed.startsWith('* ') || trimmed.startsWith('• ')) {
       flushParagraph();
+      if (inList && listType !== 'ul') {
+        flushList();
+      }
       inList = true;
       listType = 'ul';
       listItems.push({ isTask: false, text: trimmed.slice(2) });
     }
 
-    // Numbered Lists: 1. item
-    else if (/^\d+\.\s+/.test(trimmed)) {
+    // Numbered Lists: 1. item or 1) item
+    else if (/^(\d+)[\.\)]\s+(.*)/.test(trimmed)) {
       flushParagraph();
+      const numMatch = trimmed.match(/^(\d+)[\.\)]\s+(.*)/);
+      const curNum = parseInt(numMatch[1], 10);
+      if (inList && listType !== 'ol') {
+        flushList();
+      }
+      if (!inList) {
+        listStartNumber = curNum;
+      }
       inList = true;
       listType = 'ol';
-      listItems.push(trimmed.replace(/^\d+\.\s*/, ''));
+      listItems.push({ isTask: false, text: numMatch[2], num: curNum });
     }
 
     // GitHub-Style Alerts: > [!NOTE], > [!TIP], > [!WARNING], > [!IMPORTANT], > [!CAUTION]
@@ -1961,7 +2038,7 @@ export default function PagedDocViewer({
                   {/* Section Heading & Floating Hover Actions */}
                   <div className="doc-section-header">
                     <h2 className="doc-section-heading">
-                      {block.title || block.block_key}
+                      {formatInline(block.title || block.block_key)}
                     </h2>
 
                     {/* Floating Action Pill on Hover */}
