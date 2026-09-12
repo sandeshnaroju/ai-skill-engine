@@ -194,24 +194,54 @@ def decompose_content(content: str, artifact_type: str) -> List[Dict]:
     elif artifact_type == "presentation" and content:
         try:
             deck_data = json.loads(content)
-            if isinstance(deck_data, dict) and "slides" in deck_data:
-                for idx, slide in enumerate(deck_data["slides"]):
+            slides_list = []
+            if isinstance(deck_data, dict):
+                if "slides" in deck_data and isinstance(deck_data["slides"], list):
+                    slides_list = deck_data["slides"]
+                elif "title" in deck_data or "layout" in deck_data:
+                    slides_list = [deck_data]
+            elif isinstance(deck_data, list):
+                slides_list = deck_data
+
+            if slides_list:
+                for idx, slide in enumerate(slides_list):
+                    if isinstance(slide, dict):
+                        s_title = slide.get("title") or slide.get("heading")
+                        if not s_title and "html" in slide:
+                            h_match = re.search(r'<h[12][^>]*>(.*?)</h[12]>', str(slide["html"]), flags=re.IGNORECASE | re.DOTALL)
+                            if h_match:
+                                s_title = re.sub(r'<[^>]+>', '', h_match.group(1)).strip()
+                        s_title = s_title or f"Slide {idx + 1}"
+                        s_content = json.dumps(slide, indent=2)
+                    else:
+                        s_title = f"Slide {idx + 1}"
+                        s_content = str(slide)
                     blocks.append({
                         "block_key": f"slide_{idx + 1}",
-                        "title": slide.get("title") or f"Slide {idx + 1}",
-                        "content": json.dumps(slide, indent=2),
+                        "title": s_title,
+                        "content": s_content,
                         "order_index": idx
                     })
         except Exception:
-            slide_parts = re.split(r'<!--\s*slide\s*-->|---\s*slide\s*---', content, flags=re.IGNORECASE)
-            for idx, part in enumerate(slide_parts):
-                if part.strip():
+            # HTML / Markdown presentations: split on slide comments, section/div tags, markdown horizontal rules, or slide headers
+            slide_parts = re.split(r'<!--\s*slide\s*-->|---\s*slide\s*---|<section[^>]*class=["\']slide[^"\']*["\'][^>]*>|<div[^>]*class=["\']slide[^"\']*["\'][^>]*>|(?:\r?\n)(?:---|---|\*\*\*)\s*(?:\r?\n)|(?=(?:\r?\n)##?\s+Slide\s+\d+)', content, flags=re.IGNORECASE)
+            s_idx = 0
+            for part in slide_parts:
+                part_clean = part.strip()
+                if part_clean:
+                    title_match = re.search(r'<h[12][^>]*>(.*?)</h[12]>|^##?\s+(.+)$', part_clean, flags=re.IGNORECASE | re.MULTILINE)
+                    if title_match:
+                        raw_h = title_match.group(1) or title_match.group(2)
+                        s_title = re.sub(r'<[^>]+>', '', raw_h).strip()
+                    else:
+                        s_title = f"Slide {s_idx + 1}"
                     blocks.append({
-                        "block_key": f"slide_{idx + 1}",
-                        "title": f"Slide {idx + 1}",
-                        "content": part.strip(),
-                        "order_index": idx
+                        "block_key": f"slide_{s_idx + 1}",
+                        "title": s_title,
+                        "content": part_clean,
+                        "order_index": s_idx
                     })
+                    s_idx += 1
 
     elif artifact_type == "spreadsheet" and content:
         try:
@@ -292,7 +322,12 @@ def assemble_full_content(artifact: SessionArtifact) -> str:
     if artifact.artifact_type in ("presentation", "spreadsheet"):
         try:
             if artifact.artifact_type == "presentation":
-                slides = [json.loads(b.content) for b in artifact.blocks]
+                slides = []
+                for b in sorted(artifact.blocks, key=lambda x: x.order_index):
+                    try:
+                        slides.append(json.loads(b.content))
+                    except Exception:
+                        slides.append({"title": b.title, "content": b.content})
                 return json.dumps({"slides": slides}, indent=2)
             elif artifact.artifact_type == "spreadsheet":
                 sheets = [json.loads(b.content) for b in artifact.blocks]
@@ -300,7 +335,18 @@ def assemble_full_content(artifact: SessionArtifact) -> str:
         except Exception:
             pass
 
+    # For CAD artifacts, return only the primary full-drawing block to avoid
+    # duplicating content (main_drawing block already contains the full DXF/model;
+    # section sub-blocks are only for surgical co-editing, not viewer consumption).
+    if artifact.artifact_type in ("cad_2d", "cad_3d"):
+        primary_keys = ("main_drawing", "solid_main")
+        for key in primary_keys:
+            primary = next((b for b in artifact.blocks if b.block_key == key), None)
+            if primary:
+                return primary.content
+
     return "\n\n".join(b.content for b in sorted(artifact.blocks, key=lambda x: x.order_index))
+
 
 
 # ─────────────────────────────────────────────────────────────────────────────

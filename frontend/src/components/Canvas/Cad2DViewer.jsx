@@ -38,6 +38,41 @@ const ACI_COLORS = {
 /**
  * Robust ASCII DXF Parser for CAD drawings
  */
+/**
+ * Helper: read all group-code/value pairs until the next group-code 0 (new entity).
+ * Returns:
+ *   props       – plain object of { [code]: firstValue } for single-occurrence codes
+ *   vertexPairs – array of {x, y} for repeated group-10/20 pairs (LWPOLYLINE vertices)
+ *   nextI       – updated line index after consuming all props
+ */
+function readEntityProps(lines, startI, n) {
+  const props = {};
+  const vertexPairs = [];    // for LWPOLYLINE repeated 10/20 pairs
+  let pendingX = null;
+  let i = startI;
+  while (i < n - 1) {
+    const code = parseInt(lines[i], 10);
+    if (code === 0) break;
+    if (isNaN(code)) { i += 2; continue; }
+    const val = lines[i + 1];
+    i += 2;
+    // Track repeated 10/20 for LWPOLYLINE vertices
+    if (code === 10) {
+      pendingX = parseFloat(val);
+      if (props[10] === undefined) props[10] = val;
+    } else if (code === 20) {
+      if (pendingX !== null) {
+        vertexPairs.push({ x: pendingX, y: parseFloat(val), z: 0 });
+        pendingX = null;
+      }
+      if (props[20] === undefined) props[20] = val;
+    } else {
+      if (props[code] === undefined) props[code] = val;
+    }
+  }
+  return { props, vertexPairs, nextI: i };
+}
+
 function parseDxfContent(dxfText) {
   if (!dxfText) return { entities: [], layers: [] };
 
@@ -58,120 +93,122 @@ function parseDxfContent(dxfText) {
     const val = lines[i + 1];
     i += 2;
 
-    if (code === 0) {
-      if (val === 'SECTION') {
-        if (i < n - 1 && parseInt(lines[i], 10) === 2) {
-          currentSection = lines[i + 1].toUpperCase();
-          i += 2;
-        }
-        continue;
-      }
-      if (val === 'ENDSEC') {
-        currentSection = null;
-        continue;
-      }
-      if (val === 'EOF') {
-        break;
-      }
+    if (code !== 0) continue;   // only act on entity-type lines (code 0)
 
-      // 1. TABLES SECTION -> Parse Layer definitions & colors
-      if (currentSection === 'TABLES') {
-        if (val === 'LAYER') {
-          let layerName = '0';
-          let layerColor = '#38bdf8';
-          while (i < n - 1) {
-            const lCode = parseInt(lines[i], 10);
-            const lVal = lines[i + 1];
-            if (lCode === 0) break;
-            i += 2;
-            if (lCode === 2) layerName = lVal;
-            else if (lCode === 62) {
-              const aci = parseInt(lVal, 10);
-              layerColor = ACI_COLORS[Math.abs(aci)] || '#38bdf8';
-            }
-          }
-          layers.set(layerName, { name: layerName, color: layerColor, visible: true, count: 0 });
-        }
+    // ── Section control ─────────────────────────────────────────────────────
+    if (val === 'SECTION') {
+      if (i < n - 1 && parseInt(lines[i], 10) === 2) {
+        currentSection = lines[i + 1].toUpperCase();
+        i += 2;
       }
+      continue;
+    }
+    if (val === 'ENDSEC') { currentSection = null; continue; }
+    if (val === 'EOF')    { break; }
 
-      // 2. ENTITIES SECTION -> Parse Drawing Entities
-      if (currentSection === 'ENTITIES' || !currentSection) {
-        const entityType = val.toUpperCase();
-        const entity = { type: entityType, layer: '0', color: null, vertices: [] };
-
-        let currentVertex = null;
-
+    // ── TABLES: layer color definitions ─────────────────────────────────────
+    if (currentSection === 'TABLES') {
+      if (val === 'LAYER') {
+        let layerName = '0';
+        let layerColor = '#38bdf8';
         while (i < n - 1) {
-          const eCode = parseInt(lines[i], 10);
-          const eVal = lines[i + 1];
-          if (eCode === 0) break;
+          const lCode = parseInt(lines[i], 10);
+          if (lCode === 0) break;
+          const lVal = lines[i + 1];
           i += 2;
-
-          if (eCode === 8) {
-            entity.layer = eVal;
-          } else if (eCode === 62) {
-            const aci = parseInt(eVal, 10);
-            entity.color = ACI_COLORS[Math.abs(aci)] || null;
-          } else if (eCode === 10) {
-            entity.x = parseFloat(eVal);
-            if (currentVertex) {
-              entity.vertices.push(currentVertex);
-            }
-            currentVertex = { x: parseFloat(eVal), y: 0, z: 0 };
-          } else if (eCode === 20) {
-            entity.y = parseFloat(eVal);
-            if (currentVertex) {
-              currentVertex.y = parseFloat(eVal);
-              if (entityType === 'LWPOLYLINE') {
-                entity.vertices.push(currentVertex);
-                currentVertex = null;
-              }
-            } else {
-              currentVertex = { x: 0, y: parseFloat(eVal), z: 0 };
-              if (entityType === 'LWPOLYLINE') {
-                entity.vertices.push(currentVertex);
-                currentVertex = null;
-              }
-            }
-          } else if (eCode === 30) {
-            entity.z = parseFloat(eVal);
-            if (currentVertex) {
-              currentVertex.z = parseFloat(eVal);
-              entity.vertices.push(currentVertex);
-              currentVertex = null;
-            }
-          } else if (eCode === 11) {
-            entity.x2 = parseFloat(eVal);
-          } else if (eCode === 21) {
-            entity.y2 = parseFloat(eVal);
-          } else if (eCode === 31) {
-            entity.z2 = parseFloat(eVal);
-          } else if (eCode === 40) {
-            entity.radius = parseFloat(eVal);
-            entity.textHeight = parseFloat(eVal);
-          } else if (eCode === 50) {
-            entity.startAngle = parseFloat(eVal);
-            entity.rotation = parseFloat(eVal);
-          } else if (eCode === 51) {
-            entity.endAngle = parseFloat(eVal);
-          } else if (eCode === 1) {
-            entity.text = eVal;
-          } else if (eCode === 70) {
-            entity.flags = parseInt(eVal, 10);
+          if (lCode === 2) layerName = lVal;
+          else if (lCode === 62) {
+            const aci = parseInt(lVal, 10);
+            layerColor = ACI_COLORS[Math.abs(aci)] || '#38bdf8';
           }
         }
+        layers.set(layerName, { name: layerName, color: layerColor, visible: true, count: 0 });
+      } else {
+        // Consume other TABLE records
+        while (i < n - 1 && parseInt(lines[i], 10) !== 0) i += 2;
+      }
+      continue;
+    }
 
-        if (currentVertex) entity.vertices.push(currentVertex);
+    // ── ENTITIES section ────────────────────────────────────────────────────
+    if (currentSection !== 'ENTITIES') continue;
 
-        if (!layers.has(entity.layer)) {
-          layers.set(entity.layer, { name: entity.layer, color: '#38bdf8', visible: true, count: 0 });
+    const entityType = val.toUpperCase();
+
+    // Skip sub-entity markers that belong to R12 POLYLINEs —
+    // they are consumed inline by the POLYLINE handler below.
+    if (entityType === 'VERTEX' || entityType === 'SEQEND') {
+      while (i < n - 1 && parseInt(lines[i], 10) !== 0) i += 2;
+      continue;
+    }
+
+    // ── Read the header property block for this entity ──────────────────────
+    const { props, vertexPairs, nextI } = readEntityProps(lines, i, n);
+    i = nextI;
+
+    const entity = {
+      type:       entityType,
+      layer:      props[8]  || '0',
+      color:      props[62] != null ? (ACI_COLORS[Math.abs(parseInt(props[62], 10))] || null) : null,
+      // Common coordinates
+      x:  props[10] != null ? parseFloat(props[10]) : 0,
+      y:  props[20] != null ? parseFloat(props[20]) : 0,
+      z:  props[30] != null ? parseFloat(props[30]) : 0,
+      x2: props[11] != null ? parseFloat(props[11]) : undefined,
+      y2: props[21] != null ? parseFloat(props[21]) : undefined,
+      // Geometry params
+      radius:     props[40] != null ? parseFloat(props[40]) : undefined,
+      textHeight: props[40] != null ? parseFloat(props[40]) : undefined,
+      startAngle: props[50] != null ? parseFloat(props[50]) : undefined,
+      endAngle:   props[51] != null ? parseFloat(props[51]) : undefined,
+      rotation:   props[50] != null ? parseFloat(props[50]) : undefined,
+      flags:      props[70] != null ? parseInt(props[70], 10) : 0,
+      text:       props[1]  || undefined,
+      vertices:   [],
+    };
+
+    // ── R12 POLYLINE: consume VERTEX + SEQEND sub-entities ──────────────────
+    if (entityType === 'POLYLINE') {
+      while (i < n - 1) {
+        if (parseInt(lines[i], 10) !== 0) { i += 2; continue; }
+        const subType = lines[i + 1].toUpperCase();
+        i += 2;
+        if (subType === 'SEQEND') {
+          while (i < n - 1 && parseInt(lines[i], 10) !== 0) i += 2;
+          break;
         }
-        layers.get(entity.layer).count += 1;
-        if (!entity.color) entity.color = layers.get(entity.layer).color;
-
-        entities.push(entity);
+        if (subType === 'VERTEX') {
+          const { props: vp, nextI: vi } = readEntityProps(lines, i, n);
+          i = vi;
+          const vflags = vp[70] != null ? parseInt(vp[70], 10) : 0;
+          // Skip spline-frame control vertices (flags 0x10, 0x20) — only real geometry vertices
+          if (!(vflags & 0x10) && !(vflags & 0x20)) {
+            entity.vertices.push({
+              x: vp[10] != null ? parseFloat(vp[10]) : 0,
+              y: vp[20] != null ? parseFloat(vp[20]) : 0,
+              z: vp[30] != null ? parseFloat(vp[30]) : 0,
+            });
+          }
+        } else {
+          i -= 2;   // put back — not a VERTEX/SEQEND, let the outer loop handle it
+          break;
+        }
       }
     }
+
+    // ── LWPOLYLINE: inline vertices from repeated group 10/20 pairs ──────────
+    if (entityType === 'LWPOLYLINE') {
+      entity.vertices = vertexPairs;  // already built by readEntityProps
+    }
+
+    // Register layer if not already seen
+    if (!layers.has(entity.layer)) {
+      layers.set(entity.layer, { name: entity.layer, color: '#38bdf8', visible: true, count: 0 });
+    }
+    layers.get(entity.layer).count += 1;
+    if (!entity.color) entity.color = layers.get(entity.layer).color;
+
+    entities.push(entity);
   }
 
   // Fallback default layer if none registered
@@ -181,6 +218,7 @@ function parseDxfContent(dxfText) {
 
   return { entities, layers: Array.from(layers.values()) };
 }
+
 
 export default function Cad2DViewer({ fullContent, artifact, token, filename = 'drawing.dxf' }) {
   const containerRef = useRef(null);
