@@ -959,6 +959,7 @@ function CanvasInner({ isEmbed = false, artifactId: propArtifactId, token: propT
               token={currentToken}
               theme={theme}
               onOpenHistory={(key, title) => setHistoryModal({ blockKey: key, blockTitle: title })}
+              onBlockUpdated={handleBlockUpdated}
             />
           )}
 
@@ -1002,7 +1003,11 @@ function CanvasInner({ isEmbed = false, artifactId: propArtifactId, token: propT
 
           {artType === 'cad_2d' && (
             <Cad2DViewer
-              fullContent={artifact?.full_content || (blocks && blocks.length ? blocks.map(b => b.content || '').join('\n') : '')}
+              fullContent={
+                artifact?.full_content ||
+                (blocks && blocks.find(b => b.block_key === 'main_drawing')?.content) ||
+                (blocks && blocks.length ? blocks.map(b => b.content || '').join('\n') : '')
+              }
               artifact={artifact}
               token={currentToken}
               filename={artifact?.filename || 'drawing.dxf'}

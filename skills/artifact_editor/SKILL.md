@@ -3,7 +3,7 @@ name: artifact_editor
 description: Skill for generating, searching, reading, surgically editing, and rolling back digital artifacts (code scripts, 1000-page documents, spreadsheets, presentations, SVG diagrams, 2D/3D CAD drawings, geospatial maps, and industrial automation/schedules).
 tools:
   - name: open_or_update_artifact
-    description: Create a new digital artifact or update an entire artifact. Call this whenever the user asks to write code, draft a contract/document, create a presentation deck, generate a spreadsheet, draw an SVG diagram, generate 2D CAD blueprints (.dxf/.dwg), 3D solid models (.step/.stl/.obj), geospatial maps (.geojson/.kml), or industrial logic/schedules (.l5x/.xer/.m) so the user can interactively preview, edit, inspect, and export it in the Canvas.
+    description: "Create a new digital artifact or update an entire artifact. Call this whenever the user asks to write code, draft a contract/document, create a presentation deck (adding visuals using inline SVGs is mandatory on every slide), generate a spreadsheet, draw an SVG diagram, generate 2D CAD blueprints (.dxf/.dwg), 3D solid models (.step/.stl/.obj), geospatial maps (.geojson/.kml), or industrial logic/schedules (.l5x/.xer/.m) so the user can interactively preview, edit, inspect, and export it in the Canvas. CRITICAL: For any 3D request, read the '3D Disambiguation' guideline below before choosing artifact_type."
     type: code
     parameters:
       type: object
@@ -169,13 +169,31 @@ Use this skill whenever generating, modifying, or refining digital artifacts for
    - Format content as JSON containing `sheet_name`, `columns`, and `rows`.
    - Formulas should start with `=` (e.g. `"=SUM(B2:B10)"`, `"=B2*C2"`).
 4. **Presentations (`.pptx` or presentation decks)**:
-   - The LLM has complete creative freedom to dynamically decide the theme, visual atmosphere, color palettes, gradients, and layout for each presentation slide based on the user's specific query topic and brand tone.
-   - Format content as JSON containing an array of `slides` with rich dynamic visual layouts and custom styling:
-     - `bg` / `background`: Bespoke background gradients or colors (e.g. radial/linear gradients, dark glassmorphism, sleek light minimal, neo-brutalist, or neon cyber).
-     - `accent` / `accent_color`: Topic-matched accent colors (e.g. gold/emerald for finance, violet/cyan for AI, crimson/slate for cybersecurity).
-     - `card_bg`, `card_border`, `text_color`, `subtext_color`: Dynamic matching surface tokens.
-     - `layout`: Choose or invent an innovative layout per slide (`hero`, `stats`, `timeline`, `matrix`, `split`, `quote`, `custom_html`).
-     - Include `speaker_notes` where helpful for presentations.
+   - **MANDATORY: Adding Visuals Using Inline SVGs is Strictly Required on Every Slide**:
+     - **Adding visuals using inline `<svg>` is mandatory for every slide without exception.**
+     - Text-only slides are strictly prohibited. Presentations must communicate visually; every slide must feature visual elements built with inline `<svg>` graphics (such as diagrams, visual schematics, concept illustrations, iconography, flow elements, or visual data indicators) to make ideas immediately understandable at a glance.
+     - All visuals must be valid inline `<svg>` elements with a proper `viewBox` (e.g. `viewBox="0 0 24 24"` or custom coordinate box) and styled to harmonize with the slide's visual design.
+   - **Visual Design & Creative Freedom**:
+     - You have full creative freedom to decide what visuals, content, styling, colors, and layout best suit the user's topic. Plan and design each slide dynamically at runtime based entirely on the user's specific request.
+     - Ensure the outer slide container fills the 16:9 canvas (`width: 100%; height: 100%; box-sizing: border-box; overflow: hidden;`).
+   - **Format Specification**:
+     - Emit a JSON object with `title` and a `slides` array containing `title`, `html`, and `notes`:
+       ```json
+       {
+         "title": "Presentation Title",
+         "slides": [
+           {
+             "title": "Slide Title",
+             "html": "<div style=\"width: 100%; height: 100%; box-sizing: border-box; ...\"><svg ...>...</svg>... Slide HTML with mandatory inline SVG visuals ...</div>",
+             "notes": "Speaker notes for this slide."
+           }
+         ]
+       }
+       ```
+   - **Editable Text**:
+     - Wrap all text copy inside standard semantic HTML elements (`<h1>`, `<h2>`, `<h3>`, `<p>`, `<span>`, `<li>`, `<strong>`) so the user can click on any text to edit it directly in the interactive Canvas.
+   - **Speaker Notes**:
+     - Include helpful speaker notes for each slide.
 5. **Diagrams & Vector Graphics (`.svg`, `.vsdx`)**:
    - For `.svg`: Emit valid standalone `<svg>` tags with `viewBox`, clean styling, and modern color palettes.
    - For diagrams / workflows: Use `artifact_type="diagram"` or `"diagram_svg"`.
@@ -192,6 +210,22 @@ Use this skill whenever generating, modifying, or refining digital artifacts for
    - Set `artifact_type="engineering_data"`.
    - For Rockwell Studio 5000 / ControlLogix (`.l5x`): Emit valid RSLogix XML containing `<RSLogix5000Content>`, `<Controller>`, `<Tags>`, and `<Routines>`.
    - For Primavera P6 (`.xer`): Emit valid P6 exchange format tables (`%T`, `%F`, `CALENDAR`, `TASK`, `PROJWBS`).
+
+---
+
+### ⚠️ CRITICAL: 3D Disambiguation — HTML/Web vs. CAD 3D
+
+When the user mentions anything "3D", you **must** determine intent before choosing an artifact type:
+
+| User Intent | Examples | Correct `artifact_type` | Viewer |
+|---|---|---|---|
+| **Interactive 3D visualization, animation, or scene** | "Show a 3D rotating globe", "3D bar chart", "3D solar system animation", "3D product showcase", "visualize this data in 3D", "3D network graph", "3D brain scan viewer" | `"code"` with `language="html"` using Three.js / WebGL | HTML Iframe Viewer |
+| **Printable/downloadable engineering solid model** | "Design a 3D gear part", "Create a 3D housing enclosure for my PCB", "Generate a 3D flange model", "Make a 3D bracket in STEP format" | `"cad_3d"` with `.step`, `.stl`, or `.obj` filename | CAD 3D Viewer |
+
+**Decision Rule:**
+- If the user wants to **see, animate, explore, interact with, or visualize** something in 3D → use **`artifact_type="code"`, `language="html"`**. Write an HTML page using Three.js (via CDN: `https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js`) with an animated, interactive scene.
+- If the user wants to **design, export, manufacture, or print** a physical solid model → use **`artifact_type="cad_3d"`** with `.obj` / `.stl` / `.step`.
+- When ambiguous (e.g., just "show me a 3D cube"), **default to HTML** — it is richer, interactive, and always works in the browser. Only use CAD 3D when the user explicitly mentions manufacturing, printing, STEP, STL, OBJ, or engineering part creation.
 
 ### 📂 Guidelines for Opening Uploaded User Files:
 When a user uploads a file in the chat and asks to inspect, open, review, or edit it (e.g. *"open this report in canvas"*, *"edit slide 3"*, *"show me the budget spreadsheet in editor"*, *"inspect this CAD drawing"*):

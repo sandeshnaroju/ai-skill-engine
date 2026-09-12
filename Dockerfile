@@ -20,27 +20,33 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONPATH=/app/backend
 
-# Install Docker CLI + Node.js 20 LTS (for stdio MCP server support via npx)
+# Install Docker CLI + Node.js 20 LTS + Chromium (for high-fidelity PPTX slide rendering)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     ca-certificates \
     gnupg \
     lsb-release \
+    chromium \
+    fonts-liberation \
+    fonts-noto-color-emoji \
     && mkdir -p /etc/apt/keyrings \
     && curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg \
     && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null \
     && apt-get update && apt-get install -y --no-install-recommends docker-ce-cli \
     && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
+    && npm install -g puppeteer-core \
     && rm -rf /var/lib/apt/lists/*
+
+ENV NODE_PATH=/usr/lib/node_modules
+
+# Copy and install backend requirements (cached unless requirements.txt changes)
+COPY backend/requirements.txt ./backend/requirements.txt
+RUN pip install --no-cache-dir -r backend/requirements.txt
 
 # Pre-create standard sandbox directory, and copy skills folder directly into the image
 RUN mkdir -p /app/sandbox
 COPY skills/ ./skills
-
-# Copy and install backend requirements
-COPY backend/requirements.txt ./backend/requirements.txt
-RUN pip install --no-cache-dir -r backend/requirements.txt
 
 # Copy backend application code
 COPY backend/ ./backend
