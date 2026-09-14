@@ -53,7 +53,7 @@ def run_open_or_update_artifact(db, args: dict, tenant, session_id: str) -> dict
             artifact_type = "cad_3d"
         elif fn.endswith((".geojson", ".kml", ".kmz", ".shp")):
             artifact_type = "gis"
-        elif fn.endswith((".vsdx",)):
+        elif fn.endswith((".vsdx", ".vsd")):
             artifact_type = "diagram"
         elif fn.endswith((".l5x", ".l5k", ".s7p", ".xer", ".m", ".slx")):
             artifact_type = "engineering_data"

@@ -535,6 +535,12 @@ export default function ChatPlayground({ isSidebarOpen, toggleSidebar }) {
           setSelectedModel('');
         }
       }
+
+      // Default Multimodal Sub-Agent dropdowns to the first model
+      const firstAvailableModel = (nonProchat.length > 0 ? nonProchat[0] : (items[0] || null))?.model_name || '';
+      setImageModel(prev => prev && items.some(m => m.model_name === prev) ? prev : firstAvailableModel);
+      setAudioModel(prev => prev && items.some(m => m.model_name === prev) ? prev : firstAvailableModel);
+      setVideoModel(prev => prev && items.some(m => m.model_name === prev) ? prev : firstAvailableModel);
     } catch (e) {
       console.error('Failed to fetch playground models:', e);
     }

@@ -183,23 +183,186 @@ def _parse_engineering_data(filepath: str, filename: str, ext: str) -> Tuple[str
     return raw_text, blocks
 
 
+import os
+import shutil
+import subprocess
+import tempfile
+import zipfile
+import xml.etree.ElementTree as ET
+
+
+import base64
+
+
+def _convert_embedded_emf_to_svg(raw_markup: str) -> str:
+    """
+    Browsers cannot render data:image/emf or data:image/wmf images embedded in SVGs.
+    Converts data:image/emf base64 payloads to standard data:image/svg+xml;base64 payloads
+    using emf2svg-conv (from emf2svg package).
+    """
+    if "data:image/emf" not in raw_markup and "data:image/wmf" not in raw_markup:
+        return raw_markup
+
+    conv_bin = shutil.which("emf2svg-conv") or "/usr/bin/emf2svg-conv"
+    if not os.path.exists(conv_bin) and not shutil.which("emf2svg-conv"):
+        return raw_markup
+
+    def _replace_emf(match):
+        b64_data = match.group(1)
+        try:
+            raw_bytes = base64.b64decode(b64_data)
+            with tempfile.NamedTemporaryFile(suffix=".emf", delete=False) as f_in, tempfile.NamedTemporaryFile(suffix=".svg", delete=False) as f_out:
+                f_in.write(raw_bytes)
+                f_in.flush()
+                in_path, out_path = f_in.name, f_out.name
+
+            cmd = [conv_bin, "-p", "-i", in_path, "-o", out_path]
+            res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=10)
+            if res.returncode == 0 and os.path.exists(out_path):
+                with open(out_path, "rb") as sf:
+                    svg_bytes = sf.read()
+                if os.path.exists(in_path):
+                    os.unlink(in_path)
+                if os.path.exists(out_path):
+                    os.unlink(out_path)
+                if svg_bytes and b"<svg" in svg_bytes:
+                    new_b64 = base64.b64encode(svg_bytes).decode("ascii")
+                    return f"data:image/svg+xml;base64,{new_b64}"
+            if os.path.exists(in_path):
+                os.unlink(in_path)
+            if os.path.exists(out_path):
+                os.unlink(out_path)
+        except Exception:
+            pass
+        return match.group(0)
+
+    # Convert both data:image/emf and data:image/wmf
+    cleaned = re.sub(r'data:image/(?:emf|wmf);base64,([A-Za-z0-9+/=]+)', _replace_emf, raw_markup)
+    return cleaned
+
+
+def _convert_visio_to_svg(filepath: str, ext: str) -> str:
+    """
+    Converts a Visio document (.vsd or .vsdx) to an SVG string.
+    Tries vsd2xhtml (from libvisio-tools), then soffice (LibreOffice),
+    and for .vsdx, falls back to direct XML extraction.
+    """
+    # Method 1: vsd2xhtml (libvisio-tools)
+    vsd2xhtml_bin = shutil.which("vsd2xhtml") or "/usr/bin/vsd2xhtml" or "/usr/local/bin/vsd2xhtml"
+    if os.path.exists(vsd2xhtml_bin) or shutil.which("vsd2xhtml"):
+        try:
+            cmd = [vsd2xhtml_bin, filepath]
+            res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=30)
+            if res.returncode == 0 and ("<svg" in res.stdout or "<svg:svg" in res.stdout):
+                # Clean up <svg:...> namespace prefixes produced by vsd2xhtml
+                cleaned_stdout = re.sub(r'</?svg:', lambda m: '</' if m.group(0).startswith('</') else '<', res.stdout)
+                # Convert any Windows Metafile (EMF/WMF) embedded stencils/shapes into web-renderable SVG data URIs
+                cleaned_stdout = _convert_embedded_emf_to_svg(cleaned_stdout)
+                # Extract all svg blocks or the main svg block from the output
+                svg_matches = re.findall(r"(<svg[\s\S]*?<\/svg>)", cleaned_stdout, re.IGNORECASE)
+                if svg_matches:
+                    return "\n".join(svg_matches)
+                return cleaned_stdout
+        except Exception:
+            pass
+
+    # Method 2: LibreOffice (soffice) headless conversion
+    soffice_bin = shutil.which("soffice") or shutil.which("libreoffice") or "/usr/local/bin/soffice" or "/usr/bin/soffice"
+    if soffice_bin and (os.path.exists(soffice_bin) or shutil.which("soffice") or shutil.which("libreoffice")):
+        try:
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                res = subprocess.run(
+                    [soffice_bin, "--headless", "--convert-to", "svg", filepath, "--outdir", tmp_dir],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    timeout=45
+                )
+                if res.returncode == 0:
+                    svg_files = [os.path.join(tmp_dir, f) for f in os.listdir(tmp_dir) if f.lower().endswith(".svg")]
+                    if svg_files:
+                        with open(svg_files[0], "r", encoding="utf-8", errors="replace") as sf:
+                            return sf.read()
+        except Exception:
+            pass
+
+    # Method 3: For .vsdx, check if it's a zip and extract drawing/shape XMLs or embedded media
+    if ext == ".vsdx":
+        try:
+            with zipfile.ZipFile(filepath, "r") as z:
+                # Check for any embedded svg files
+                svg_names = [n for n in z.namelist() if n.lower().endswith(".svg")]
+                if svg_names:
+                    with z.open(svg_names[0]) as sf:
+                        return sf.read().decode("utf-8", errors="replace")
+                
+                # Check for pages and construct basic SVG preview
+                page_files = [n for n in z.namelist() if "visio/pages/page" in n.lower() and n.endswith(".xml")]
+                if page_files:
+                    # Construct an SVG representation with text from shapes
+                    svg_elements = ['<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 800" width="100%" height="100%">']
+                    svg_elements.append('<style>text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 14px; fill: #e2e8f0; } rect { fill: #1e293b; stroke: #38bdf8; stroke-width: 2; rx: 6; }</style>')
+                    svg_elements.append('<rect width="100%" height="100%" fill="#0f172a" />')
+                    
+                    y = 50
+                    for p_file in page_files[:3]:
+                        try:
+                            root = ET.fromstring(z.read(p_file))
+                            ns = {"v": root.tag.split("}")[0].strip("{")} if "}" in root.tag else {}
+                            texts = []
+                            for elem in root.iter():
+                                if elem.tag.endswith("Text") and elem.text:
+                                    texts.append(elem.text.strip())
+                                elif elem.text and elem.text.strip():
+                                    if len(elem.text.strip()) > 2 and not elem.tag.endswith("Shape"):
+                                        texts.append(elem.text.strip())
+                            
+                            svg_elements.append(f'<g id="page_{os.path.basename(p_file).replace(".xml", "")}">')
+                            svg_elements.append(f'<text x="40" y="{y}" font-size="18" font-weight="bold" fill="#38bdf8">Page: {os.path.basename(p_file)}</text>')
+                            y += 35
+                            for t in texts[:15]:
+                                svg_elements.append(f'<g transform="translate(40, {y})"><rect x="0" y="0" width="300" height="40" /><text x="15" y="25">{t[:40]}</text></g>')
+                                y += 50
+                                if y > 720:
+                                    break
+                            svg_elements.append('</g>')
+                        except Exception:
+                            continue
+                    svg_elements.append('</svg>')
+                    return "\n".join(svg_elements)
+        except Exception:
+            pass
+
+    return ""
+
+
 def _parse_diagram(filepath: str, filename: str, ext: str) -> Tuple[str, List[Dict[str, Any]]]:
     """
-    Parses vector drawings & diagrams (.svg, .vsdx).
+    Parses vector drawings & diagrams (.svg, .vsdx, .vsd).
+    For .vsd and .vsdx: converts to SVG markup, then extracts blocks by groups/pages.
     For SVG: Decomposes by root layers / group elements (`<g id="...">` or `<g label="...">`).
     """
     blocks = []
-    try:
-        with open(filepath, "r", encoding="utf-8", errors="replace") as f:
-            raw_text = f.read()
-    except Exception as e:
-        content = f"// Error reading diagram {filename}: {str(e)}"
-        return content, [{"block_key": "diag_error", "title": "Error", "content": content, "order_index": 0}]
+    raw_text = ""
 
-    if ext == ".svg":
+    if ext in (".vsd", ".vsdx"):
+        svg_content = _convert_visio_to_svg(filepath, ext)
+        if svg_content and "<svg" in svg_content.lower():
+            raw_text = svg_content
+        else:
+            raw_text = f"// Visio Diagram: {filename}\n// Vector conversion in progress or libvisio is parsing document."
+    else:
+        try:
+            with open(filepath, "r", encoding="utf-8", errors="replace") as f:
+                raw_text = f.read()
+        except Exception as e:
+            content = f"// Error reading diagram {filename}: {str(e)}"
+            return content, [{"block_key": "diag_error", "title": "Error", "content": content, "order_index": 0}]
+
+    if "<svg" in raw_text.lower():
+        title_prefix = "Visio Diagram" if ext in (".vsd", ".vsdx") else "Vector Graphic"
         blocks.append({
             "block_key": "diag_main",
-            "title": f"Vector Graphic: {filename}",
+            "title": f"{title_prefix}: {filename}",
             "content": raw_text,
             "order_index": 0
         })
@@ -215,7 +378,7 @@ def _parse_diagram(filepath: str, filename: str, ext: str) -> Tuple[str, List[Di
                     continue
                 blocks.append({
                     "block_key": f"layer_{g_id.lower()}",
-                    "title": f"SVG Group: {g_id}",
+                    "title": f"Diagram Layer: {g_id}",
                     "content": g_full,
                     "order_index": idx
                 })
@@ -224,7 +387,7 @@ def _parse_diagram(filepath: str, filename: str, ext: str) -> Tuple[str, List[Di
     if not blocks:
         blocks.append({
             "block_key": "diag_main",
-            "title": f"Vector Diagram: {filename}",
+            "title": f"Diagram: {filename}",
             "content": raw_text,
             "order_index": 0
         })

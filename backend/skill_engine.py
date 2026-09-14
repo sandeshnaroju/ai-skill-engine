@@ -306,10 +306,17 @@ def _build_messages(db, persist, session_obj, user_message, allowed_skills, user
 
 
 def _resolve_model(db, tenant, model_name):
-    """Return model_name, falling back to first active tenant model or default."""
-    if model_name:
-        return model_name
+    """Return model_name if configured and active for this tenant, falling back to first active tenant model or default."""
     from models import TenantLLM
+    if model_name and model_name.lower() not in ("default", ""):
+        existing = db.query(TenantLLM).filter(
+            TenantLLM.tenant_id == tenant.id,
+            TenantLLM.model_name == model_name,
+            TenantLLM.is_active == True
+        ).first()
+        if existing:
+            return existing.model_name
+
     first = db.query(TenantLLM).filter(
         TenantLLM.tenant_id == tenant.id,
         TenantLLM.is_active == True

@@ -105,7 +105,7 @@ def export_artifact(artifact: SessionArtifact, target_format: str = None) -> Tup
         mime = "application/geo+json"
     elif ext in ("kml", "kmz"):
         mime = "application/vnd.google-earth.kml+xml" if ext == "kml" else "application/vnd.google-earth.kmz"
-    elif ext == "vsdx":
+    elif ext in ("vsdx", "vsd"):
         mime = "application/vnd.visio"
     elif ext in ("l5x", "l5k"):
         mime = "application/xml"
