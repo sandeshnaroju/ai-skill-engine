@@ -34,10 +34,11 @@ const ACI_COLORS = {
   8: '#64748b', // Dark Gray
   9: '#94a3b8', // Light Gray
 };
+const VALID_ENTITIES = new Set([
+  'LINE', 'LWPOLYLINE', 'POLYLINE', 'CIRCLE', 'ARC', 'ELLIPSE', 
+  'SPLINE', 'SOLID', '3DFACE', 'TRACE', 'TEXT', 'MTEXT', 'INSERT'
+]);
 
-/**
- * Robust ASCII DXF Parser for CAD drawings
- */
 /**
  * Helper: read all group-code/value pairs until the next group-code 0 (new entity).
  * Returns:
@@ -45,18 +46,20 @@ const ACI_COLORS = {
  *   vertexPairs – array of {x, y} for repeated group-10/20 pairs (LWPOLYLINE vertices)
  *   nextI       – updated line index after consuming all props
  */
-function readEntityProps(lines, startI, n) {
+/**
+ * Helper: read all group-code/value pairs until the next code 0 (new entity / record).
+ */
+function readEntityPropsFromPairs(pairs, startIdx, numPairs) {
   const props = {};
-  const vertexPairs = [];    // for LWPOLYLINE repeated 10/20 pairs
+  const vertexPairs = []; // for LWPOLYLINE repeated 10/20 pairs
   let pendingX = null;
-  let i = startI;
-  while (i < n - 1) {
-    const code = parseInt(lines[i], 10);
+  let p = startIdx;
+
+  while (p < numPairs) {
+    const [code, val] = pairs[p];
     if (code === 0) break;
-    if (isNaN(code)) { i += 2; continue; }
-    const val = lines[i + 1];
-    i += 2;
-    // Track repeated 10/20 for LWPOLYLINE vertices
+    p++;
+
     if (code === 10) {
       pendingX = parseFloat(val);
       if (props[10] === undefined) props[10] = val;
@@ -70,52 +73,73 @@ function readEntityProps(lines, startI, n) {
       if (props[code] === undefined) props[code] = val;
     }
   }
-  return { props, vertexPairs, nextI: i };
+
+  return { props, vertexPairs, nextIdx: p };
 }
 
 function parseDxfContent(dxfText) {
   if (!dxfText) return { entities: [], layers: [] };
 
-  const lines = dxfText
-    .split(/\r?\n/)
-    .map((l) => l.trim())
-    .filter((l) => l.length > 0);
+  // CRITICAL: Preserve empty value lines so group-code and value parity is strictly maintained!
+  const rawLines = dxfText.split(/\r?\n/);
+  const pairs = [];
+  let lineIdx = 0;
+  while (lineIdx < rawLines.length - 1) {
+    const codeStr = rawLines[lineIdx].trim();
+    const valStr = rawLines[lineIdx + 1].trim();
+    lineIdx += 2;
+    const code = parseInt(codeStr, 10);
+    if (!isNaN(code)) {
+      pairs.push([code, valStr]);
+    }
+  }
 
   const entities = [];
   const layers = new Map();
+  const blocksMap = new Map(); // blockName -> array of sub-entities
 
-  let i = 0;
-  const n = lines.length;
+  let p = 0;
+  const numPairs = pairs.length;
   let currentSection = null;
+  let currentBlock = null; // currently parsing block definition
 
-  while (i < n - 1) {
-    const code = parseInt(lines[i], 10);
-    const val = lines[i + 1];
-    i += 2;
+  while (p < numPairs) {
+    const [code, val] = pairs[p];
+    p++;
 
-    if (code !== 0) continue;   // only act on entity-type lines (code 0)
+    if (code !== 0) continue; // Only act on record/entity-level tokens (code 0)
+
+    const valUpper = val.toUpperCase();
 
     // ── Section control ─────────────────────────────────────────────────────
-    if (val === 'SECTION') {
-      if (i < n - 1 && parseInt(lines[i], 10) === 2) {
-        currentSection = lines[i + 1].toUpperCase();
-        i += 2;
+    if (valUpper === 'SECTION') {
+      if (p < numPairs && pairs[p][0] === 2) {
+        currentSection = pairs[p][1].toUpperCase();
+        p++;
       }
       continue;
     }
-    if (val === 'ENDSEC') { currentSection = null; continue; }
-    if (val === 'EOF')    { break; }
+    if (valUpper === 'ENDSEC') {
+      currentSection = null;
+      currentBlock = null;
+      continue;
+    }
+    if (valUpper === 'EOF') {
+      // In multi-part or concatenated DXF files, an EOF may appear before subsequent sections.
+      // Reset section state and continue so all entities across all sections are parsed completely.
+      currentSection = null;
+      currentBlock = null;
+      continue;
+    }
 
-    // ── TABLES: layer color definitions ─────────────────────────────────────
+    // ── TABLES: Layer definitions ───────────────────────────────────────────
     if (currentSection === 'TABLES') {
-      if (val === 'LAYER') {
+      if (valUpper === 'LAYER') {
         let layerName = '0';
         let layerColor = '#38bdf8';
-        while (i < n - 1) {
-          const lCode = parseInt(lines[i], 10);
-          if (lCode === 0) break;
-          const lVal = lines[i + 1];
-          i += 2;
+        while (p < numPairs && pairs[p][0] !== 0) {
+          const [lCode, lVal] = pairs[p];
+          p++;
           if (lCode === 2) layerName = lVal;
           else if (lCode === 62) {
             const aci = parseInt(lVal, 10);
@@ -123,28 +147,71 @@ function parseDxfContent(dxfText) {
           }
         }
         layers.set(layerName, { name: layerName, color: layerColor, visible: true, count: 0 });
-      } else {
-        // Consume other TABLE records
-        while (i < n - 1 && parseInt(lines[i], 10) !== 0) i += 2;
       }
       continue;
     }
 
-    // ── ENTITIES section ────────────────────────────────────────────────────
-    if (currentSection !== 'ENTITIES') continue;
-
-    const entityType = val.toUpperCase();
-
-    // Skip sub-entity markers that belong to R12 POLYLINEs —
-    // they are consumed inline by the POLYLINE handler below.
-    if (entityType === 'VERTEX' || entityType === 'SEQEND') {
-      while (i < n - 1 && parseInt(lines[i], 10) !== 0) i += 2;
+    // ── BLOCKS: Component definitions & symbols ─────────────────────────────
+    if (currentSection === 'BLOCKS') {
+      if (valUpper === 'BLOCK') {
+        const { props: bProps, nextIdx } = readEntityPropsFromPairs(pairs, p, numPairs);
+        p = nextIdx;
+        const bName = (bProps[2] || '').trim();
+        currentBlock = {
+          name: bName,
+          baseX: bProps[10] != null ? parseFloat(bProps[10]) : 0,
+          baseY: bProps[20] != null ? parseFloat(bProps[20]) : 0,
+          entities: []
+        };
+        if (bName) blocksMap.set(bName, currentBlock);
+      } else if (valUpper === 'ENDBLK') {
+        currentBlock = null;
+      } else if (currentBlock) {
+        // Collect sub-entity inside block
+        const { props, vertexPairs, nextIdx } = readEntityPropsFromPairs(pairs, p, numPairs);
+        p = nextIdx;
+        const subEnt = {
+          type: valUpper,
+          layer: props[8] || '0',
+          color: props[62] != null ? (ACI_COLORS[Math.abs(parseInt(props[62], 10))] || null) : null,
+          x: props[10] != null ? parseFloat(props[10]) : 0,
+          y: props[20] != null ? parseFloat(props[20]) : 0,
+          z: props[30] != null ? parseFloat(props[30]) : 0,
+          x2: props[11] != null ? parseFloat(props[11]) : undefined,
+          y2: props[21] != null ? parseFloat(props[21]) : undefined,
+          radius: props[40] != null ? parseFloat(props[40]) : undefined,
+          textHeight: props[40] != null ? parseFloat(props[40]) : 10,
+          startAngle: props[50] != null ? parseFloat(props[50]) : undefined,
+          endAngle: props[51] != null ? parseFloat(props[51]) : undefined,
+          rotation: props[50] != null ? parseFloat(props[50]) : 0,
+          flags: props[70] != null ? parseInt(props[70], 10) : 0,
+          text: props[1] || props[3] || undefined,
+          vertices: vertexPairs
+        };
+        currentBlock.entities.push(subEnt);
+      }
       continue;
     }
 
-    // ── Read the header property block for this entity ──────────────────────
-    const { props, vertexPairs, nextI } = readEntityProps(lines, i, n);
-    i = nextI;
+    // ── ENTITIES: Drawing elements ──────────────────────────────────────────
+    if (currentSection !== 'ENTITIES') continue;
+
+    const entityType = valUpper;
+
+    // Skip sub-entity markers handled by POLYLINE
+    if (entityType === 'VERTEX' || entityType === 'SEQEND') {
+      continue;
+    }
+
+    if (!VALID_ENTITIES.has(entityType)) {
+      // Ignore unrecognized/internal tokens (e.g. spurious group 0 noise)
+      const { nextIdx } = readEntityPropsFromPairs(pairs, p, numPairs);
+      p = nextIdx;
+      continue;
+    }
+
+    const { props, vertexPairs, nextIdx } = readEntityPropsFromPairs(pairs, p, numPairs);
+    p = nextIdx;
 
     const entity = {
       type:       entityType,
@@ -156,32 +223,38 @@ function parseDxfContent(dxfText) {
       z:  props[30] != null ? parseFloat(props[30]) : 0,
       x2: props[11] != null ? parseFloat(props[11]) : undefined,
       y2: props[21] != null ? parseFloat(props[21]) : undefined,
+      x3: props[12] != null ? parseFloat(props[12]) : undefined,
+      y3: props[22] != null ? parseFloat(props[22]) : undefined,
+      x4: props[13] != null ? parseFloat(props[13]) : undefined,
+      y4: props[23] != null ? parseFloat(props[23]) : undefined,
       // Geometry params
       radius:     props[40] != null ? parseFloat(props[40]) : undefined,
-      textHeight: props[40] != null ? parseFloat(props[40]) : undefined,
+      textHeight: props[40] != null ? parseFloat(props[40]) : 8,
       startAngle: props[50] != null ? parseFloat(props[50]) : undefined,
       endAngle:   props[51] != null ? parseFloat(props[51]) : undefined,
-      rotation:   props[50] != null ? parseFloat(props[50]) : undefined,
+      rotation:   props[50] != null ? parseFloat(props[50]) : 0,
+      scaleX:     props[41] != null ? parseFloat(props[41]) : 1,
+      scaleY:     props[42] != null ? parseFloat(props[42]) : 1,
+      scaleZ:     props[43] != null ? parseFloat(props[43]) : 1,
+      blockName:  props[2]  || undefined,
       flags:      props[70] != null ? parseInt(props[70], 10) : 0,
-      text:       props[1]  || undefined,
+      text:       props[1]  || props[3] || undefined,
       vertices:   [],
     };
 
-    // ── R12 POLYLINE: consume VERTEX + SEQEND sub-entities ──────────────────
+    // ── R12 POLYLINE: consume VERTEX sub-entities ───────────────────────────
     if (entityType === 'POLYLINE') {
-      while (i < n - 1) {
-        if (parseInt(lines[i], 10) !== 0) { i += 2; continue; }
-        const subType = lines[i + 1].toUpperCase();
-        i += 2;
+      while (p < numPairs) {
+        if (pairs[p][0] !== 0) { p++; continue; }
+        const subType = pairs[p][1].toUpperCase();
+        p++;
         if (subType === 'SEQEND') {
-          while (i < n - 1 && parseInt(lines[i], 10) !== 0) i += 2;
           break;
         }
         if (subType === 'VERTEX') {
-          const { props: vp, nextI: vi } = readEntityProps(lines, i, n);
-          i = vi;
+          const { props: vp, nextIdx: vi } = readEntityPropsFromPairs(pairs, p, numPairs);
+          p = vi;
           const vflags = vp[70] != null ? parseInt(vp[70], 10) : 0;
-          // Skip spline-frame control vertices (flags 0x10, 0x20) — only real geometry vertices
           if (!(vflags & 0x10) && !(vflags & 0x20)) {
             entity.vertices.push({
               x: vp[10] != null ? parseFloat(vp[10]) : 0,
@@ -190,15 +263,67 @@ function parseDxfContent(dxfText) {
             });
           }
         } else {
-          i -= 2;   // put back — not a VERTEX/SEQEND, let the outer loop handle it
+          p--; // Put back if not VERTEX
           break;
         }
       }
     }
 
-    // ── LWPOLYLINE: inline vertices from repeated group 10/20 pairs ──────────
+    // ── LWPOLYLINE: inline vertices ─────────────────────────────────────────
     if (entityType === 'LWPOLYLINE') {
-      entity.vertices = vertexPairs;  // already built by readEntityProps
+      entity.vertices = vertexPairs;
+    }
+
+    // ── INSERT: Resolve Block Reference into instanced entities ─────────────
+    if (entityType === 'INSERT' && entity.blockName && blocksMap.has(entity.blockName)) {
+      const blk = blocksMap.get(entity.blockName);
+      const rad = THREE.MathUtils.degToRad(entity.rotation || 0);
+      const cosR = Math.cos(rad);
+      const sinR = Math.sin(rad);
+      const sx = entity.scaleX || 1;
+      const sy = entity.scaleY || 1;
+
+      blk.entities.forEach((be) => {
+        // Clone and transform coordinates relative to insertion point
+        const transformPt = (px, py) => {
+          const lx = (px - blk.baseX) * sx;
+          const ly = (py - blk.baseY) * sy;
+          return {
+            x: entity.x + (lx * cosR - ly * sinR),
+            y: entity.y + (lx * sinR + ly * cosR)
+          };
+        };
+
+        const instEnt = { ...be };
+        instEnt.layer = entity.layer || be.layer;
+        instEnt.color = entity.color || be.color;
+
+        const tp1 = transformPt(be.x ?? 0, be.y ?? 0);
+        instEnt.x = tp1.x;
+        instEnt.y = tp1.y;
+
+        if (be.x2 !== undefined && be.y2 !== undefined) {
+          const tp2 = transformPt(be.x2, be.y2);
+          instEnt.x2 = tp2.x;
+          instEnt.y2 = tp2.y;
+        }
+        if (be.radius !== undefined) {
+          instEnt.radius = be.radius * Math.abs(sx);
+        }
+        if (be.rotation !== undefined) {
+          instEnt.rotation = (be.rotation || 0) + (entity.rotation || 0);
+        }
+        if (be.vertices && be.vertices.length > 0) {
+          instEnt.vertices = be.vertices.map(v => transformPt(v.x, v.y));
+        }
+
+        if (!layers.has(instEnt.layer)) {
+          layers.set(instEnt.layer, { name: instEnt.layer, color: '#38bdf8', visible: true, count: 0 });
+        }
+        layers.get(instEnt.layer).count += 1;
+        entities.push(instEnt);
+      });
+      continue;
     }
 
     // Register layer if not already seen
@@ -238,6 +363,7 @@ export default function Cad2DViewer({ fullContent, artifact, token, filename = '
   const [measuredDistance, setMeasuredDistance] = useState(null);
   const [cursorCoords, setCursorCoords] = useState({ x: '0.00', y: '0.00' });
   const [stats, setStats] = useState({ entities: 0, bounds: { minX: -50, maxX: 50, minY: -50, maxY: 50 } });
+  const boundsRef = useRef({ minX: -50, maxX: 50, minY: -50, maxY: 50 });
   const [zoomLevel, setZoomLevel] = useState(100);
 
   // Parse raw text
@@ -265,8 +391,8 @@ export default function Cad2DViewer({ fullContent, artifact, token, filename = '
     const container = mountRef.current;
     if (!container) return;
 
-    const width = container.clientWidth || 800;
-    const height = container.clientHeight || 600;
+    const width = Math.max(container.clientWidth || 0, 300);
+    const height = Math.max(container.clientHeight || 0, 300);
 
     const scene = new THREE.Scene();
     sceneRef.current = scene;
@@ -286,7 +412,7 @@ export default function Cad2DViewer({ fullContent, artifact, token, filename = '
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
     renderer.setSize(width, height);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     rendererRef.current = renderer;
 
     container.innerHTML = '';
@@ -305,9 +431,11 @@ export default function Cad2DViewer({ fullContent, artifact, token, filename = '
       if (!container || !rendererRef.current || !cameraRef.current) return;
       const w = container.clientWidth;
       const h = container.clientHeight;
+      if (w <= 0 || h <= 0) return;
+
       const asp = w / h;
       const cam = cameraRef.current;
-      const currentHeight = cam.top - cam.bottom;
+      const currentHeight = Math.abs(cam.top - cam.bottom) || 200;
       cam.left = (-currentHeight * asp) / 2;
       cam.right = (currentHeight * asp) / 2;
       cam.updateProjectionMatrix();
@@ -316,9 +444,30 @@ export default function Cad2DViewer({ fullContent, artifact, token, filename = '
 
     window.addEventListener('resize', handleResize);
 
+    let resizeObserver = null;
+    if (typeof ResizeObserver !== 'undefined') {
+      resizeObserver = new ResizeObserver((entries) => {
+        for (const entry of entries) {
+          const { width: rw, height: rh } = entry.contentRect || {};
+          if (rw > 0 && rh > 0) {
+            handleResize();
+            // Re-fit current drawing bounds if available
+            const b = boundsRef.current;
+            if (b && Number.isFinite(b.minX) && Number.isFinite(b.maxX)) {
+              fitView(b.minX, b.maxX, b.minY, b.maxY);
+            }
+          }
+        }
+      });
+      resizeObserver.observe(container);
+    }
+
     return () => {
       cancelAnimationFrame(animId);
       window.removeEventListener('resize', handleResize);
+      if (resizeObserver) {
+        resizeObserver.disconnect();
+      }
       if (renderer.domElement && renderer.domElement.parentNode) {
         renderer.domElement.parentNode.removeChild(renderer.domElement);
       }
@@ -442,6 +591,107 @@ export default function Cad2DViewer({ fullContent, artifact, token, filename = '
             updateBounds(px1, py1);
             updateBounds(px2, py2);
           }
+        } else if (ent.type === 'ELLIPSE') {
+          const cx = ent.x ?? 0;
+          const cy = ent.y ?? 0;
+          const mx = ent.x2 ?? 10;
+          const my = ent.y2 ?? 0;
+          const majorLen = Math.sqrt(mx * mx + my * my) || 10;
+          const minorLen = majorLen * (ent.radius || 0.5);
+          const majorAngle = Math.atan2(my, mx);
+          const segments = 48;
+          for (let s = 0; s < segments; s++) {
+            const t1 = (s / segments) * Math.PI * 2;
+            const t2 = ((s + 1) / segments) * Math.PI * 2;
+            const lx1 = Math.cos(t1) * majorLen;
+            const ly1 = Math.sin(t1) * minorLen;
+            const lx2 = Math.cos(t2) * majorLen;
+            const ly2 = Math.sin(t2) * minorLen;
+            const px1 = cx + lx1 * Math.cos(majorAngle) - ly1 * Math.sin(majorAngle);
+            const py1 = cy + lx1 * Math.sin(majorAngle) + ly1 * Math.cos(majorAngle);
+            const px2 = cx + lx2 * Math.cos(majorAngle) - ly2 * Math.sin(majorAngle);
+            const py2 = cy + lx2 * Math.sin(majorAngle) + ly2 * Math.cos(majorAngle);
+            linePositions.push(px1, py1, 0, px2, py2, 0);
+            lineColors.push(entColor.r, entColor.g, entColor.b, entColor.r, entColor.g, entColor.b);
+            updateBounds(px1, py1);
+            updateBounds(px2, py2);
+          }
+        } else if (ent.type === 'TEXT' || ent.type === 'MTEXT') {
+          if (ent.text && ent.text.trim()) {
+            const tx = ent.x ?? 0;
+            const ty = ent.y ?? 0;
+            updateBounds(tx, ty);
+
+            // Clean AutoCAD formatting codes like \A1;, %%c, \P
+            const cleanStr = ent.text
+              .replace(/\\[A-Za-z0-9]+;?/g, '')
+              .replace(/%%[A-Za-z0-9]/g, '')
+              .replace(/\\P/g, '\n')
+              .trim();
+
+            if (cleanStr) {
+              const canvas = document.createElement('canvas');
+              const ctx = canvas.getContext('2d');
+              const fontSize = 48;
+              ctx.font = `600 ${fontSize}px sans-serif`;
+
+              const linesArr = cleanStr.split('\n');
+              let maxLineW = 0;
+              linesArr.forEach(l => {
+                const w = ctx.measureText(l).width;
+                if (w > maxLineW) maxLineW = w;
+              });
+
+              canvas.width = Math.max(128, Math.ceil(maxLineW + 32));
+              canvas.height = Math.max(64, Math.ceil(linesArr.length * fontSize * 1.35 + 24));
+
+              ctx.font = `600 ${fontSize}px sans-serif`;
+              ctx.fillStyle = ent.color || (isDark ? '#f8fafc' : '#0f172a');
+              ctx.textBaseline = 'top';
+
+              linesArr.forEach((lineText, lIdx) => {
+                ctx.fillText(lineText, 16, 12 + lIdx * fontSize * 1.35);
+              });
+
+              const texture = new THREE.CanvasTexture(canvas);
+              texture.minFilter = THREE.LinearFilter;
+              const spriteMat = new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false });
+              const sprite = new THREE.Sprite(spriteMat);
+
+              const userH = Math.max(ent.textHeight || 8, 3.5);
+              const scaleRatio = canvas.width / canvas.height;
+              const spriteW = userH * scaleRatio * linesArr.length;
+              const spriteH = userH * linesArr.length;
+              sprite.scale.set(spriteW, spriteH, 1);
+
+              if (ent.rotation) {
+                spriteMat.rotation = THREE.MathUtils.degToRad(ent.rotation);
+              }
+              sprite.position.set(tx + (spriteW / 2), ty + (spriteH / 2), 0.5);
+
+              layerGroup.add(sprite);
+            }
+          }
+        } else if (ent.type === 'SOLID' || ent.type === '3DFACE' || ent.type === 'TRACE') {
+          // Render solid filled polygon / triangular or quad arrowheads / equipment bodies
+          const p1 = { x: ent.x ?? 0, y: ent.y ?? 0 };
+          const p2 = { x: ent.x2 ?? 0, y: ent.y2 ?? 0 };
+          const p3 = { x: ent.x3 !== undefined ? ent.x3 : p2.x, y: ent.y3 !== undefined ? ent.y3 : p2.y };
+          const p4 = { x: ent.x4 !== undefined ? ent.x4 : p3.x, y: ent.y4 !== undefined ? ent.y4 : p3.y };
+
+          updateBounds(p1.x, p1.y);
+          updateBounds(p2.x, p2.y);
+          updateBounds(p3.x, p3.y);
+          updateBounds(p4.x, p4.y);
+
+          // Lines for boundaries
+          linePositions.push(p1.x, p1.y, 0, p2.x, p2.y, 0);
+          linePositions.push(p2.x, p2.y, 0, p4.x, p4.y, 0);
+          linePositions.push(p4.x, p4.y, 0, p3.x, p3.y, 0);
+          linePositions.push(p3.x, p3.y, 0, p1.x, p1.y, 0);
+          for (let i = 0; i < 8; i++) {
+            lineColors.push(entColor.r, entColor.g, entColor.b);
+          }
         }
       });
 
@@ -471,6 +721,8 @@ export default function Cad2DViewer({ fullContent, artifact, token, filename = '
       maxY = 50;
     }
 
+    boundsRef.current = { minX, maxX, minY, maxY };
+
     setStats({
       entities: entities.length,
       bounds: { minX, maxX, minY, maxY }
@@ -486,17 +738,20 @@ export default function Cad2DViewer({ fullContent, artifact, token, filename = '
     const container = mountRef.current;
     if (!cam || !container) return;
 
-    const bMinX = minX !== undefined ? minX : stats.bounds.minX;
-    const bMaxX = maxX !== undefined ? maxX : stats.bounds.maxX;
-    const bMinY = minY !== undefined ? minY : stats.bounds.minY;
-    const bMaxY = maxY !== undefined ? maxY : stats.bounds.maxY;
+    const b = boundsRef.current || stats.bounds;
+    const bMinX = minX !== undefined ? minX : b.minX;
+    const bMaxX = maxX !== undefined ? maxX : b.maxX;
+    const bMinY = minY !== undefined ? minY : b.minY;
+    const bMaxY = maxY !== undefined ? maxY : b.maxY;
 
     const centerX = (bMinX + bMaxX) / 2;
     const centerY = (bMinY + bMaxY) / 2;
     const spanX = Math.max(bMaxX - bMinX, 20) * 1.35;
     const spanY = Math.max(bMaxY - bMinY, 20) * 1.35;
 
-    const containerAspect = (container.clientWidth || 800) / (container.clientHeight || 600);
+    const cWidth = container.clientWidth > 0 ? container.clientWidth : 800;
+    const cHeight = container.clientHeight > 0 ? container.clientHeight : 600;
+    const containerAspect = cWidth / cHeight;
     let viewH = spanY;
     let viewW = spanX;
 

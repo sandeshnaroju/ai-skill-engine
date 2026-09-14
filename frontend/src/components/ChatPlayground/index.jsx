@@ -227,6 +227,9 @@ export default function ChatPlayground({ isSidebarOpen, toggleSidebar }) {
   };
 
   const [prochatModel, setProchatModel] = useState('');
+  const [imageModel, setImageModel] = useState('');
+  const [audioModel, setAudioModel] = useState('');
+  const [videoModel, setVideoModel] = useState('');
 
   // File Upload states
   const fileInputRef = useRef(null);
@@ -676,6 +679,9 @@ export default function ChatPlayground({ isSidebarOpen, toggleSidebar }) {
         app_id: selectedAppId || undefined,
         user_data: getUserDataPayload(),
         prochat_model: prochatModel.trim() || undefined,
+        image_model: imageModel.trim() || undefined,
+        audio_model: audioModel.trim() || undefined,
+        video_model: videoModel.trim() || undefined,
         skill_names: selectedSkillNames.length > 0 ? selectedSkillNames : undefined,
         system_prompt: systemPrompt || undefined,
         attachments: currentFiles.map(f => ({
@@ -1332,6 +1338,12 @@ export default function ChatPlayground({ isSidebarOpen, toggleSidebar }) {
         setApps={setApps}
         prochatModel={prochatModel}
         setProchatModel={setProchatModel}
+        imageModel={imageModel}
+        setImageModel={setImageModel}
+        audioModel={audioModel}
+        setAudioModel={setAudioModel}
+        videoModel={videoModel}
+        setVideoModel={setVideoModel}
         selectedSkillNames={selectedSkillNames}
         setSelectedSkillNames={setSelectedSkillNames}
         templates={templates}

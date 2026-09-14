@@ -237,17 +237,18 @@ def map_local_generated_files_to_tenant(exec_res: dict, tenant_name: str = "defa
             f["sandbox_path"] = f"sandbox/outputs/{tenant_name}/{f['filename']}"
     return exec_res
 
-def run_list_sandbox_files(db, session_id: str, tenant_id: str = None):
+def run_list_sandbox_files(db, session_id: str, tenant=None, tenant_id: str = None):
     from models import SandboxConfig
     from encryption_utils import decrypt_key
     from sandbox.remote_runner import remote_runner
     from sqlalchemy import or_
     import os
     
-    if tenant_id:
+    t_id = tenant.id if tenant else tenant_id
+    if t_id:
         config = db.query(SandboxConfig).filter(
             SandboxConfig.is_active == True,
-            or_(SandboxConfig.tenant_id == tenant_id, SandboxConfig.tenant_id == None)
+            or_(SandboxConfig.tenant_id == t_id, SandboxConfig.tenant_id == None)
         ).first()
     else:
         config = db.query(SandboxConfig).filter(SandboxConfig.is_active == True, SandboxConfig.tenant_id == None).first()
@@ -255,26 +256,27 @@ def run_list_sandbox_files(db, session_id: str, tenant_id: str = None):
     if config and config.provider == "azure":
         client_id = decrypt_key(config.azure_client_id_encrypted)
         client_secret = decrypt_key(config.azure_client_secret_encrypted)
-        t_id = decrypt_key(config.azure_tenant_id_encrypted)
+        az_t_id = decrypt_key(config.azure_tenant_id_encrypted)
         pool_endpoint = config.azure_session_pool_endpoint
-        if client_id and client_secret and t_id and pool_endpoint:
+        if client_id and client_secret and az_t_id and pool_endpoint:
             try:
-                files = remote_runner.list_files_azure(client_id, client_secret, t_id, pool_endpoint, session_id)
+                files = remote_runner.list_files_azure(client_id, client_secret, az_t_id, pool_endpoint, session_id)
                 stdout = "Files in Azure ACA Sandbox:\n" + "\n".join([f"- {f['filename']} ({f['size']} bytes, modified {f['last_modified']})" for f in files])
                 return {"stdout": stdout, "stderr": "", "exit_code": 0, "sandbox_type": "azure_aca"}
             except Exception as e:
                 return {"stdout": "", "stderr": f"Failed to list sandbox files: {str(e)}", "exit_code": 1, "sandbox_type": "azure_aca"}
     
     # Fallback/Local list
-    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    outputs_dir = os.path.join(base_dir, "sandbox", "outputs")
+    from storage import OUTPUT_DIR
+    tenant_name = tenant.name if tenant else None
+    outputs_dir = os.path.join(OUTPUT_DIR, tenant_name) if tenant_name else OUTPUT_DIR
     os.makedirs(outputs_dir, exist_ok=True)
     files = os.listdir(outputs_dir)
-    stdout = "Files in local outputs folder:\n" + "\n".join([f"- {f}" for f in files])
+    stdout = f"Files in outputs folder ({tenant_name or 'global'}):\n" + "\n".join([f"- {f}" for f in files])
     return {"stdout": stdout, "stderr": "", "exit_code": 0, "sandbox_type": "process"}
 
 
-def run_download_sandbox_file(db, session_id: str, args: dict, tenant_id: str = None):
+def run_download_sandbox_file(db, session_id: str, args: dict, tenant=None, tenant_id: str = None):
     from models import SandboxConfig
     from encryption_utils import decrypt_key
     from sandbox.remote_runner import remote_runner
@@ -286,36 +288,41 @@ def run_download_sandbox_file(db, session_id: str, args: dict, tenant_id: str = 
     if not filename:
         return {"stdout": "", "stderr": "Error: filename is required", "exit_code": 1, "sandbox_type": "process"}
         
-    if tenant_id:
+    t_id = tenant.id if tenant else tenant_id
+    if t_id:
         config = db.query(SandboxConfig).filter(
             SandboxConfig.is_active == True,
-            or_(SandboxConfig.tenant_id == tenant_id, SandboxConfig.tenant_id == None)
+            or_(SandboxConfig.tenant_id == t_id, SandboxConfig.tenant_id == None)
         ).first()
     else:
         config = db.query(SandboxConfig).filter(SandboxConfig.is_active == True, SandboxConfig.tenant_id == None).first()
 
+    tenant_folder = tenant.name if tenant else None
+
     if config and config.provider == "azure":
         client_id = decrypt_key(config.azure_client_id_encrypted)
         client_secret = decrypt_key(config.azure_client_secret_encrypted)
-        t_id = decrypt_key(config.azure_tenant_id_encrypted)
+        az_t_id = decrypt_key(config.azure_tenant_id_encrypted)
         pool_endpoint = config.azure_session_pool_endpoint
-        if client_id and client_secret and t_id and pool_endpoint:
+        if client_id and client_secret and az_t_id and pool_endpoint:
             try:
-                content = remote_runner.download_file_azure(client_id, client_secret, t_id, pool_endpoint, session_id, filename)
+                content = remote_runner.download_file_azure(client_id, client_secret, az_t_id, pool_endpoint, session_id, filename)
                 from storage import OUTPUT_DIR
                 unique_name = f"{uuid.uuid4().hex}_{filename}"
-                os.makedirs(OUTPUT_DIR, exist_ok=True)
+                outputs_dir = os.path.join(OUTPUT_DIR, tenant_folder) if tenant_folder else OUTPUT_DIR
+                os.makedirs(outputs_dir, exist_ok=True)
                 
-                with open(os.path.join(OUTPUT_DIR, unique_name), "wb") as f:
+                with open(os.path.join(outputs_dir, unique_name), "wb") as f:
                     f.write(content)
                     
-                download_url = f"/api/v1/files/download/{unique_name}"
+                download_url = f"/api/v1/files/download/{tenant_folder}/{unique_name}" if tenant_folder else f"/api/v1/files/download/{unique_name}"
+                sandbox_path = f"sandbox/outputs/{tenant_folder}/{unique_name}" if tenant_folder else f"sandbox/outputs/{unique_name}"
                 stdout = f"Successfully downloaded file. Available locally at: {download_url}"
                 generated_files = [{
                     "filename": unique_name,
                     "original_name": filename,
                     "url": download_url,
-                    "sandbox_path": f"sandbox/outputs/{unique_name}"
+                    "sandbox_path": sandbox_path
                 }]
                 return {"stdout": stdout, "stderr": "", "exit_code": 0, "sandbox_type": "azure_aca", "generated_files": generated_files}
             except Exception as e:
@@ -325,7 +332,7 @@ def run_download_sandbox_file(db, session_id: str, args: dict, tenant_id: str = 
     return {"stdout": f"File {filename} is already present locally.", "stderr": "", "exit_code": 0, "sandbox_type": "process"}
 
 
-def run_upload_sandbox_file(db, session_id: str, args: dict, tenant_id: str = None):
+def run_upload_sandbox_file(db, session_id: str, args: dict, tenant=None, tenant_id: str = None):
     from models import SandboxConfig
     from encryption_utils import decrypt_key
     from sandbox.remote_runner import remote_runner
@@ -343,10 +350,11 @@ def run_upload_sandbox_file(db, session_id: str, args: dict, tenant_id: str = No
     with open(local_path, "rb") as f:
         content = f.read()
         
-    if tenant_id:
+    t_id = tenant.id if tenant else tenant_id
+    if t_id:
         config = db.query(SandboxConfig).filter(
             SandboxConfig.is_active == True,
-            or_(SandboxConfig.tenant_id == tenant_id, SandboxConfig.tenant_id == None)
+            or_(SandboxConfig.tenant_id == t_id, SandboxConfig.tenant_id == None)
         ).first()
     else:
         config = db.query(SandboxConfig).filter(SandboxConfig.is_active == True, SandboxConfig.tenant_id == None).first()
@@ -363,3 +371,48 @@ def run_upload_sandbox_file(db, session_id: str, args: dict, tenant_id: str = No
             except Exception as e:
                 return {"stdout": "", "stderr": f"Failed to upload file to sandbox: {str(e)}", "exit_code": 1, "sandbox_type": "azure_aca"}
     return {"stdout": f"Uploaded {filename} to local sandbox workspace.", "stderr": "", "exit_code": 0, "sandbox_type": "process"}
+
+
+def run_multimodal_subagent_tool(
+    db,
+    args: dict,
+    tenant,
+    session_id: str,
+    tool_name: str,
+    image_model: str = None,
+    audio_model: str = None,
+    video_model: str = None
+) -> dict:
+    """Dispatches image, audio, or video sub-agent analysis using engine.subagents."""
+    from engine.subagents import run_multimodal_subagent
+
+    if "analyze_image" in tool_name:
+        media_type = "image"
+        file_path = args.get("image_path") or args.get("file_path") or args.get("path")
+        flat_model = image_model
+    elif "analyze_audio" in tool_name:
+        media_type = "audio"
+        file_path = args.get("audio_path") or args.get("file_path") or args.get("path")
+        flat_model = audio_model
+    elif "analyze_video" in tool_name:
+        media_type = "video"
+        file_path = args.get("video_path") or args.get("file_path") or args.get("path")
+        flat_model = video_model
+    else:
+        media_type = "image"
+        file_path = args.get("file_path")
+        flat_model = image_model
+
+    query = args.get("query") or args.get("prompt") or args.get("instruction")
+    tool_model_arg = args.get("model")
+
+    return run_multimodal_subagent(
+        media_type=media_type,
+        file_path=file_path,
+        query=query,
+        tenant=tenant,
+        db=db,
+        session_id=session_id,
+        tool_model_arg=tool_model_arg,
+        flat_request_model=flat_model
+    )

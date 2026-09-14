@@ -199,7 +199,10 @@ Use this skill whenever generating, modifying, or refining digital artifacts for
    - For diagrams / workflows: Use `artifact_type="diagram"` or `"diagram_svg"`.
 6. **2D CAD & Engineering Drawings (`.dxf`, `.dwg`)**:
    - Set `artifact_type="cad_2d"`.
-   - For `.dxf`: Output standard ASCII DXF format (with `ENTITIES` containing `LINE`, `LWPOLYLINE`, `CIRCLE`, `ARC`, `TEXT`, `MTEXT`, `DIMENSION` with appropriate layer assignments like `0`, `CENTER`, `HIDDEN`, `DIMENSIONS`).
+   - For `.dxf`: Output clean, standard ASCII DXF format (R12 / AC1009 or AC1015) with `HEADER`, `TABLES` (layer definitions with standard ACI colors 1-8), and `ENTITIES`.
+   - Use standard geometric primitives: `LINE`, `CIRCLE`, `ARC`, `LWPOLYLINE`, `POLYLINE`, `TEXT`, and `MTEXT`.
+   - **When DXF files are generated via Python code in the sandbox**: ALWAYS call `artifact_editor__open_uploaded_file_as_artifact(file_path="sandbox/outputs/...", title="...")` or `filename="<filename>.dxf"`. Do NOT manually copy a truncated snippet into `open_or_update_artifact`, as this drops the drawing entities. Calling `open_uploaded_file_as_artifact` automatically imports all thousands of entities and lines into the Canvas viewer.
+   - **Token Efficiency & Chunking**: Do NOT emit massive raw skeletonized polylines with hundreds of thousands of vertices that exceed LLM max output tokens. Instead, construct clean parametric CAD primitives (clean process lines, instrument circles, valve bowties, boundary rects). If generating large blueprints, structure entities by process section into distinct artifact blocks (e.g. `sec_header`, `sec_tables`, `sec_process`, `sec_instruments`, `sec_titleblock`) using `edit_artifact_section` or `open_or_update_artifact`.
 7. **3D Solid Models & Assemblies (`.step`, `.stp`, `.iges`, `.igs`, `.stl`, `.obj`, `.ifc`)**:
    - Set `artifact_type="cad_3d"`.
    - Output standard 3D file formats (e.g., ASCII Wavefront `.obj` with vertex/face definitions, standard ASCII `.stl` solid blocks with facet normals, or ISO-10303-21 `.step` part definitions).

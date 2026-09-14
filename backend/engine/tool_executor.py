@@ -18,6 +18,7 @@ from engine.tools_builtin import (
     run_upload_sandbox_file,
     run_send_email_tool,
     map_local_generated_files_to_tenant,
+    run_multimodal_subagent_tool,
 )
 from artifacts.tools import (
     run_open_or_update_artifact,
@@ -61,7 +62,8 @@ def prefetch_mcp_servers(tool_calls, db: Session, tenant_id: str = None) -> dict
 
 
 def execute_tool(fn_name: str, args: dict, tool_def: dict, user_data: dict,
-                 tenant, session_id: str, db: Session, mcp_servers: dict) -> tuple:
+                 tenant, session_id: str, db: Session, mcp_servers: dict,
+                 image_model: str = None, audio_model: str = None, video_model: str = None) -> tuple:
     """
     Dispatch a single tool call and return (command, exec_res, tool_result).
 
@@ -123,11 +125,11 @@ def execute_tool(fn_name: str, args: dict, tool_def: dict, user_data: dict,
         elif fn_name == "http_fetcher__download_public_file":
             exec_res = run_download_public_file_tool(db, exec_args, tenant)
         elif fn_name == "sandbox_file_manager__list_sandbox_files":
-            exec_res = run_list_sandbox_files(db, session_id, tenant_id=tenant.id)
+            exec_res = run_list_sandbox_files(db, session_id, tenant=tenant)
         elif fn_name == "sandbox_file_manager__download_sandbox_file":
-            exec_res = run_download_sandbox_file(db, session_id, exec_args, tenant_id=tenant.id)
+            exec_res = run_download_sandbox_file(db, session_id, exec_args, tenant=tenant)
         elif fn_name == "sandbox_file_manager__upload_sandbox_file":
-            exec_res = run_upload_sandbox_file(db, session_id, exec_args, tenant_id=tenant.id)
+            exec_res = run_upload_sandbox_file(db, session_id, exec_args, tenant=tenant)
         elif fn_name == "email__send_email":
             exec_res = run_send_email_tool(db, exec_args, tenant)
         elif fn_name == "artifact_editor__open_or_update_artifact":
@@ -144,8 +146,19 @@ def execute_tool(fn_name: str, args: dict, tool_def: dict, user_data: dict,
             exec_res = run_patch_artifact(db, exec_args, author="assistant", session_id=session_id)
         elif fn_name == "artifact_editor__rollback_artifact_block":
             exec_res = run_rollback_artifact_block(db, exec_args, author="assistant", session_id=session_id)
+        elif fn_name.startswith("multimodal_analyst__") or fn_name in ("analyze_image", "analyze_audio", "analyze_video"):
+            exec_res = run_multimodal_subagent_tool(
+                db=db,
+                args=exec_args,
+                tenant=tenant,
+                session_id=session_id,
+                tool_name=fn_name,
+                image_model=image_model,
+                audio_model=audio_model,
+                video_model=video_model
+            )
         else:
-            exec_res = sandbox_manager.execute(command=exec_command, code=code, session_id=session_id, tenant_id=tenant.id)
+            exec_res = sandbox_manager.execute(command=exec_command, code=code, session_id=session_id, tenant_id=tenant.id if tenant else None, tenant_folder=tenant_name)
             exec_res = map_local_generated_files_to_tenant(exec_res, tenant_name=tenant_name)
 
     tool_result = exec_res.get("stdout") or exec_res.get("stderr") or "Execution completed cleanly with no output."

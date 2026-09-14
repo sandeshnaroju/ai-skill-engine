@@ -627,6 +627,9 @@ class SkillEngine:
         model_name: str = None,
         request_source: str = "api",
         prochat_model: str = None,
+        image_model: str = None,
+        audio_model: str = None,
+        video_model: str = None,
         user_data: dict = None,
         skill_names: list = None,
         client_messages: list = None,
@@ -785,7 +788,10 @@ class SkillEngine:
                         skill_name, tool_def = skill_registry.find_tool(fn, tenant_id=tenant.id)
                         worker_db = SessionLocal()
                         try:
-                            command, exec_res, tool_result = execute_tool(fn, args, tool_def, user_data, tenant, session_id, worker_db, mcp_servers)
+                            command, exec_res, tool_result = execute_tool(
+                                fn, args, tool_def, user_data, tenant, session_id, worker_db, mcp_servers,
+                                image_model=image_model, audio_model=audio_model, video_model=video_model
+                            )
                             worker_db.commit()
                         except Exception as e:
                             worker_db.rollback()
@@ -882,6 +888,9 @@ class SkillEngine:
         max_turns: int = 50,
         request_source: str = "api",
         prochat_model: str = None,
+        image_model: str = None,
+        audio_model: str = None,
+        video_model: str = None,
         user_data: dict = None,
         skill_names: list = None,
         client_messages: list = None,
@@ -1197,7 +1206,10 @@ class SkillEngine:
                         skill_name, tool_def = skill_registry.find_tool(fn, tenant_id=tenant.id)
                         worker_db = SessionLocal()
                         try:
-                            command, exec_res, tool_result = execute_tool(fn, args, tool_def, user_data, tenant, session_id, worker_db, mcp_servers)
+                            command, exec_res, tool_result = execute_tool(
+                                fn, args, tool_def, user_data, tenant, session_id, worker_db, mcp_servers,
+                                image_model=image_model, audio_model=audio_model, video_model=video_model
+                            )
                             worker_db.commit()
                         except Exception as e:
                             worker_db.rollback()

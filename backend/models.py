@@ -56,6 +56,11 @@ class Tenant(Base):
     yearly_reset_month = Column(Integer, default=1, nullable=False)
     yearly_reset_day = Column(Integer, default=1, nullable=False)
 
+    # Default Multimodal Sub-Agent Models
+    default_image_model = Column(String, nullable=True, default="gemini-2.5-flash")
+    default_audio_model = Column(String, nullable=True, default="gemini-2.5-flash")
+    default_video_model = Column(String, nullable=True, default="gemini-2.5-flash")
+
     # Relationships
     user = relationship("User", back_populates="tenants")
     sessions = relationship("ConversationSession", back_populates="tenant", cascade="all, delete-orphan")

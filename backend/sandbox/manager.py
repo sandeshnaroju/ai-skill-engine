@@ -8,11 +8,11 @@ class SandboxManager:
         self.process_runner = ProcessRunner()
         self.force_process = force_process
 
-    def execute(self, command: str, code: str = None, timeout: int = 30, session_id: str = None, tenant_id: str = None) -> dict:
+    def execute(self, command: str, code: str = None, timeout: int = 30, session_id: str = None, tenant_id: str = None, tenant_folder: str = None) -> dict:
         # Check if there is an active remote sandbox provider configured
         try:
             from database import SessionLocal
-            from models import SandboxConfig
+            from models import SandboxConfig, Tenant
             from encryption_utils import decrypt_key
             from sqlalchemy import or_
 
@@ -22,6 +22,10 @@ class SandboxManager:
                     SandboxConfig.is_active == True,
                     or_(SandboxConfig.tenant_id == tenant_id, SandboxConfig.tenant_id == None)
                 ).first()
+                if not tenant_folder:
+                    t = db.query(Tenant).filter(Tenant.id == tenant_id).first()
+                    if t:
+                        tenant_folder = t.name
             else:
                 config = db.query(SandboxConfig).filter(SandboxConfig.is_active == True, SandboxConfig.tenant_id == None).first()
             db.close()
@@ -40,7 +44,7 @@ class SandboxManager:
                             "execution_time_ms": 0,
                             "sandbox_type": "e2b"
                         }
-                    return remote_runner.execute_e2b(api_key, command, code, timeout)
+                    return remote_runner.execute_e2b(api_key, command, code, timeout, tenant_folder=tenant_folder)
 
                 elif provider == "azure":
                     client_id = decrypt_key(config.azure_client_id_encrypted)
@@ -55,7 +59,7 @@ class SandboxManager:
                             "execution_time_ms": 0,
                             "sandbox_type": "azure_aca"
                         }
-                    return remote_runner.execute_azure(client_id, client_secret, azure_tenant_id, pool_endpoint, command, code, timeout, session_id=session_id)
+                    return remote_runner.execute_azure(client_id, client_secret, azure_tenant_id, pool_endpoint, command, code, timeout, session_id=session_id, tenant_folder=tenant_folder)
 
                 elif provider == "fly":
                     api_token = decrypt_key(config.fly_api_token_encrypted)
@@ -90,7 +94,7 @@ class SandboxManager:
 
         # Fallback to local Docker (if available) or local process ONLY if provider is "none"
         if not self.force_process and self.docker_runner.is_available():
-            return self.docker_runner.execute(command, code, timeout)
-        return self.process_runner.execute(command, code, timeout)
+            return self.docker_runner.execute(command, code, timeout, tenant_folder=tenant_folder)
+        return self.process_runner.execute(command, code, timeout, tenant_folder=tenant_folder)
 
 sandbox_manager = SandboxManager()

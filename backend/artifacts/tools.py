@@ -396,10 +396,12 @@ def run_open_uploaded_file_as_artifact(db, args: dict, tenant, session_id: str) 
         candidates = [
             file_path_arg,
             os.path.join(repo_root, file_path_arg.lstrip("/")),
-            os.path.join(uploads_base, file_path_arg.lstrip("/")),
             os.path.join(outputs_base, file_path_arg.lstrip("/")),
-            os.path.join(tenant_upload_dir, os.path.basename(file_path_arg)),
-            os.path.join(tenant_output_dir, os.path.basename(file_path_arg))
+            os.path.join(uploads_base, file_path_arg.lstrip("/")),
+            os.path.join(outputs_base, os.path.basename(file_path_arg)),
+            os.path.join(uploads_base, os.path.basename(file_path_arg)),
+            os.path.join(tenant_output_dir, os.path.basename(file_path_arg)),
+            os.path.join(tenant_upload_dir, os.path.basename(file_path_arg))
         ]
         for c in candidates:
             if os.path.isfile(c):
@@ -416,8 +418,10 @@ def run_open_uploaded_file_as_artifact(db, args: dict, tenant, session_id: str) 
         stripped_name = re.sub(r'^[a-f0-9]{32}_|^[a-f0-9\-]{36}_', '', stripped_name)
 
     # 3. Search locally in uploads and outputs directories (including subdirectories like Default Workspace)
-    search_dirs = [tenant_upload_dir, tenant_output_dir, uploads_base, outputs_base]
+    # Collect all matches and select the most recently modified file to ensure latest version is loaded
+    search_dirs = [tenant_output_dir, tenant_upload_dir, outputs_base, uploads_base]
     if not resolved_path:
+        matched_files = []
         for s_dir in search_dirs:
             if not os.path.isdir(s_dir):
                 continue
@@ -432,12 +436,12 @@ def run_open_uploaded_file_as_artifact(db, args: dict, tenant, session_id: str) 
                         or (target_clean in clean_f and len(target_clean) > 8)
                         or (stripped_name in clean_f and len(stripped_name) > 8)
                     ):
-                        resolved_path = os.path.abspath(os.path.join(root, f))
-                        break
-                if resolved_path:
-                    break
-            if resolved_path:
-                break
+                        full_p = os.path.abspath(os.path.join(root, f))
+                        matched_files.append((os.path.getmtime(full_p), full_p))
+        if matched_files:
+            # Sort by modification time descending (newest first)
+            matched_files.sort(key=lambda x: x[0], reverse=True)
+            resolved_path = matched_files[0][1]
 
     # 4. If not found locally, query StorageBackend (Azure Blob Storage, S3, etc.)
     if not resolved_path:

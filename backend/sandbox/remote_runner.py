@@ -7,7 +7,7 @@ import boto3
 import msal
 
 class RemoteRunner:
-    def execute_e2b(self, api_key: str, command: str, code: str = None, timeout: int = 30) -> dict:
+    def execute_e2b(self, api_key: str, command: str, code: str = None, timeout: int = 30, tenant_folder: str = None) -> dict:
         start_time = time.time()
         try:
             # Set the API key env var for E2B SDK
@@ -42,19 +42,21 @@ class RemoteRunner:
                             file_data = base64.b64decode(data_base64)
                             unique_name = f"{uuid.uuid4().hex}_output.{fmt}"
                             
-                            # Save to outputs directory
-                            base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-                            outputs_dir = os.path.join(base_dir, "sandbox", "outputs")
+                            # Save to outputs directory (scoped by tenant if provided)
+                            from storage import OUTPUT_DIR
+                            outputs_dir = os.path.join(OUTPUT_DIR, tenant_folder) if tenant_folder else OUTPUT_DIR
                             os.makedirs(outputs_dir, exist_ok=True)
                             
                             with open(os.path.join(outputs_dir, unique_name), "wb") as f:
                                 f.write(file_data)
                                 
+                            rel_sandbox_path = f"sandbox/outputs/{tenant_folder}/{unique_name}" if tenant_folder else f"sandbox/outputs/{unique_name}"
+                            dl_url = f"/api/v1/files/download/{tenant_folder}/{unique_name}" if tenant_folder else f"/api/v1/files/download/{unique_name}"
                             generated_files.append({
                                 "filename": unique_name,
                                 "original_name": f"output.{fmt}",
-                                "url": f"/api/v1/files/download/{unique_name}",
-                                "sandbox_path": f"sandbox/outputs/{unique_name}"
+                                "url": dl_url,
+                                "sandbox_path": rel_sandbox_path
                             })
 
                 return {
@@ -82,7 +84,7 @@ class RemoteRunner:
         sanitized = re.sub(r'[^a-z0-9\-_.]', '-', session_id.lower())
         return sanitized[:50]
 
-    def execute_azure(self, client_id: str, client_secret: str, tenant_id: str, pool_endpoint: str, command: str, code: str = None, timeout: int = 30, session_id: str = None) -> dict:
+    def execute_azure(self, client_id: str, client_secret: str, tenant_id: str, pool_endpoint: str, command: str, code: str = None, timeout: int = 30, session_id: str = None, tenant_folder: str = None) -> dict:
         start_time = time.time()
         try:
             # 1. Authenticate with Microsoft Entra ID
@@ -158,18 +160,20 @@ class RemoteRunner:
                             file_data = dl_res.content
                             
                             unique_name = f"{uuid.uuid4().hex}_{filename}"
-                            base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-                            outputs_dir = os.path.join(base_dir, "sandbox", "outputs")
+                            from storage import OUTPUT_DIR
+                            outputs_dir = os.path.join(OUTPUT_DIR, tenant_folder) if tenant_folder else OUTPUT_DIR
                             os.makedirs(outputs_dir, exist_ok=True)
                             
                             with open(os.path.join(outputs_dir, unique_name), "wb") as out_f:
                                 out_f.write(file_data)
                                 
+                            rel_sandbox_path = f"sandbox/outputs/{tenant_folder}/{unique_name}" if tenant_folder else f"sandbox/outputs/{unique_name}"
+                            download_url = f"/api/v1/files/download/{tenant_folder}/{unique_name}" if tenant_folder else f"/api/v1/files/download/{unique_name}"
                             generated_files.append({
                                 "filename": unique_name,
                                 "original_name": filename,
-                                "url": f"/api/v1/files/download/{unique_name}",
-                                "sandbox_path": f"sandbox/outputs/{unique_name}"
+                                "url": download_url,
+                                "sandbox_path": rel_sandbox_path
                             })
             except Exception as dl_err:
                 print(f"WARNING: Failed to auto-download files from Azure Session {active_session_id}: {dl_err}")
