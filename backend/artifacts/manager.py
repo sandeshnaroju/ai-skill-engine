@@ -258,11 +258,18 @@ def decompose_content(content: str, artifact_type: str) -> List[Dict]:
             pass
 
     elif artifact_type == "cad_2d" and content:
-        # Decompose DXF sections if present
+        # Preserve full DXF drawing as the primary block for Cad2DViewer
+        blocks.append({
+            "block_key": "main_drawing",
+            "title": "2D Drawing (Full CAD Model)",
+            "content": content,
+            "order_index": 0
+        })
+        # Decompose DXF sections if present for surgical editing
         if "SECTION" in content:
             sections = re.split(r'(0\s*\n\s*SECTION\s*\n\s*2\s*\n\s*[^\n]+)', content, flags=re.IGNORECASE)
             if len(sections) > 1:
-                idx = 0
+                idx = 1
                 for s_i in range(1, len(sections), 2):
                     sec_hdr = sections[s_i].strip()
                     sec_name_match = re.search(r'2\s*\n\s*([^\n]+)', sec_hdr)
@@ -344,6 +351,14 @@ def assemble_full_content(artifact: SessionArtifact) -> str:
             primary = next((b for b in artifact.blocks if b.block_key == key), None)
             if primary:
                 return primary.content
+
+        # Fallback for cad_2d if main_drawing block was not stored: assemble sections and guarantee EOF
+        if artifact.artifact_type == "cad_2d":
+            sec_blocks = sorted(artifact.blocks, key=lambda x: x.order_index)
+            assembled_dxf = "\n".join(b.content.strip() for b in sec_blocks if b.content)
+            if not assembled_dxf.rstrip().endswith("EOF"):
+                assembled_dxf = assembled_dxf.rstrip() + "\n0\nEOF\n"
+            return assembled_dxf
 
     return "\n\n".join(b.content for b in sorted(artifact.blocks, key=lambda x: x.order_index))
 

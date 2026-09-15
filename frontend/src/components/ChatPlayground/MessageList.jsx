@@ -2,7 +2,7 @@ import React, { useRef, useEffect } from 'react';
 import {
   Bot, User, Brain, MessageSquare, Sparkles, Terminal, Code2,
   Copy, Check, FileText, ChevronUp, ChevronDown, Loader, ExternalLink,
-  Table, Presentation, Image, ArrowRight, Globe, Activity, FileSpreadsheet
+  Table, Presentation, Image, Video, ArrowRight, Globe, Activity, FileSpreadsheet
 } from 'lucide-react';
 import ProChat from 'prochat';
 import { parseMarkdownToHtml } from '../MarkdownViewer';
@@ -674,10 +674,14 @@ export default function MessageList({
                                   alignItems: 'center',
                                   justifyContent: 'center'
                                 }}>
-                                  {art.artifact_type === 'presentation' || (art.title && art.title.toLowerCase().includes('slide')) ? (
+                                  {art.artifact_type === 'video' || (art.title && art.title.toLowerCase().includes('video')) ? (
+                                    <Video size={18} color="#06b6d4" />
+                                  ) : art.artifact_type === 'presentation' || (art.title && art.title.toLowerCase().includes('slide')) ? (
                                     <Presentation size={18} color="var(--primary-violet)" />
                                   ) : art.artifact_type === 'spreadsheet' || (art.title && art.title.toLowerCase().includes('sheet')) ? (
                                     <FileSpreadsheet size={18} color="var(--primary-emerald)" />
+                                  ) : art.artifact_type === 'image' || (art.title && art.title.toLowerCase().includes('image')) ? (
+                                    <Image size={18} color="var(--primary-violet)" />
                                   ) : (
                                     <FileText size={18} color="var(--primary-violet)" />
                                   )}

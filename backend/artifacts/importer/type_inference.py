@@ -30,7 +30,7 @@ def infer_artifact_type(filename: str) -> str:
         return "cad_3d"
     elif fn.endswith((".geojson", ".kml", ".kmz", ".shp")):
         return "gis"
-    elif fn.endswith((".vsdx",)):
+    elif fn.endswith((".vsdx", ".vsd")):
         return "diagram"
     elif fn.endswith((".l5x", ".l5k", ".s7p", ".xer", ".m", ".slx")):
         return "engineering_data"

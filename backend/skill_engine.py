@@ -306,10 +306,17 @@ def _build_messages(db, persist, session_obj, user_message, allowed_skills, user
 
 
 def _resolve_model(db, tenant, model_name):
-    """Return model_name, falling back to first active tenant model or default."""
-    if model_name:
-        return model_name
+    """Return model_name if configured and active for this tenant, falling back to first active tenant model or default."""
     from models import TenantLLM
+    if model_name and model_name.lower() not in ("default", ""):
+        existing = db.query(TenantLLM).filter(
+            TenantLLM.tenant_id == tenant.id,
+            TenantLLM.model_name == model_name,
+            TenantLLM.is_active == True
+        ).first()
+        if existing:
+            return existing.model_name
+
     first = db.query(TenantLLM).filter(
         TenantLLM.tenant_id == tenant.id,
         TenantLLM.is_active == True
@@ -627,6 +634,11 @@ class SkillEngine:
         model_name: str = None,
         request_source: str = "api",
         prochat_model: str = None,
+        image_model: str = None,
+        image_gen_model: str = None,
+        audio_model: str = None,
+        video_model: str = None,
+        video_gen_model: str = None,
         user_data: dict = None,
         skill_names: list = None,
         client_messages: list = None,
@@ -785,7 +797,12 @@ class SkillEngine:
                         skill_name, tool_def = skill_registry.find_tool(fn, tenant_id=tenant.id)
                         worker_db = SessionLocal()
                         try:
-                            command, exec_res, tool_result = execute_tool(fn, args, tool_def, user_data, tenant, session_id, worker_db, mcp_servers)
+                            command, exec_res, tool_result = execute_tool(
+                                fn, args, tool_def, user_data, tenant, session_id, worker_db, mcp_servers,
+                                image_model=image_model, image_gen_model=image_gen_model,
+                                audio_model=audio_model, video_model=video_model,
+                                video_gen_model=video_gen_model
+                            )
                             worker_db.commit()
                         except Exception as e:
                             worker_db.rollback()
@@ -882,6 +899,11 @@ class SkillEngine:
         max_turns: int = 50,
         request_source: str = "api",
         prochat_model: str = None,
+        image_model: str = None,
+        image_gen_model: str = None,
+        audio_model: str = None,
+        video_model: str = None,
+        video_gen_model: str = None,
         user_data: dict = None,
         skill_names: list = None,
         client_messages: list = None,
@@ -1197,7 +1219,12 @@ class SkillEngine:
                         skill_name, tool_def = skill_registry.find_tool(fn, tenant_id=tenant.id)
                         worker_db = SessionLocal()
                         try:
-                            command, exec_res, tool_result = execute_tool(fn, args, tool_def, user_data, tenant, session_id, worker_db, mcp_servers)
+                            command, exec_res, tool_result = execute_tool(
+                                fn, args, tool_def, user_data, tenant, session_id, worker_db, mcp_servers,
+                                image_model=image_model, image_gen_model=image_gen_model,
+                                audio_model=audio_model, video_model=video_model,
+                                video_gen_model=video_gen_model
+                            )
                             worker_db.commit()
                         except Exception as e:
                             worker_db.rollback()

@@ -227,6 +227,11 @@ export default function ChatPlayground({ isSidebarOpen, toggleSidebar }) {
   };
 
   const [prochatModel, setProchatModel] = useState('');
+  const [imageModel, setImageModel] = useState('');
+  const [imageGenModel, setImageGenModel] = useState('');
+  const [audioModel, setAudioModel] = useState('');
+  const [videoModel, setVideoModel] = useState('');
+  const [videoGenModel, setVideoGenModel] = useState('');
 
   // File Upload states
   const fileInputRef = useRef(null);
@@ -521,17 +526,39 @@ export default function ChatPlayground({ isSidebarOpen, toggleSidebar }) {
       const data = await tenantsApi.listLlms(null, { tenant_id: selectedTenantId || undefined });
       const items = Array.isArray(data) ? data : (data.items || []);
       setTenantModels(items || []);
-      const nonProchat = (items || []).filter(
-        m => m.provider !== 'prochat' && !m.model_name.toLowerCase().includes('genui')
+      // Categorize models by modality
+      const textModels = (items || []).filter(
+        m => m.provider !== 'prochat' && !m.model_name.toLowerCase().includes('genui') && (m.model_type === 'text' || m.model_type === 'multimodal' || !m.model_type)
       );
-      const urlModelExists = selectedModel && nonProchat.some(m => m.model_name === selectedModel);
+      const imageGenModels = (items || []).filter(
+        m => m.model_type === 'image_gen' || m.model_type === 'multimodal'
+      );
+      const videoGenModels = (items || []).filter(
+        m => m.model_type === 'video_gen' || m.model_type === 'multimodal'
+      );
+      const visionModels = (items || []).filter(
+        m => m.provider !== 'prochat' && (m.model_type === 'text' || m.model_type === 'multimodal' || !m.model_type)
+      );
+
+      const urlModelExists = selectedModel && textModels.some(m => m.model_name === selectedModel);
       if (!urlModelExists) {
-        if (nonProchat.length > 0) {
-          setSelectedModel(nonProchat[0].model_name);
+        if (textModels.length > 0) {
+          setSelectedModel(textModels[0].model_name);
         } else {
           setSelectedModel('');
         }
       }
+
+      // Default Sub-Agent dropdowns to respective first matching models
+      const firstVision = visionModels[0]?.model_name || '';
+      const firstImageGen = (imageGenModels.length > 0 ? imageGenModels[0] : visionModels[0])?.model_name || '';
+      const firstVideoGen = (videoGenModels.length > 0 ? videoGenModels[0] : visionModels[0])?.model_name || '';
+
+      setImageModel(prev => prev && visionModels.some(m => m.model_name === prev) ? prev : firstVision);
+      setImageGenModel(prev => prev && imageGenModels.some(m => m.model_name === prev) ? prev : firstImageGen);
+      setAudioModel(prev => prev && visionModels.some(m => m.model_name === prev) ? prev : firstVision);
+      setVideoModel(prev => prev && visionModels.some(m => m.model_name === prev) ? prev : firstVision);
+      setVideoGenModel(prev => prev && videoGenModels.some(m => m.model_name === prev) ? prev : firstVideoGen);
     } catch (e) {
       console.error('Failed to fetch playground models:', e);
     }
@@ -676,6 +703,11 @@ export default function ChatPlayground({ isSidebarOpen, toggleSidebar }) {
         app_id: selectedAppId || undefined,
         user_data: getUserDataPayload(),
         prochat_model: prochatModel.trim() || undefined,
+        image_model: imageModel.trim() || undefined,
+        image_gen_model: imageGenModel.trim() || undefined,
+        audio_model: audioModel.trim() || undefined,
+        video_model: videoModel.trim() || undefined,
+        video_gen_model: videoGenModel.trim() || undefined,
         skill_names: selectedSkillNames.length > 0 ? selectedSkillNames : undefined,
         system_prompt: systemPrompt || undefined,
         attachments: currentFiles.map(f => ({
@@ -1332,6 +1364,16 @@ export default function ChatPlayground({ isSidebarOpen, toggleSidebar }) {
         setApps={setApps}
         prochatModel={prochatModel}
         setProchatModel={setProchatModel}
+        imageModel={imageModel}
+        setImageModel={setImageModel}
+        imageGenModel={imageGenModel}
+        setImageGenModel={setImageGenModel}
+        audioModel={audioModel}
+        setAudioModel={setAudioModel}
+        videoModel={videoModel}
+        setVideoModel={setVideoModel}
+        videoGenModel={videoGenModel}
+        setVideoGenModel={setVideoGenModel}
         selectedSkillNames={selectedSkillNames}
         setSelectedSkillNames={setSelectedSkillNames}
         templates={templates}

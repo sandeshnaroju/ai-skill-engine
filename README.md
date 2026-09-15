@@ -437,16 +437,109 @@ The `/api/v1/chat/completions` endpoint dynamically adjusts its output payload b
 |---|---|---|---|
 | **Standard Streaming** | `"stream": true` | `text/event-stream` (SSE) | Live tokens (`delta.content`), reasoning thoughts (`delta.reasoning`), tool invocations (`delta.tool_call`), sandbox results (`delta.tool_result`) |
 | **Standard Sync** | `"stream": false` | `application/json` | Assistant reply (`message.content`), sandbox audit history (`executed_tools`) |
+| **Multimodal & Sub-Agents (Stream)** | `"stream": true`, `"image_gen_model": "...", "video_gen_model": "...", "image_model": "..."` | `text/event-stream` (SSE) | Sub-agent traces, live image/video generation progress, generated asset paths (`delta.tool_result.generated_files`) |
+| **Multimodal & Sub-Agents (Sync)** | `"stream": false`, `"image_gen_model": "...", "video_gen_model": "...", "image_model": "..."` | `application/json` | Complete text reply + generated file paths & vision/audio audit logs in `executed_tools` |
 | **ProChat Generative UI (Stream)** | `"stream": true`, `"prochat_model": "genui-mars-0.1"` | `text/event-stream` (SSE) | Live UI JSON schema (`delta.json`), React component code (`delta.code`) |
 | **ProChat Generative UI (Sync)** | `"stream": false`, `"prochat_model": "genui-mars-0.1"` | `application/json` | Final UI JSON (`message.json`), final React component (`message.code`) |
-| **Universal Artifacts (Stream)** | `"stream": true`, `"skill_names": ["artifact_editor"]` | `text/event-stream` (SSE) | Real-time artifact metadata (`delta.artifact`: `artifact_id`, `title`, `token`, `embed_url`) |
-| **Universal Artifacts (Sync)** | `"stream": false`, `"skill_names": ["artifact_editor"]` | `application/json` | Assistant text reply + complete artifact payload (`message.artifact`) |
+| **Universal Artifacts (Stream)** | `"stream": true`, `"skill_names": ["artifact_editor"]` | `text/event-stream` (SSE) | Real-time artifacts array (`delta.artifacts`: `[{ artifact_id, title, token, embed_url }]`) |
+| **Universal Artifacts (Sync)** | `"stream": false`, `"skill_names": ["artifact_editor"]` | `application/json` | Assistant text reply + complete artifacts array (`message.artifacts`) |
+
+---
+
+## ⚡ Multimodal & Sub-Agent Routing Parameters
+
+AI Skill Engine allows granular model routing per request. While `model` acts as the primary orchestrator, you can pass specialized models for different modalities:
+
+| Parameter | Target Modality / Sub-Agent | Executed Skills & Tools | Example Models |
+|---|---|---|---|
+| `model` *(string, required)* | Primary Orchestrator & Planner | Main conversation loop & tool dispatch | `gemini-2.5-flash`, `gpt-4o`, `claude-3-5-sonnet` |
+| `image_gen_model` *(string, opt)* | AI Image Generation Sub-Agent | `image_and_video_generation` (`generate_image`) | `gemini-2.5-flash-image`, `dall-e-3`, `imagen-3.0` |
+| `video_gen_model` *(string, opt)* | AI Video Generation Sub-Agent | `image_and_video_generation` (`generate_video`) | `veo-3.1-generate-preview`, `veo-3.1-fast-generate-preview` |
+| `image_model` *(string, opt)* | Vision Analyst Sub-Agent | `multimodal_analyst` (`analyze_image`) | `gemini-2.5-flash`, `gpt-4o`, `claude-3-5-sonnet` |
+| `audio_model` *(string, opt)* | Audio Analyst Sub-Agent | `multimodal_analyst` (`analyze_audio`) | `gemini-2.5-flash`, `gemini-2.5-pro` |
+| `video_model` *(string, opt)* | Video Frame Analyst Sub-Agent | `multimodal_analyst` (`analyze_video`) | `gemini-2.5-flash`, `gemini-2.5-pro` |
+| `prochat_model` *(string, opt)* | Generative UI Sub-Agent | ProChat Dynamic React & JSON UI | `genui-mars-0.1`, `gemini-2.5-flash` |
+
+> 📁 **Generated Media Files:** All generated images and videos are written to isolated tenant folders `sandbox/outputs/<tenant>/<filename>` and are directly downloadable or streamable at `GET /api/v1/files/download/<tenant>/<filename>`.
 
 ---
 
 ## 💻 Backend Code Examples
 
-### 1. cURL
+### 1. Multimodal & Generative Sub-Agents Example
+
+#### cURL (Multimodal Streaming)
+```bash
+curl -N -X POST http://localhost:2704/api/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer sk_mgr_YOUR_TENANT_API_KEY" \
+  -d '{
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {"type": "text", "text": "Generate a 16:9 futuristic city concept image and review this architectural blueprint."},
+          {"type": "image_url", "image_url": {"url": "https://example.com/blueprint.png"}}
+        ]
+      }
+    ],
+    "model": "gemini-2.5-flash",
+    "image_gen_model": "gemini-2.5-flash-image",
+    "video_gen_model": "veo-3.1-generate-preview",
+    "image_model": "gemini-2.5-flash",
+    "stream": true,
+    "session_id": "multimodal_session_001",
+    "skill_names": ["image_and_video_generation", "multimodal_analyst"]
+  }'
+```
+
+#### Python OpenAI SDK (Multimodal Sub-Agents)
+```python
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="http://localhost:2704/api/v1",
+    api_key="sk_mgr_YOUR_TENANT_API_KEY"
+)
+
+response_stream = client.chat.completions.create(
+    model="gemini-2.5-flash",  # Orchestrator
+    messages=[
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "Generate a cinematic video of a comet flying past Saturn."},
+                {"type": "image_url", "image_url": {"url": "https://example.com/saturn_reference.jpg"}}
+            ]
+        }
+    ],
+    stream=True,
+    extra_body={
+        "image_gen_model": "gemini-2.5-flash-image",
+        "video_gen_model": "veo-3.1-generate-preview",
+        "image_model": "gemini-2.5-flash",
+        "session_id": "multimodal_session_002",
+        "skill_names": ["image_and_video_generation", "multimodal_analyst"]
+    }
+)
+
+for chunk in response_stream:
+    if not chunk.choices:
+        continue
+    delta = chunk.choices[0].delta
+
+    if delta.content:
+        print(delta.content, end="", flush=True)
+
+    # Sub-agent execution outputs & generated video/image links
+    tool_result = getattr(delta, "tool_result", None) or (delta.model_extra or {}).get("tool_result")
+    if tool_result and tool_result.get("generated_files"):
+        print(f"\n[Generated Files]: {tool_result['generated_files']}")
+```
+
+---
+
+### 2. Standard Chat & Universal Canvas Artifacts
 
 #### Streaming Request (SSE)
 ```bash
@@ -473,69 +566,6 @@ curl -X POST http://localhost:2704/api/v1/chat/completions \
     "session_id": "user_session_404",
     "skill_names": ["weather_fetcher", "math_solver"]
   }'
-```
-
----
-
-### 2. Python (OpenAI SDK & requests)
-
-#### Streaming with OpenAI Python SDK
-```python
-from openai import OpenAI
-
-client = OpenAI(
-    base_url="http://localhost:2704/api/v1",
-    api_key="sk_mgr_YOUR_TENANT_API_KEY"
-)
-
-response_stream = client.chat.completions.create(
-    model="gemini-2.5-flash",
-    messages=[{"role": "user", "content": "Draft an Executive Modernization Plan in Canvas"}],
-    stream=True,
-    extra_body={
-        "session_id": "client_session_801",
-        "skill_names": ["artifact_editor"]
-    }
-)
-
-for chunk in response_stream:
-    if not chunk.choices:
-        continue
-    delta = chunk.choices[0].delta
-
-    # Stream text tokens
-    if delta.content:
-        print(delta.content, end="", flush=True)
-
-    # Extract artifact metadata if emitted
-    artifact = getattr(delta, "artifact", None) or (delta.model_extra or {}).get("artifact")
-    if artifact:
-        print(f"\n[ARTIFACT] Title: {artifact['title']} | Embed URL: {artifact['embed_url']}")
-```
-
-#### Synchronous with Python requests
-```python
-import requests
-
-url = "http://localhost:2704/api/v1/chat/completions"
-headers = {
-    "Content-Type": "application/json",
-    "Authorization": "Bearer sk_mgr_YOUR_TENANT_API_KEY"
-}
-payload = {
-    "messages": [{"role": "user", "content": "Draft an Executive Modernization Plan in Canvas"}],
-    "stream": False,
-    "session_id": "client_session_802",
-    "skill_names": ["artifact_editor"]
-}
-
-response = requests.post(url, headers=headers, json=payload).json()
-msg = response["choices"][0]["message"]
-print("Assistant Answer:", msg["content"])
-
-if "artifact" in msg:
-    art = msg["artifact"]
-    print(f"Artifact Title: {art['title']} | Embed URL: {art['embed_url']}")
 ```
 
 ---
@@ -580,8 +610,10 @@ while (true) {
       if (!delta) continue;
 
       if (delta.content) process.stdout.write(delta.content);
-      if (delta.artifact) {
-        console.log("\n[Artifact Created]:", delta.artifact.title, delta.artifact.embed_url);
+      if (delta.artifacts && Array.isArray(delta.artifacts)) {
+        delta.artifacts.forEach(artifact => {
+          console.log("\n[Artifact Created]:", artifact.title, artifact.embed_url);
+        });
       }
     } catch (e) {}
   }
@@ -595,18 +627,20 @@ while (true) {
 Give your users a **Claude Artifacts** and **ChatGPT Canvas** experience inside your own SaaS product or website. When your chatbot writes contracts, code scripts, spreadsheets, or presentations, users can interactively view, co-edit, and export them.
 
 ## 📦 What the API Returns for Artifacts
-Whether streaming (`delta.artifact`) or synchronous (`message.artifact`), the engine provides:
+Whether streaming (`delta.artifacts`) or synchronous (`message.artifacts` and top-level `artifacts`), the engine provides an array of artifact objects:
 
 ```json
-{
-  "artifact_id": "84419384-8e98-4b7f-bc21-8f2abe21f44c",
-  "title": "Application for Leave of Absence",
-  "filename": "leave_application.md",
-  "artifact_type": "document",
-  "current_version": 1,
-  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-  "embed_url": "/embed/canvas?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-}
+[
+  {
+    "artifact_id": "84419384-8e98-4b7f-bc21-8f2abe21f44c",
+    "title": "Application for Leave of Absence",
+    "filename": "leave_application.md",
+    "artifact_type": "document",
+    "current_version": 1,
+    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "embed_url": "/embed/canvas?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+  }
+]
 ```
 
 ---

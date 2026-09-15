@@ -22,6 +22,16 @@ export default function ConfigDrawer({
   setApps,
   prochatModel,
   setProchatModel,
+  imageModel,
+  setImageModel,
+  imageGenModel,
+  setImageGenModel,
+  audioModel,
+  setAudioModel,
+  videoModel,
+  setVideoModel,
+  videoGenModel,
+  setVideoGenModel,
   selectedSkillNames,
   setSelectedSkillNames,
   templates,
@@ -241,7 +251,7 @@ export default function ConfigDrawer({
                     const data = await tenantsApi.listLlms(null, { search: searchTerm || '', page_size: 10, page: 1, tenant_id: selectedTenantId || undefined });
                     const items = data.items || Array.isArray(data) ? (data.items || data) : [];
                     return items
-                      .filter(m => m.provider !== 'prochat' && !m.model_name.toLowerCase().includes('genui'))
+                      .filter(m => m.provider !== 'prochat' && !m.model_name.toLowerCase().includes('genui') && (m.model_type === 'text' || m.model_type === 'multimodal' || !m.model_type))
                       .map(m => ({
                         value: m.model_name,
                         label: `${m.model_name} (${m.provider})`
@@ -322,6 +332,240 @@ export default function ConfigDrawer({
                       <X size={13} />
                     </button>
                   )}
+                </div>
+              </div>
+
+              {/* Multimodal Sub-Agent Models (Flat routing for Image, Audio, Video) */}
+              <div style={{
+                borderTop: '1px solid var(--border-subtle)',
+                paddingTop: '14px',
+                marginTop: '6px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '12px'
+              }}>
+                <div>
+                  <div style={{ fontSize: '0.74rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.5px' }}>
+                    Multimodal Sub-Agents
+                  </div>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px', opacity: 0.85 }}>
+                    Dedicated models used when delegating media inspections
+                  </div>
+                </div>
+
+                {/* 🖼️ Image Sub-Agent Model */}
+                <div>
+                  <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.72rem', fontWeight: '600', color: 'var(--text-sub)', marginBottom: '4px' }}>
+                    <span>🖼️ Image / Vision Model</span>
+                  </label>
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <select
+                      value={imageModel || ''}
+                      onChange={(e) => setImageModel(e.target.value)}
+                      disabled={!selectedTenantId}
+                      style={{
+                        flex: 1,
+                        fontSize: '0.8rem',
+                        padding: '7px 10px',
+                        borderRadius: '8px',
+                        border: '1px solid var(--border-subtle)',
+                        background: imageModel ? 'rgba(59, 130, 246, 0.08)' : 'var(--bg-input)',
+                        color: imageModel ? 'var(--primary-blue, #3b82f6)' : 'var(--text-sub)',
+                        outline: 'none',
+                      }}
+                    >
+                      <option value="">— tenant default (auto) —</option>
+                      {tenantModels
+                        .filter(m => m.provider !== 'prochat' && (m.model_type === 'text' || m.model_type === 'multimodal' || !m.model_type))
+                        .map(m => (
+                          <option key={m.id} value={m.model_name}>
+                            {m.model_name} ({m.provider})
+                          </option>
+                        ))}
+                    </select>
+                    {imageModel && (
+                      <button
+                        onClick={() => setImageModel('')}
+                        title="Clear image model override"
+                        className="btn-outline"
+                        style={{ padding: '6px', borderRadius: '8px' }}
+                      >
+                        <X size={13} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* 🎨 Image Generation Model (DALL-E / Nano Banana / Gemini Flash Image) */}
+                <div>
+                  <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.72rem', fontWeight: '600', color: 'var(--text-sub)', marginBottom: '4px' }}>
+                    <span>🎨 Image Generation Model</span>
+                  </label>
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <select
+                      value={imageGenModel || ''}
+                      onChange={(e) => setImageGenModel(e.target.value)}
+                      disabled={!selectedTenantId}
+                      style={{
+                        flex: 1,
+                        fontSize: '0.8rem',
+                        padding: '7px 10px',
+                        borderRadius: '8px',
+                        border: '1px solid var(--border-subtle)',
+                        background: imageGenModel ? 'rgba(168, 85, 247, 0.08)' : 'var(--bg-input)',
+                        color: imageGenModel ? 'var(--primary-purple, #a855f7)' : 'var(--text-sub)',
+                        outline: 'none',
+                      }}
+                    >
+                      <option value="">— tenant default (auto) —</option>
+                      {tenantModels
+                        .filter(m => m.model_type === 'image_gen' || m.model_type === 'multimodal')
+                        .map(m => (
+                          <option key={m.id} value={m.model_name}>
+                            {m.model_name} ({m.provider})
+                          </option>
+                        ))}
+                    </select>
+                    {imageGenModel && (
+                      <button
+                        onClick={() => setImageGenModel('')}
+                        title="Clear image generation model override"
+                        className="btn-outline"
+                        style={{ padding: '6px', borderRadius: '8px' }}
+                      >
+                        <X size={13} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* 🎙️ Audio Sub-Agent Model */}
+                <div>
+                  <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.72rem', fontWeight: '600', color: 'var(--text-sub)', marginBottom: '4px' }}>
+                    <span>🎙️ Audio / Speech Model</span>
+                  </label>
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <select
+                      value={audioModel || ''}
+                      onChange={(e) => setAudioModel(e.target.value)}
+                      disabled={!selectedTenantId}
+                      style={{
+                        flex: 1,
+                        fontSize: '0.8rem',
+                        padding: '7px 10px',
+                        borderRadius: '8px',
+                        border: '1px solid var(--border-subtle)',
+                        background: audioModel ? 'rgba(16, 185, 129, 0.08)' : 'var(--bg-input)',
+                        color: audioModel ? 'var(--primary-green, #10b981)' : 'var(--text-sub)',
+                        outline: 'none',
+                      }}
+                    >
+                      <option value="">— tenant default (auto) —</option>
+                      {tenantModels
+                        .filter(m => m.provider !== 'prochat' && (m.model_type === 'text' || m.model_type === 'multimodal' || !m.model_type))
+                        .map(m => (
+                          <option key={m.id} value={m.model_name}>
+                            {m.model_name} ({m.provider})
+                          </option>
+                        ))}
+                    </select>
+                    {audioModel && (
+                      <button
+                        onClick={() => setAudioModel('')}
+                        title="Clear audio model override"
+                        className="btn-outline"
+                        style={{ padding: '6px', borderRadius: '8px' }}
+                      >
+                        <X size={13} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* 🎥 Video Sub-Agent Model */}
+                <div>
+                  <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.72rem', fontWeight: '600', color: 'var(--text-sub)', marginBottom: '4px' }}>
+                    <span>🎥 Video Understanding Model</span>
+                  </label>
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <select
+                      value={videoModel || ''}
+                      onChange={(e) => setVideoModel(e.target.value)}
+                      disabled={!selectedTenantId}
+                      style={{
+                        flex: 1,
+                        fontSize: '0.8rem',
+                        padding: '7px 10px',
+                        borderRadius: '8px',
+                        border: '1px solid var(--border-subtle)',
+                        background: videoModel ? 'rgba(236, 72, 153, 0.08)' : 'var(--bg-input)',
+                        color: videoModel ? 'var(--primary-pink, #ec4899)' : 'var(--text-sub)',
+                        outline: 'none',
+                      }}
+                    >
+                      <option value="">— tenant default (auto) —</option>
+                      {tenantModels
+                        .filter(m => m.provider !== 'prochat' && (m.model_type === 'text' || m.model_type === 'multimodal' || !m.model_type))
+                        .map(m => (
+                          <option key={m.id} value={m.model_name}>
+                            {m.model_name} ({m.provider})
+                          </option>
+                        ))}
+                    </select>
+                    {videoModel && (
+                      <button
+                        onClick={() => setVideoModel('')}
+                        title="Clear video model override"
+                        className="btn-outline"
+                        style={{ padding: '6px', borderRadius: '8px' }}
+                      >
+                        <X size={13} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* 🎬 Video Generation Model (Veo 3.1, Luma Ray 2, HunyuanVideo) */}
+                <div>
+                  <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.72rem', fontWeight: '600', color: 'var(--text-sub)', marginBottom: '4px' }}>
+                    <span>🎬 Video Generation Model</span>
+                  </label>
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <select
+                      value={videoGenModel || ''}
+                      onChange={(e) => setVideoGenModel(e.target.value)}
+                      disabled={!selectedTenantId}
+                      style={{
+                        flex: 1,
+                        fontSize: '0.8rem',
+                        padding: '7px 10px',
+                        borderRadius: '8px',
+                        border: '1px solid var(--border-subtle)',
+                        background: videoGenModel ? 'rgba(6, 182, 212, 0.08)' : 'var(--bg-input)',
+                        color: videoGenModel ? 'var(--primary-cyan, #06b6d4)' : 'var(--text-sub)',
+                        outline: 'none',
+                      }}
+                    >
+                      <option value="">— tenant default (auto) —</option>
+                      {tenantModels
+                        .filter(m => m.model_type === 'video_gen' || m.model_type === 'multimodal')
+                        .map(m => (
+                          <option key={m.id} value={m.model_name}>
+                            {m.model_name} ({m.provider})
+                          </option>
+                        ))}
+                    </select>
+                    {videoGenModel && (
+                      <button
+                        onClick={() => setVideoGenModel('')}
+                        title="Clear video generation model override"
+                        className="btn-outline"
+                        style={{ padding: '6px', borderRadius: '8px' }}
+                      >
+                        <X size={13} />
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>

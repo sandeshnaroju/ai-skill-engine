@@ -17,6 +17,7 @@ export default function LlmConfigManager({
   const [provider, setProvider] = useState('openai');
   const [modelName, setModelName] = useState('');
   const [modelApiKey, setModelApiKey] = useState('');
+  const [modelType, setModelType] = useState('text');
   const [baseUrl, setBaseUrl] = useState('');
   const [inputRate, setInputRate] = useState(0.0);
   const [outputRate, setOutputRate] = useState(0.0);
@@ -35,6 +36,7 @@ export default function LlmConfigManager({
         provider,
         model_name: modelName.trim(),
         api_key: modelApiKey.trim(),
+        model_type: modelType,
         base_url: baseUrl.trim() || null,
         input_rate: parseFloat(inputRate),
         output_rate: parseFloat(outputRate),
@@ -64,6 +66,7 @@ export default function LlmConfigManager({
     setEditingLlmId(l.id);
     setProvider(l.provider || 'openai');
     setModelName(l.model_name || '');
+    setModelType(l.model_type || 'text');
     setModelApiKey(''); 
     setBaseUrl(l.base_url || '');
     setInputRate(l.input_rate != null ? l.input_rate : 0.0);
@@ -76,6 +79,7 @@ export default function LlmConfigManager({
     setEditingLlmId(null);
     setProvider('openai');
     setModelName('');
+    setModelType('text');
     setModelApiKey('');
     setBaseUrl('');
     setInputRate(0.0);
@@ -140,11 +144,25 @@ export default function LlmConfigManager({
             </select>
           </div>
 
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <label style={{ fontSize: '0.74rem', color: 'var(--text-sub)', fontWeight: '600' }}>Model Type / Modality</label>
+            <select
+              value={modelType}
+              onChange={(e) => setModelType(e.target.value)}
+              style={{ padding: '8px' }}
+            >
+              <option value="text">💬 Text Generation (LLM)</option>
+              <option value="image_gen">🎨 Image Generation</option>
+              <option value="video_gen">🎬 Video Generation</option>
+              <option value="multimodal">🌐 Multi-Purpose / All</option>
+            </select>
+          </div>
+
           <div style={{ flex: 1.2, display: 'flex', flexDirection: 'column', gap: '4px' }}>
             <label style={{ fontSize: '0.74rem', color: 'var(--text-sub)', fontWeight: '600' }}>Model Name</label>
             <input
               type="text"
-              placeholder="e.g. gpt-4o"
+              placeholder={modelType === 'video_gen' ? "e.g. veo-3.1-fast-generate-preview" : (modelType === 'image_gen' ? "e.g. gemini-3.1-flash-image" : "e.g. gpt-4o")}
               value={modelName}
               onChange={(e) => setModelName(e.target.value)}
               style={{ padding: '8px', fontSize: '0.82rem' }}
@@ -282,8 +300,20 @@ export default function LlmConfigManager({
                 <div key={l.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', background: 'var(--bg-input)', borderRadius: '8px', border: '1px solid var(--border-subtle)' }}>
                   <div>
                     <div style={{ fontSize: '0.86rem', fontWeight: '600', color: 'var(--text-main)' }}>{l.model_name}</div>
-                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
                       <span className="badge-tag tag-docker" style={{ padding: '1px 4px', fontSize: '0.62rem' }}>{l.provider}</span>
+                      <span style={{
+                        padding: '1px 6px',
+                        borderRadius: '4px',
+                        fontSize: '0.62rem',
+                        fontWeight: '700',
+                        textTransform: 'uppercase',
+                        background: l.model_type === 'image_gen' ? 'rgba(168, 85, 247, 0.15)' : (l.model_type === 'video_gen' ? 'rgba(6, 182, 212, 0.15)' : (l.model_type === 'multimodal' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(59, 130, 246, 0.15)')),
+                        color: l.model_type === 'image_gen' ? '#c084fc' : (l.model_type === 'video_gen' ? '#22d3ee' : (l.model_type === 'multimodal' ? '#34d399' : '#60a5fa')),
+                        border: `1px solid ${l.model_type === 'image_gen' ? 'rgba(168, 85, 247, 0.3)' : (l.model_type === 'video_gen' ? 'rgba(6, 182, 212, 0.3)' : (l.model_type === 'multimodal' ? 'rgba(16, 185, 129, 0.3)' : 'rgba(59, 130, 246, 0.3)'))}`
+                      }}>
+                        {l.model_type === 'image_gen' ? '🎨 Image Gen' : (l.model_type === 'video_gen' ? '🎬 Video Gen' : (l.model_type === 'multimodal' ? '🌐 Multimodal' : '💬 Text'))}
+                      </span>
                       {l.base_url && <span style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', maxWidth: '160px' }}>{l.base_url}</span>}
                     </div>
                   </div>

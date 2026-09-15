@@ -32,7 +32,7 @@ class DockerRunner:
             return "python:3.11-slim"
         return self.image
 
-    def execute(self, command: str, code: str = None, timeout: int = 30) -> dict:
+    def execute(self, command: str, code: str = None, timeout: int = 30, tenant_folder: str = None) -> dict:
         start_time = time.time()
         temp_dir = tempfile.mkdtemp(dir=self.base_sandbox_dir, prefix="docker_sb_")
         
@@ -89,15 +89,18 @@ class DockerRunner:
                     if os.path.isfile(src_path) and not os.path.islink(src_path):
                         import uuid
                         unique_name = f"{uuid.uuid4().hex}_{file}"
-                        outputs_dir = os.path.join(self.base_sandbox_dir, "outputs")
+                        from storage import OUTPUT_DIR
+                        outputs_dir = os.path.join(OUTPUT_DIR, tenant_folder) if tenant_folder else OUTPUT_DIR
                         os.makedirs(outputs_dir, exist_ok=True)
                         dest_path = os.path.join(outputs_dir, unique_name)
                         shutil.copy2(src_path, dest_path)
+                        rel_sandbox_path = f"sandbox/outputs/{tenant_folder}/{unique_name}" if tenant_folder else f"sandbox/outputs/{unique_name}"
+                        dl_url = f"/api/v1/files/download/{tenant_folder}/{unique_name}" if tenant_folder else f"/api/v1/files/download/{unique_name}"
                         generated_files.append({
                             "filename": unique_name,
                             "original_name": file,
-                            "url": f"/api/v1/files/download/{unique_name}",
-                            "sandbox_path": f"sandbox/outputs/{unique_name}"
+                            "url": dl_url,
+                            "sandbox_path": rel_sandbox_path
                         })
 
             return {

@@ -16,7 +16,7 @@ tools:
           description: File name with extension (e.g. main.py, agreement.docx, pitch_deck.pptx, model.xlsx, drawing.dxf, part.step, map.geojson, schedule.xer).
         artifact_type:
           type: string
-          enum: ["code", "document", "spreadsheet", "presentation", "diagram_svg", "audio", "video", "cad_2d", "cad_3d", "gis", "diagram", "engineering_data"]
+          enum: ["code", "document", "spreadsheet", "presentation", "diagram_svg", "image", "audio", "video", "cad_2d", "cad_3d", "gis", "diagram", "engineering_data"]
           description: Category of artifact.
         language:
           type: string
@@ -29,14 +29,14 @@ tools:
         - filename
         - artifact_type
   - name: open_uploaded_file_as_artifact
-    description: Open an uploaded user file (document, spreadsheet, presentation, PDF, CAD drawing, 3D model, GIS map, industrial engineering file, audio/video, or code script) in the interactive Canvas Artifact Editor. Call this whenever the user asks to inspect, open, view, or edit a file they previously uploaded or provided in chat (e.g. "open this report in canvas", "edit slide 2 in this presentation", "review this spreadsheet", "inspect this 3D model").
+    description: Open an uploaded user file (document, spreadsheet, presentation, PDF, CAD drawing, 3D model, GIS map, industrial engineering file, image, audio/video, or code script) in the interactive Canvas Artifact Editor. Call this whenever the user asks to inspect, open, view, or edit a file they previously uploaded or provided in chat (e.g. "open this report in canvas", "edit slide 2 in this presentation", "review this spreadsheet", "inspect this 3D model", "view this generated image").
     type: code
     parameters:
       type: object
       properties:
         filename:
           type: string
-          description: Name of the uploaded file (e.g. "quarterly_earnings.xlsx", "contract.docx", "pitch.pptx", "part.step", "model.dxf").
+          description: Name of the uploaded file (e.g. "quarterly_earnings.xlsx", "contract.docx", "pitch.pptx", "part.step", "model.dxf", "diagram.png").
         file_path:
           type: string
           description: Optional sandbox path of the file if known (e.g. "sandbox/uploads/tenant/file.pdf").
@@ -45,7 +45,7 @@ tools:
           description: Optional display title for the Canvas header.
         artifact_type:
           type: string
-          enum: ["code", "document", "spreadsheet", "presentation", "pdf", "cad_2d", "cad_3d", "gis", "diagram", "engineering_data", "audio", "video"]
+          enum: ["code", "document", "spreadsheet", "presentation", "pdf", "image", "cad_2d", "cad_3d", "gis", "diagram", "engineering_data", "audio", "video"]
           description: Optional explicit artifact type override.
       required:
         - filename
@@ -199,7 +199,10 @@ Use this skill whenever generating, modifying, or refining digital artifacts for
    - For diagrams / workflows: Use `artifact_type="diagram"` or `"diagram_svg"`.
 6. **2D CAD & Engineering Drawings (`.dxf`, `.dwg`)**:
    - Set `artifact_type="cad_2d"`.
-   - For `.dxf`: Output standard ASCII DXF format (with `ENTITIES` containing `LINE`, `LWPOLYLINE`, `CIRCLE`, `ARC`, `TEXT`, `MTEXT`, `DIMENSION` with appropriate layer assignments like `0`, `CENTER`, `HIDDEN`, `DIMENSIONS`).
+   - For `.dxf`: Output clean, standard ASCII DXF format (R12 / AC1009 or AC1015) with `HEADER`, `TABLES` (layer definitions with standard ACI colors 1-8), and `ENTITIES`.
+   - Use standard geometric primitives: `LINE`, `CIRCLE`, `ARC`, `LWPOLYLINE`, `POLYLINE`, `TEXT`, and `MTEXT`.
+   - **When DXF files are generated via Python code in the sandbox**: ALWAYS call `artifact_editor__open_uploaded_file_as_artifact(file_path="sandbox/outputs/...", title="...")` or `filename="<filename>.dxf"`. Do NOT manually copy a truncated snippet into `open_or_update_artifact`, as this drops the drawing entities. Calling `open_uploaded_file_as_artifact` automatically imports all thousands of entities and lines into the Canvas viewer.
+   - **Token Efficiency & Chunking**: Do NOT emit massive raw skeletonized polylines with hundreds of thousands of vertices that exceed LLM max output tokens. Instead, construct clean parametric CAD primitives (clean process lines, instrument circles, valve bowties, boundary rects). If generating large blueprints, structure entities by process section into distinct artifact blocks (e.g. `sec_header`, `sec_tables`, `sec_process`, `sec_instruments`, `sec_titleblock`) using `edit_artifact_section` or `open_or_update_artifact`.
 7. **3D Solid Models & Assemblies (`.step`, `.stp`, `.iges`, `.igs`, `.stl`, `.obj`, `.ifc`)**:
    - Set `artifact_type="cad_3d"`.
    - Output standard 3D file formats (e.g., ASCII Wavefront `.obj` with vertex/face definitions, standard ASCII `.stl` solid blocks with facet normals, or ISO-10303-21 `.step` part definitions).
@@ -210,6 +213,9 @@ Use this skill whenever generating, modifying, or refining digital artifacts for
    - Set `artifact_type="engineering_data"`.
    - For Rockwell Studio 5000 / ControlLogix (`.l5x`): Emit valid RSLogix XML containing `<RSLogix5000Content>`, `<Controller>`, `<Tags>`, and `<Routines>`.
    - For Primavera P6 (`.xer`): Emit valid P6 exchange format tables (`%T`, `%F`, `CALENDAR`, `TASK`, `PROJWBS`).
+10. **Raster Images & Generated Visuals (`.png`, `.jpg`, `.jpeg`, `.webp`)**:
+   - Set `artifact_type="image"`.
+   - **When an image is generated via `multimodal_analyst__generate_image`**: ALWAYS call `artifact_editor__open_uploaded_file_as_artifact(file_path="<sandbox_output_path>", title="<title>", artifact_type="image")`. This registers the generated image and opens it in the Canvas Artifact Editor with interactive zoom, pan, rotation, and high-resolution export controls.
 
 ---
 

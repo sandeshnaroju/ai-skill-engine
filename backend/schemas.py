@@ -4,7 +4,13 @@ from typing import Optional, List, Any, Union
 class PlaygroundChatRequest(BaseModel):
     message: str
     session_id: Optional[str] = "default_session"
+    model: Optional[str] = None
     prochat_model: Optional[str] = None
+    image_model: Optional[str] = None
+    image_gen_model: Optional[str] = None
+    audio_model: Optional[str] = None
+    video_model: Optional[str] = None
+    video_gen_model: Optional[str] = None
     user_data: Optional[dict] = None
     skill_names: Optional[List[str]] = None
     temperature: Optional[float] = None
@@ -43,6 +49,11 @@ class OpenAIChatRequest(BaseModel):
     app_id: Optional[str] = None
     stream: Optional[bool] = False
     prochat_model: Optional[str] = None
+    image_model: Optional[str] = None
+    image_gen_model: Optional[str] = None
+    audio_model: Optional[str] = None
+    video_model: Optional[str] = None
+    video_gen_model: Optional[str] = None
     user_data: Optional[dict] = None
     skill_names: Optional[List[str]] = None
     temperature: Optional[float] = None
@@ -114,7 +125,8 @@ class AppDuplicateRequest(BaseModel):
 class TenantLlmCreate(BaseModel):
     provider: str
     model_name: str
-    api_key: str
+    api_key: Optional[str] = None
+    model_type: Optional[str] = "text"  # text, image_gen, video_gen, multimodal
     base_url: Optional[str] = None
     input_rate: Optional[float] = 1.0
     output_rate: Optional[float] = 2.0

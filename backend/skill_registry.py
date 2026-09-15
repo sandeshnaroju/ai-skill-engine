@@ -101,7 +101,25 @@ class SkillRegistry:
                         if len(parts) >= 3:
                             frontmatter_raw = parts[1]
                             markdown_body = parts[2].strip()
-                            metadata = yaml.safe_load(frontmatter_raw) or {}
+                            try:
+                                metadata = yaml.safe_load(frontmatter_raw) or {}
+                            except yaml.YAMLError:
+                                # Fallback: quote unquoted values containing colons
+                                sanitized_lines = []
+                                for line in frontmatter_raw.splitlines():
+                                    if ":" in line and not line.strip().startswith("-"):
+                                        k, v = line.split(":", 1)
+                                        v_str = v.strip()
+                                        if v_str and not (v_str.startswith('"') or v_str.startswith("'") or v_str.startswith("[") or v_str.startswith("{")):
+                                            sanitized_lines.append(f'{k}: "{v_str}"')
+                                        else:
+                                            sanitized_lines.append(line)
+                                    else:
+                                        sanitized_lines.append(line)
+                                try:
+                                    metadata = yaml.safe_load("\n".join(sanitized_lines)) or {}
+                                except Exception:
+                                    metadata = {"name": dbs.name, "description": dbs.description}
                         else:
                             metadata = {"name": dbs.name, "description": dbs.description}
                             markdown_body = dbs.content

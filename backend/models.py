@@ -56,6 +56,13 @@ class Tenant(Base):
     yearly_reset_month = Column(Integer, default=1, nullable=False)
     yearly_reset_day = Column(Integer, default=1, nullable=False)
 
+    # Default Multimodal Sub-Agent Models
+    default_image_model = Column(String, nullable=True, default="gemini-2.5-flash")
+    default_image_gen_model = Column(String, nullable=True, default="gemini-3.1-flash-image")
+    default_audio_model = Column(String, nullable=True, default="gemini-2.5-flash")
+    default_video_model = Column(String, nullable=True, default="gemini-2.5-flash")
+    default_video_gen_model = Column(String, nullable=True, default="veo-3.1-fast-generate-preview")
+
     # Relationships
     user = relationship("User", back_populates="tenants")
     sessions = relationship("ConversationSession", back_populates="tenant", cascade="all, delete-orphan")
@@ -249,6 +256,7 @@ class TenantLLM(Base):
     output_rate = Column(Float, default=2.0)
     audio_input_rate = Column(Float, default=10.0)
     audio_output_rate = Column(Float, default=20.0)
+    model_type = Column(String, default="text", nullable=False)  # text, image_gen, video_gen, multimodal
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

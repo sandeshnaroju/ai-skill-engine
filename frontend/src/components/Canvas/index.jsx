@@ -536,7 +536,9 @@ function CanvasInner({ isEmbed = false, artifactId: propArtifactId, token: propT
       type === 'diagram' ||
       type === 'vector' ||
       lang === 'svg' ||
-      filename.endsWith('.svg')
+      filename.endsWith('.svg') ||
+      filename.endsWith('.vsd') ||
+      filename.endsWith('.vsdx')
     ) {
       return 'svg';
     }

@@ -117,9 +117,9 @@ def import_file_to_artifact_data(filepath: str, title: Optional[str] = None, exp
         content, blocks = _parse_engineering_data(filepath, display_filename, ext)
 
     # ─────────────────────────────────────────────────────────────────────────
-    # 8. Vector Graphics & Diagrams (.svg, .vsdx)
+    # 8. Vector Graphics & Diagrams (.svg, .vsdx, .vsd)
     # ─────────────────────────────────────────────────────────────────────────
-    elif ext in (".svg", ".vsdx"):
+    elif ext in (".svg", ".vsdx", ".vsd"):
         artifact_type = "svg" if ext == ".svg" else "diagram"
         content, blocks = _parse_diagram(filepath, display_filename, ext)
 
