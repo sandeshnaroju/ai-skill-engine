@@ -256,6 +256,17 @@ def init_db():
             finally:
                 db.close()
 
+        if "model_type" not in columns:
+            db = SessionLocal()
+            try:
+                db.execute(text("ALTER TABLE tenant_llms ADD COLUMN model_type TEXT DEFAULT 'text'"))
+                db.commit()
+                print("Migration: Added 'model_type' column to tenant_llms table")
+            except Exception as e:
+                print(f"Migration warning: Could not add model_type to tenant_llms: {e}")
+            finally:
+                db.close()
+
     if inspector.has_table("tenants"):
         columns = [c["name"] for c in inspector.get_columns("tenants")]
         db = SessionLocal()

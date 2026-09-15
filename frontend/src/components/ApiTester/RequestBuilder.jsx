@@ -8,6 +8,7 @@ export default function RequestBuilder({
   setSystemPrompt,
   selectedTenantId,
   setSelectedTenantId,
+  fetchTenantModels,
   tenants,
   setTenants,
   model,
@@ -19,6 +20,16 @@ export default function RequestBuilder({
   setApps,
   prochatModel,
   setProchatModel,
+  imageModel,
+  setImageModel,
+  imageGenModel,
+  setImageGenModel,
+  audioModel,
+  setAudioModel,
+  videoModel,
+  setVideoModel,
+  videoGenModel,
+  setVideoGenModel,
   stream,
   setStream,
   uploadedFile,
@@ -108,10 +119,16 @@ export default function RequestBuilder({
         <div style={{ width: '100%' }}>
           <AsyncSearchableDropdown
             value={selectedTenantId}
-            onChange={(val) => setSelectedTenantId(val)}
+            onChange={(val) => {
+              setSelectedTenantId(val);
+              const foundTenant = tenants.find(t => t.id === val);
+              if (foundTenant && fetchTenantModels) {
+                fetchTenantModels(foundTenant.api_key, foundTenant.id);
+              }
+            }}
             initialLabel={tenants.find(t => t.id === selectedTenantId)?.name ? `${tenants.find(t => t.id === selectedTenantId).name} (••••${(tenants.find(t => t.id === selectedTenantId).api_key || '').slice(-4)})` : ''}
             fetchOptions={async (searchTerm) => {
-              const data = await tenantsApi.list({ search: searchTerm || '', page_size: 10, page: 1 });
+              const data = await tenantsApi.list({ search: searchTerm || '', page_size: 50, page: 1 });
               const items = data.items || Array.isArray(data) ? (data.items || data) : [];
               setTenants(prev => {
                 const newTs = [...prev];
@@ -138,18 +155,18 @@ export default function RequestBuilder({
               value={model}
               onChange={(val) => setModel(val)}
               fetchOptions={async (searchTerm) => {
-                if (!selectedTenantKey) return [];
-                const data = await tenantsApi.listLlms(selectedTenantKey, { search: searchTerm || '', page_size: 10, page: 1 });
+                if (!selectedTenantKey && !selectedTenantId) return [];
+                const data = await tenantsApi.listLlms(selectedTenantKey || null, { search: searchTerm || '', page_size: 50, page: 1, tenant_id: selectedTenantId || undefined });
                 const items = data.items || Array.isArray(data) ? (data.items || data) : [];
                 return items
-                  .filter(m => m.provider !== 'prochat' && !m.model_name.toLowerCase().includes('genui'))
+                  .filter(m => m.provider !== 'prochat' && !m.model_name.toLowerCase().includes('genui') && (m.model_type === 'text' || m.model_type === 'multimodal' || !m.model_type))
                   .map(m => ({
                     value: m.model_name,
                     label: `${m.model_name} (${m.provider})`
                   }));
               }}
               placeholder={tenantModels.length === 0 ? "No models configured" : "Select Model"}
-              disabled={!selectedTenantKey}
+              disabled={!selectedTenantKey && !selectedTenantId}
             />
           </div>
         </div>
@@ -162,7 +179,7 @@ export default function RequestBuilder({
               onChange={(val) => setAppId(val)}
               initialLabel={apps.find(a => a.id === appId)?.name ? `📦 ${apps.find(a => a.id === appId).name}` : ''}
               fetchOptions={async (searchTerm) => {
-                const data = await appsApi.list({ search: searchTerm || '', page_size: 10, page: 1, tenant_id: selectedTenantId || undefined });
+                const data = await appsApi.list({ search: searchTerm || '', page_size: 50, page: 1, tenant_id: selectedTenantId || undefined });
                 const items = data.items || Array.isArray(data) ? (data.items || data) : [];
                 setApps(prev => {
                   const newApps = [...prev];
@@ -187,6 +204,7 @@ export default function RequestBuilder({
         <select
           value={prochatModel}
           onChange={(e) => setProchatModel(e.target.value)}
+          disabled={!selectedTenantKey && !selectedTenantId}
           style={{
             width: '100%',
             padding: '10px 14px',
@@ -209,6 +227,185 @@ export default function RequestBuilder({
               </option>
             ))}
         </select>
+      </div>
+
+      {/* Sub-Agent Multimodal & Generative Model Overrides */}
+      <div style={{
+        background: 'rgba(255, 255, 255, 0.02)',
+        border: '1px solid var(--border-subtle)',
+        borderRadius: '10px',
+        padding: '12px 14px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '12px'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ fontSize: '0.8rem', fontWeight: '700', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span>⚡ Sub-Agent Model Routing</span>
+          </div>
+          <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Filtered by modality</span>
+        </div>
+
+        {/* 🎨 Image Generation Model & 🎬 Video Generation Model */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <label style={{ fontSize: '0.72rem', color: 'var(--primary-purple, #a855f7)', fontWeight: '600' }}>
+              🎨 Image Generation Model
+            </label>
+            <select
+              value={imageGenModel}
+              onChange={(e) => setImageGenModel(e.target.value)}
+              disabled={!selectedTenantKey && !selectedTenantId}
+              style={{
+                width: '100%',
+                padding: '8px 10px',
+                borderRadius: '8px',
+                border: '1px solid var(--border-subtle)',
+                background: imageGenModel ? 'rgba(168, 85, 247, 0.08)' : 'var(--bg-input)',
+                color: imageGenModel ? 'var(--primary-purple, #a855f7)' : 'var(--text-sub)',
+                fontSize: '0.8rem',
+                outline: 'none',
+                cursor: 'pointer'
+              }}
+            >
+              <option value="">— tenant default (auto) —</option>
+              {tenantModels
+                .filter(m => m.model_type === 'image_gen' || m.model_type === 'multimodal')
+                .map(m => (
+                  <option key={m.id} value={m.model_name}>
+                    {m.model_name} ({m.provider})
+                  </option>
+                ))}
+            </select>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <label style={{ fontSize: '0.72rem', color: 'var(--primary-cyan, #06b6d4)', fontWeight: '600' }}>
+              🎬 Video Generation Model
+            </label>
+            <select
+              value={videoGenModel}
+              onChange={(e) => setVideoGenModel(e.target.value)}
+              disabled={!selectedTenantKey && !selectedTenantId}
+              style={{
+                width: '100%',
+                padding: '8px 10px',
+                borderRadius: '8px',
+                border: '1px solid var(--border-subtle)',
+                background: videoGenModel ? 'rgba(6, 182, 212, 0.08)' : 'var(--bg-input)',
+                color: videoGenModel ? 'var(--primary-cyan, #06b6d4)' : 'var(--text-sub)',
+                fontSize: '0.8rem',
+                outline: 'none',
+                cursor: 'pointer'
+              }}
+            >
+              <option value="">— tenant default (auto) —</option>
+              {tenantModels
+                .filter(m => m.model_type === 'video_gen' || m.model_type === 'multimodal')
+                .map(m => (
+                  <option key={m.id} value={m.model_name}>
+                    {m.model_name} ({m.provider})
+                  </option>
+                ))}
+            </select>
+          </div>
+        </div>
+
+        {/* 🖼️ Vision, 🎙️ Audio, and 🎥 Video Understanding Models */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '10px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <label style={{ fontSize: '0.72rem', color: 'var(--text-sub)', fontWeight: '600' }}>
+              🖼️ Vision / Image Model
+            </label>
+            <select
+              value={imageModel}
+              onChange={(e) => setImageModel(e.target.value)}
+              disabled={!selectedTenantKey && !selectedTenantId}
+              style={{
+                width: '100%',
+                padding: '8px 10px',
+                borderRadius: '8px',
+                border: '1px solid var(--border-subtle)',
+                background: imageModel ? 'rgba(59, 130, 246, 0.08)' : 'var(--bg-input)',
+                color: imageModel ? 'var(--primary-blue, #3b82f6)' : 'var(--text-sub)',
+                fontSize: '0.8rem',
+                outline: 'none',
+                cursor: 'pointer'
+              }}
+            >
+              <option value="">— tenant default —</option>
+              {tenantModels
+                .filter(m => m.provider !== 'prochat' && (m.model_type === 'text' || m.model_type === 'multimodal' || !m.model_type))
+                .map(m => (
+                  <option key={m.id} value={m.model_name}>
+                    {m.model_name} ({m.provider})
+                  </option>
+                ))}
+            </select>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <label style={{ fontSize: '0.72rem', color: 'var(--text-sub)', fontWeight: '600' }}>
+              🎙️ Audio / Speech Model
+            </label>
+            <select
+              value={audioModel}
+              onChange={(e) => setAudioModel(e.target.value)}
+              disabled={!selectedTenantKey && !selectedTenantId}
+              style={{
+                width: '100%',
+                padding: '8px 10px',
+                borderRadius: '8px',
+                border: '1px solid var(--border-subtle)',
+                background: audioModel ? 'rgba(16, 185, 129, 0.08)' : 'var(--bg-input)',
+                color: audioModel ? 'var(--primary-green, #10b981)' : 'var(--text-sub)',
+                fontSize: '0.8rem',
+                outline: 'none',
+                cursor: 'pointer'
+              }}
+            >
+              <option value="">— tenant default —</option>
+              {tenantModels
+                .filter(m => m.provider !== 'prochat' && (m.model_type === 'text' || m.model_type === 'multimodal' || !m.model_type))
+                .map(m => (
+                  <option key={m.id} value={m.model_name}>
+                    {m.model_name} ({m.provider})
+                  </option>
+                ))}
+            </select>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <label style={{ fontSize: '0.72rem', color: 'var(--text-sub)', fontWeight: '600' }}>
+              🎥 Video Analysis Model
+            </label>
+            <select
+              value={videoModel}
+              onChange={(e) => setVideoModel(e.target.value)}
+              disabled={!selectedTenantKey && !selectedTenantId}
+              style={{
+                width: '100%',
+                padding: '8px 10px',
+                borderRadius: '8px',
+                border: '1px solid var(--border-subtle)',
+                background: videoModel ? 'rgba(236, 72, 153, 0.08)' : 'var(--bg-input)',
+                color: videoModel ? 'var(--primary-pink, #ec4899)' : 'var(--text-sub)',
+                fontSize: '0.8rem',
+                outline: 'none',
+                cursor: 'pointer'
+              }}
+            >
+              <option value="">— tenant default —</option>
+              {tenantModels
+                .filter(m => m.provider !== 'prochat' && (m.model_type === 'text' || m.model_type === 'multimodal' || !m.model_type))
+                .map(m => (
+                  <option key={m.id} value={m.model_name}>
+                    {m.model_name} ({m.provider})
+                  </option>
+                ))}
+            </select>
+          </div>
+        </div>
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px', background: 'var(--bg-input)', borderRadius: '10px', border: '1px solid var(--border-subtle)' }}>

@@ -125,7 +125,8 @@ class AppDuplicateRequest(BaseModel):
 class TenantLlmCreate(BaseModel):
     provider: str
     model_name: str
-    api_key: str
+    api_key: Optional[str] = None
+    model_type: Optional[str] = "text"  # text, image_gen, video_gen, multimodal
     base_url: Optional[str] = None
     input_rate: Optional[float] = 1.0
     output_rate: Optional[float] = 2.0

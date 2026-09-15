@@ -256,6 +256,7 @@ class TenantLLM(Base):
     output_rate = Column(Float, default=2.0)
     audio_input_rate = Column(Float, default=10.0)
     audio_output_rate = Column(Float, default=20.0)
+    model_type = Column(String, default="text", nullable=False)  # text, image_gen, video_gen, multimodal
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

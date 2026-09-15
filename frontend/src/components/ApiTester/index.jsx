@@ -28,6 +28,11 @@ export default function ApiTester() {
   const model = searchParams.get('model') || '';
   const appId = searchParams.get('app_id') || '';
   const prochatModel = searchParams.get('prochat_model') || '';
+  const imageModel = searchParams.get('image_model') || '';
+  const imageGenModel = searchParams.get('image_gen_model') || '';
+  const audioModel = searchParams.get('audio_model') || '';
+  const videoModel = searchParams.get('video_model') || '';
+  const videoGenModel = searchParams.get('video_gen_model') || '';
   const [systemPrompt, setSystemPrompt] = useState('You are AI Skill Engine, an enterprise chatbot equipped with advanced tools and skills.');
   const [messageHistory, setMessageHistory] = useState([]);
   const [currentMessage, setCurrentMessage] = useState(searchParams.has('message') ? (searchParams.get('message') ?? '') : 'Check disk space and system uptime');
@@ -51,6 +56,41 @@ export default function ApiTester() {
     const nextParams = new URLSearchParams(searchParams);
     if (val) nextParams.set('prochat_model', val);
     else nextParams.delete('prochat_model');
+    setSearchParams(nextParams);
+  };
+
+  const setImageModel = (val) => {
+    const nextParams = new URLSearchParams(searchParams);
+    if (val) nextParams.set('image_model', val);
+    else nextParams.delete('image_model');
+    setSearchParams(nextParams);
+  };
+
+  const setImageGenModel = (val) => {
+    const nextParams = new URLSearchParams(searchParams);
+    if (val) nextParams.set('image_gen_model', val);
+    else nextParams.delete('image_gen_model');
+    setSearchParams(nextParams);
+  };
+
+  const setAudioModel = (val) => {
+    const nextParams = new URLSearchParams(searchParams);
+    if (val) nextParams.set('audio_model', val);
+    else nextParams.delete('audio_model');
+    setSearchParams(nextParams);
+  };
+
+  const setVideoModel = (val) => {
+    const nextParams = new URLSearchParams(searchParams);
+    if (val) nextParams.set('video_model', val);
+    else nextParams.delete('video_model');
+    setSearchParams(nextParams);
+  };
+
+  const setVideoGenModel = (val) => {
+    const nextParams = new URLSearchParams(searchParams);
+    if (val) nextParams.set('video_gen_model', val);
+    else nextParams.delete('video_gen_model');
     setSearchParams(nextParams);
   };
 
@@ -257,27 +297,28 @@ export default function ApiTester() {
   const loadMetaData = async () => {
     try {
       const [tenantsData, appsData] = await Promise.all([
-        tenantsApi.list(),
-        appsApi.list()
+        tenantsApi.list({ page_size: 100 }),
+        appsApi.list({ page_size: 100 })
       ]);
 
-      const tenantsList = Array.isArray(tenantsData) ? tenantsData : (tenantsData.items || []);
+      const tenantsList = Array.isArray(tenantsData) ? tenantsData : (tenantsData.items || tenantsData.data || []);
       const appsList = appsData?.items || appsData || [];
       setTenants(tenantsList);
       setApps(appsList);
 
-      // Auto-select first tenant if none selected
+      // Auto-select preferred/default tenant if none in URL
       let tenantIdToUse = selectedTenantId;
-      if (tenantsList && tenantsList.length > 0 && !selectedTenantId) {
-        tenantIdToUse = tenantsList[0].id;
+      if (!tenantIdToUse && tenantsList.length > 0) {
+        const preferredTenant = tenantsList.find(t => (t.models_count && t.models_count > 0) || t.name === 'Default Workspace') || tenantsList[0];
+        tenantIdToUse = preferredTenant.id;
         setSelectedTenantId(tenantIdToUse);
       }
 
       // Resolve key from selected/default tenant and load its models
       const activeT = tenantsList.find(t => t.id === tenantIdToUse) || tenantsList[0];
       const keyToUse = activeT ? activeT.api_key : '';
-      if (keyToUse) {
-        fetchTenantModels(keyToUse);
+      if (keyToUse || tenantIdToUse) {
+        fetchTenantModels(keyToUse, tenantIdToUse);
       }
 
       // Auto-select first app if none is in URL
@@ -293,34 +334,58 @@ export default function ApiTester() {
     loadMetaData();
   }, []);
 
-  const fetchTenantModels = async (key) => {
-    if (!key) return;
+  const fetchTenantModels = async (key, tenantId) => {
+    const targetKey = key || selectedTenantKey;
+    const targetId = tenantId || selectedTenantId;
+    if (!targetKey && !targetId) return;
     try {
-      const data = await tenantsApi.listLlms(key);
+      const data = await tenantsApi.listLlms(targetKey || null, { tenant_id: targetId || undefined, page_size: 100 });
       const items = Array.isArray(data) ? data : (data.items || []);
       setTenantModels(items || []);
-      const nonProchat = (items || []).filter(
-        m => m.provider !== 'prochat' && !m.model_name.toLowerCase().includes('genui')
+      // Categorize models by modality
+      const textModels = (items || []).filter(
+        m => m.provider !== 'prochat' && !m.model_name.toLowerCase().includes('genui') && (m.model_type === 'text' || m.model_type === 'multimodal' || !m.model_type)
       );
+      const imageGenModels = (items || []).filter(
+        m => m.model_type === 'image_gen' || m.model_type === 'multimodal'
+      );
+      const videoGenModels = (items || []).filter(
+        m => m.model_type === 'video_gen' || m.model_type === 'multimodal'
+      );
+      const visionModels = (items || []).filter(
+        m => m.provider !== 'prochat' && (m.model_type === 'text' || m.model_type === 'multimodal' || !m.model_type)
+      );
+
       // Only auto-select first model if no model is set or URL model doesn't exist in list
-      const urlModelExists = model && nonProchat.some(m => m.model_name === model);
+      const urlModelExists = model && textModels.some(m => m.model_name === model);
       if (!urlModelExists) {
-        if (nonProchat.length > 0) {
-          setModel(nonProchat[0].model_name);
+        if (textModels.length > 0) {
+          setModel(textModels[0].model_name);
         } else {
           setModel('');
         }
       }
+
+      // Default Sub-Agent dropdowns to respective first matching models if not set
+      const firstVision = visionModels[0]?.model_name || '';
+      const firstImageGen = (imageGenModels.length > 0 ? imageGenModels[0] : visionModels[0])?.model_name || '';
+      const firstVideoGen = (videoGenModels.length > 0 ? videoGenModels[0] : visionModels[0])?.model_name || '';
+
+      if (!imageModel && firstVision) setImageModel(firstVision);
+      if (!imageGenModel && firstImageGen) setImageGenModel(firstImageGen);
+      if (!audioModel && firstVision) setAudioModel(firstVision);
+      if (!videoModel && firstVision) setVideoModel(firstVision);
+      if (!videoGenModel && firstVideoGen) setVideoGenModel(firstVideoGen);
     } catch (e) {
       console.error('Failed to fetch tenant models:', e);
     }
   };
 
   useEffect(() => {
-    if (selectedTenantKey) {
-      fetchTenantModels(selectedTenantKey);
+    if (selectedTenantId || selectedTenantKey) {
+      fetchTenantModels(selectedTenantKey, selectedTenantId);
     }
-  }, [selectedTenantKey]);
+  }, [selectedTenantId, selectedTenantKey]);
 
   const handleSend = async () => {
     if (loading) return;
@@ -387,6 +452,21 @@ export default function ApiTester() {
 
     if (prochatModel.trim()) {
       payload.prochat_model = prochatModel.trim();
+    }
+    if (imageModel.trim()) {
+      payload.image_model = imageModel.trim();
+    }
+    if (imageGenModel.trim()) {
+      payload.image_gen_model = imageGenModel.trim();
+    }
+    if (audioModel.trim()) {
+      payload.audio_model = audioModel.trim();
+    }
+    if (videoModel.trim()) {
+      payload.video_model = videoModel.trim();
+    }
+    if (videoGenModel.trim()) {
+      payload.video_gen_model = videoGenModel.trim();
     }
 
     const userDataPayload = getUserDataPayload();
@@ -770,6 +850,11 @@ export default function ApiTester() {
     stream: stream,
     ...(appId && { app_id: appId }),
     ...(prochatModel.trim() && { prochat_model: prochatModel.trim() }),
+    ...(imageModel.trim() && { image_model: imageModel.trim() }),
+    ...(imageGenModel.trim() && { image_gen_model: imageGenModel.trim() }),
+    ...(audioModel.trim() && { audio_model: audioModel.trim() }),
+    ...(videoModel.trim() && { video_model: videoModel.trim() }),
+    ...(videoGenModel.trim() && { video_gen_model: videoGenModel.trim() }),
     ...(userDataPayloadForCurl && { user_data: userDataPayloadForCurl }),
     ...(selectedSkillNames.length > 0 && { skill_names: selectedSkillNames })
   };
@@ -843,6 +928,7 @@ export default function ApiTester() {
           setSystemPrompt={setSystemPrompt}
           selectedTenantId={selectedTenantId}
           setSelectedTenantId={setSelectedTenantId}
+          fetchTenantModels={fetchTenantModels}
           tenants={tenants}
           setTenants={setTenants}
           model={model}
@@ -854,6 +940,16 @@ export default function ApiTester() {
           setApps={setApps}
           prochatModel={prochatModel}
           setProchatModel={setProchatModel}
+          imageModel={imageModel}
+          setImageModel={setImageModel}
+          imageGenModel={imageGenModel}
+          setImageGenModel={setImageGenModel}
+          audioModel={audioModel}
+          setAudioModel={setAudioModel}
+          videoModel={videoModel}
+          setVideoModel={setVideoModel}
+          videoGenModel={videoGenModel}
+          setVideoGenModel={setVideoGenModel}
           stream={stream}
           setStream={setStream}
           uploadedFile={uploadedFile}

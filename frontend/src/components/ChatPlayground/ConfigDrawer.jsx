@@ -251,7 +251,7 @@ export default function ConfigDrawer({
                     const data = await tenantsApi.listLlms(null, { search: searchTerm || '', page_size: 10, page: 1, tenant_id: selectedTenantId || undefined });
                     const items = data.items || Array.isArray(data) ? (data.items || data) : [];
                     return items
-                      .filter(m => m.provider !== 'prochat' && !m.model_name.toLowerCase().includes('genui'))
+                      .filter(m => m.provider !== 'prochat' && !m.model_name.toLowerCase().includes('genui') && (m.model_type === 'text' || m.model_type === 'multimodal' || !m.model_type))
                       .map(m => ({
                         value: m.model_name,
                         label: `${m.model_name} (${m.provider})`
@@ -375,11 +375,13 @@ export default function ConfigDrawer({
                       }}
                     >
                       <option value="">— tenant default (auto) —</option>
-                      {tenantModels.map(m => (
-                        <option key={m.id} value={m.model_name}>
-                          {m.model_name} ({m.provider})
-                        </option>
-                      ))}
+                      {tenantModels
+                        .filter(m => m.provider !== 'prochat' && (m.model_type === 'text' || m.model_type === 'multimodal' || !m.model_type))
+                        .map(m => (
+                          <option key={m.id} value={m.model_name}>
+                            {m.model_name} ({m.provider})
+                          </option>
+                        ))}
                     </select>
                     {imageModel && (
                       <button
@@ -416,11 +418,13 @@ export default function ConfigDrawer({
                       }}
                     >
                       <option value="">— tenant default (auto) —</option>
-                      {tenantModels.map(m => (
-                        <option key={m.id} value={m.model_name}>
-                          {m.model_name} ({m.provider})
-                        </option>
-                      ))}
+                      {tenantModels
+                        .filter(m => m.model_type === 'image_gen' || m.model_type === 'multimodal')
+                        .map(m => (
+                          <option key={m.id} value={m.model_name}>
+                            {m.model_name} ({m.provider})
+                          </option>
+                        ))}
                     </select>
                     {imageGenModel && (
                       <button
@@ -457,11 +461,13 @@ export default function ConfigDrawer({
                       }}
                     >
                       <option value="">— tenant default (auto) —</option>
-                      {tenantModels.map(m => (
-                        <option key={m.id} value={m.model_name}>
-                          {m.model_name} ({m.provider})
-                        </option>
-                      ))}
+                      {tenantModels
+                        .filter(m => m.provider !== 'prochat' && (m.model_type === 'text' || m.model_type === 'multimodal' || !m.model_type))
+                        .map(m => (
+                          <option key={m.id} value={m.model_name}>
+                            {m.model_name} ({m.provider})
+                          </option>
+                        ))}
                     </select>
                     {audioModel && (
                       <button
@@ -498,11 +504,13 @@ export default function ConfigDrawer({
                       }}
                     >
                       <option value="">— tenant default (auto) —</option>
-                      {tenantModels.map(m => (
-                        <option key={m.id} value={m.model_name}>
-                          {m.model_name} ({m.provider})
-                        </option>
-                      ))}
+                      {tenantModels
+                        .filter(m => m.provider !== 'prochat' && (m.model_type === 'text' || m.model_type === 'multimodal' || !m.model_type))
+                        .map(m => (
+                          <option key={m.id} value={m.model_name}>
+                            {m.model_name} ({m.provider})
+                          </option>
+                        ))}
                     </select>
                     {videoModel && (
                       <button
@@ -539,11 +547,13 @@ export default function ConfigDrawer({
                       }}
                     >
                       <option value="">— tenant default (auto) —</option>
-                      {tenantModels.map(m => (
-                        <option key={m.id} value={m.model_name}>
-                          {m.model_name} ({m.provider})
-                        </option>
-                      ))}
+                      {tenantModels
+                        .filter(m => m.model_type === 'video_gen' || m.model_type === 'multimodal')
+                        .map(m => (
+                          <option key={m.id} value={m.model_name}>
+                            {m.model_name} ({m.provider})
+                          </option>
+                        ))}
                     </select>
                     {videoGenModel && (
                       <button

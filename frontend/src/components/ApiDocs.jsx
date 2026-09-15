@@ -4,7 +4,7 @@ import {
   BookOpen, Key, Terminal, Code, Check, Copy, Zap, Cpu, Server,
   ShieldCheck, Activity, Layers, Globe, FileText, Layout, ExternalLink,
   ArrowRight, Sparkles, Download, Lock, CheckCircle2, Sliders, Eye,
-  Sun, Moon, LayoutDashboard, LogIn
+  Sun, Moon, LayoutDashboard, LogIn, Image, Video, Mic, Film, Play, Upload
 } from 'lucide-react';
 
 export default function ApiDocs({ isStandalone = false, theme: propTheme, toggleTheme: propToggleTheme, isAuthenticated }) {
@@ -503,15 +503,16 @@ for chunk in response_stream:
     if delta.content:
         print(delta.content, end="", flush=True)
 
-    # 2. Extract real-time artifact payload
-    artifact = getattr(delta, "artifact", None) or (delta.model_extra or {}).get("artifact")
-    if artifact:
-        print(f"\\n\\n[NEW ARTIFACT GENERATED]")
-        print(f"Artifact ID: {artifact['artifact_id']}")
-        print(f"Title: {artifact['title']}")
-        print(f"Format: {artifact['artifact_type']}")
-        print(f"Embed URL: {artifact['embed_url']}") # Pass this directly to your website's <iframe>!
-        print(f"Token: {artifact['token']}")`,
+    # 2. Extract real-time artifacts list (Array)
+    artifacts = getattr(delta, "artifacts", None) or (delta.model_extra or {}).get("artifacts") or []
+    if artifacts:
+        for artifact in artifacts:
+            print(f"\\n\\n[NEW ARTIFACT GENERATED]")
+            print(f"Artifact ID: {artifact['artifact_id']}")
+            print(f"Title: {artifact['title']}")
+            print(f"Format: {artifact['artifact_type']}")
+            print(f"Embed URL: {artifact['embed_url']}") # Pass this directly to your website's <iframe>!
+            print(f"Token: {artifact['token']}")`,
         javascript: `// Call AI Skill Engine SSE gateway from your customer web application
 const response = await fetch("http://localhost:8000/api/v1/chat/completions", {
   method: "POST",
@@ -553,11 +554,13 @@ while (true) {
         appendChatText(delta.content);
       }
 
-      // 2. Real-time Artifact Detection
-      if (delta.artifact) {
-        const { artifact_id, title, embed_url, token, artifact_type } = delta.artifact;
-        // Mount interactive Canvas iframe in your customer website drawer:
-        openCanvasDrawer(embed_url, title);
+      // 2. Real-time Artifacts Array Detection
+      if (delta.artifacts && Array.isArray(delta.artifacts)) {
+        for (const artifact of delta.artifacts) {
+          const { artifact_id, title, embed_url, token, artifact_type } = artifact;
+          // Mount interactive Canvas iframe in your customer website drawer:
+          openCanvasDrawer(embed_url, title);
+        }
       }
     } catch (e) {}
   }
@@ -594,9 +597,9 @@ msg = response["choices"][0]["message"]
 
 print("Assistant Text:", msg["content"])
 
-# Extract artifact data for website embedding
-if "artifact" in msg:
-    art = msg["artifact"]
+# Extract artifacts array for website embedding
+artifacts = msg.get("artifacts") or response.get("artifacts") or []
+for art in artifacts:
     print("Artifact Title:", art["title"])
     print("Embed URL:", art["embed_url"]) # e.g. /embed/canvas?token=...`,
         javascript: `const response = await fetch("http://localhost:8000/api/v1/chat/completions", {
@@ -618,11 +621,262 @@ const message = data.choices[0].message;
 
 console.log("Chat text:", message.content);
 
-if (message.artifact) {
-  const { artifact_id, title, embed_url, token } = message.artifact;
+const artifacts = message.artifacts || data.artifacts || [];
+for (const art of artifacts) {
+  const { artifact_id, title, embed_url, token } = art;
   // Embed in customer web page
   renderArtifactCard({ title, embed_url });
 }`,
+      },
+    },
+    multimodal: {
+      stream: {
+        curl: `curl -N -X POST http://localhost:8000/api/v1/chat/completions \\
+  -H "Content-Type: application/json" \\
+  -H "Authorization: Bearer sk_mgr_YOUR_TENANT_API_KEY" \\
+  -d '{
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {"type": "text", "text": "Generate a futuristic cyberpunk skyline image and analyze the composition of this uploaded architectural sketch."},
+          {
+            "type": "image_url",
+            "image_url": {
+              "url": "https://example.com/assets/sketch_blueprint.png"
+            }
+          }
+        ]
+      }
+    ],
+    "model": "gemini-2.5-flash",
+    "image_gen_model": "gemini-2.5-flash-image",
+    "video_gen_model": "veo-3.1-generate-preview",
+    "image_model": "gemini-2.5-flash",
+    "audio_model": "gemini-2.5-flash",
+    "video_model": "gemini-2.5-flash",
+    "stream": true,
+    "session_id": "multimodal_stream_session_901",
+    "skill_names": ["image_and_video_generation", "multimodal_analyst"]
+  }'`,
+        python: `from openai import OpenAI
+
+# Connect official OpenAI Python SDK to AI Skill Engine gateway
+client = OpenAI(
+    base_url="http://localhost:8000/api/v1",
+    api_key="sk_mgr_YOUR_TENANT_API_KEY"
+)
+
+# Route tasks across specialized multimodal & generative sub-agents
+response_stream = client.chat.completions.create(
+    model="gemini-2.5-flash",  # Primary orchestrator & planner
+    messages=[
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "Generate a 16:9 cinematic video of a spaceship entering warp speed and analyze this mission audio briefing."},
+                {
+                    "type": "image_url",
+                    "image_url": {"url": "https://example.com/assets/briefing_diagram.jpg"}
+                }
+            ]
+        }
+    ],
+    stream=True,
+    extra_body={
+        "image_gen_model": "gemini-2.5-flash-image",
+        "video_gen_model": "veo-3.1-generate-preview",
+        "image_model": "gemini-2.5-flash",
+        "audio_model": "gemini-2.5-flash",
+        "video_model": "gemini-2.5-flash",
+        "session_id": "multimodal_stream_session_901",
+        "skill_names": ["image_and_video_generation", "multimodal_analyst"]
+    }
+)
+
+for chunk in response_stream:
+    if not chunk.choices:
+        continue
+    delta = chunk.choices[0].delta
+
+    # 1. Stream natural language assistant response
+    if delta.content:
+        print(delta.content, end="", flush=True)
+
+    # 2. Extract live sub-agent status & reasoning logs
+    reasoning = getattr(delta, "reasoning", None) or (delta.model_extra or {}).get("reasoning")
+    if reasoning:
+        print(f"\\n[Reasoning] {reasoning}")
+
+    # 3. Extract sub-agent tool execution calls (e.g. generate_image, generate_video, analyze_image)
+    tool_call = getattr(delta, "tool_call", None) or (delta.model_extra or {}).get("tool_call")
+    if tool_call:
+        print(f"\\n[Sub-Agent Tool Call] {tool_call.get('name')} with args: {tool_call.get('arguments')}")
+
+    # 4. Extract generated media assets & sandbox execution outputs
+    tool_result = getattr(delta, "tool_result", None) or (delta.model_extra or {}).get("tool_result")
+    if tool_result:
+        print(f"\\n[Tool Result] {tool_result.get('tool_name')} exit: {tool_result.get('exit_code')}")
+        if tool_result.get("generated_files"):
+            print(f"Generated Media Files: {tool_result.get('generated_files')}")
+        print(f"Output: {tool_result.get('stdout')}")`,
+        javascript: `const response = await fetch("http://localhost:8000/api/v1/chat/completions", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    "Authorization": "Bearer sk_mgr_YOUR_TENANT_API_KEY"
+  },
+  body: JSON.stringify({
+    messages: [
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "Generate a marketing poster image and review the uploaded product mockup." },
+          { type: "image_url", image_url: { url: "https://example.com/mockup.png" } }
+        ]
+      }
+    ],
+    model: "gemini-2.5-flash", // Primary orchestrator
+    image_gen_model: "gemini-2.5-flash-image", // Image generation sub-agent
+    video_gen_model: "veo-3.1-generate-preview", // Video generation sub-agent
+    image_model: "gemini-2.5-flash", // Vision analyst sub-agent
+    audio_model: "gemini-2.5-flash", // Audio analyst sub-agent
+    video_model: "gemini-2.5-flash", // Video analyst sub-agent
+    stream: true,
+    session_id: "multimodal_stream_session_902",
+    skill_names: ["image_and_video_generation", "multimodal_analyst"]
+  })
+});
+
+const reader = response.body.getReader();
+const decoder = new TextDecoder("utf-8");
+let buffer = "";
+
+while (true) {
+  const { value, done } = await reader.read();
+  if (done) break;
+
+  buffer += decoder.decode(value, { stream: true });
+  const lines = buffer.split("\\n");
+  buffer = lines.pop();
+
+  for (const line of lines) {
+    const cleanLine = line.trim();
+    if (!cleanLine.startsWith("data: ")) continue;
+    const rawData = cleanLine.substring(6);
+    if (rawData === "[DONE]") break;
+
+    try {
+      const dataJson = JSON.parse(rawData);
+      const delta = dataJson.choices?.[0]?.delta;
+      if (!delta) continue;
+
+      // 1. Text token streaming
+      if (delta.content) process.stdout.write(delta.content);
+
+      // 2. Sub-agent status & reasoning logs
+      if (delta.reasoning) console.log(\`\\n[Status]: \${delta.reasoning}\`);
+
+      // 3. Generated media outputs & file assets
+      if (delta.tool_result?.generated_files?.length > 0) {
+        console.log("\\n[Generated Assets]:", delta.tool_result.generated_files);
+      }
+    } catch (err) {}
+  }
+}`,
+      },
+      sync: {
+        curl: `curl -X POST http://localhost:8000/api/v1/chat/completions \\
+  -H "Content-Type: application/json" \\
+  -H "Authorization: Bearer sk_mgr_YOUR_TENANT_API_KEY" \\
+  -d '{
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {"type": "text", "text": "Generate a 1080p photorealistic landscape image of the Swiss Alps at sunrise."},
+          {"type": "image_url", "image_url": {"url": "https://example.com/reference_lighting.jpg"}}
+        ]
+      }
+    ],
+    "model": "gemini-2.5-flash",
+    "image_gen_model": "gemini-2.5-flash-image",
+    "video_gen_model": "veo-3.1-generate-preview",
+    "image_model": "gemini-2.5-flash",
+    "audio_model": "gemini-2.5-flash",
+    "video_model": "gemini-2.5-flash",
+    "stream": false,
+    "session_id": "multimodal_sync_session_903",
+    "skill_names": ["image_and_video_generation", "multimodal_analyst"]
+  }'`,
+        python: `import requests
+
+url = "http://localhost:8000/api/v1/chat/completions"
+headers = {
+    "Content-Type": "application/json",
+    "Authorization": "Bearer sk_mgr_YOUR_TENANT_API_KEY"
+}
+payload = {
+    "messages": [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "Generate a futuristic sports car render and analyze the aerodynamic curves in this sketch."},
+                {"type": "image_url", "image_url": {"url": "https://example.com/sketch.png"}}
+            ]
+        }
+    ],
+    "model": "gemini-2.5-flash",
+    "image_gen_model": "gemini-2.5-flash-image",
+    "video_gen_model": "veo-3.1-generate-preview",
+    "image_model": "gemini-2.5-flash",
+    "audio_model": "gemini-2.5-flash",
+    "video_model": "gemini-2.5-flash",
+    "stream": False,
+    "session_id": "multimodal_sync_session_904",
+    "skill_names": ["image_and_video_generation", "multimodal_analyst"]
+}
+
+response = requests.post(url, headers=headers, json=payload).json()
+msg = response["choices"][0]["message"]
+
+print("Assistant Reply:", msg["content"])
+print("Executed Sub-Agent Tools:", response.get("executed_tools", []))
+
+# Access generated image/video files:
+for tool in response.get("executed_tools", []):
+    if tool.get("generated_files"):
+        for filename in tool["generated_files"]:
+            download_url = f"http://localhost:8000/api/v1/files/download/{response.get('tenant', 'default')}/{filename}"
+            print(f"Generated Asset Link: {download_url}")`,
+        javascript: `const response = await fetch("http://localhost:8000/api/v1/chat/completions", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    "Authorization": "Bearer sk_mgr_YOUR_TENANT_API_KEY"
+  },
+  body: JSON.stringify({
+    messages: [
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "Generate a concept art image of a cybernetic tiger." }
+        ]
+      }
+    ],
+    model: "gemini-2.5-flash",
+    image_gen_model: "gemini-2.5-flash-image",
+    video_gen_model: "veo-3.1-generate-preview",
+    image_model: "gemini-2.5-flash",
+    stream: false,
+    session_id: "multimodal_sync_session_905",
+    skill_names: ["image_and_video_generation"]
+  })
+});
+
+const data = await response.json();
+console.log("Chat Reply:", data.choices[0].message.content);
+console.log("Sub-Agent Executions:", data.executed_tools);`,
       },
     },
   };
@@ -721,15 +975,17 @@ data: [DONE]`
       "message": {
         "role": "assistant",
         "content": "I have created the Executive Modernization Plan in Canvas. You can view, co-edit, or export the document directly.",
-        "artifact": {
-          "artifact_id": "84419384-8e98-4b7f-bc21-8f2abe21f44c",
-          "title": "Executive Modernization Plan",
-          "filename": "executive_modernization_plan.md",
-          "artifact_type": "document",
-          "current_version": 1,
-          "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJartIjoiODQ0MTkzODQtOGU5OC00YjdmLWJjMjEtOGYyYWJlMjFmNDRjIiwidGVuIjoidGVuYW50XzEwMSIsImV4cCI6MTcwMDAwMTgwMH0...",
-          "embed_url": "/embed/canvas?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-        }
+        "artifacts": [
+          {
+            "artifact_id": "84419384-8e98-4b7f-bc21-8f2abe21f44c",
+            "title": "Executive Modernization Plan",
+            "filename": "executive_modernization_plan.md",
+            "artifact_type": "document",
+            "current_version": 1,
+            "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJartIjoiODQ0MTkzODQtOGU5OC00YjdmLWJjMjEtOGYyYWJlMjFmNDRjIiwidGVuIjoidGVuYW50XzEwMSIsImV4cCI6MTcwMDAwMTgwMH0...",
+            "embed_url": "/embed/canvas?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+          }
+        ]
       },
       "finish_reason": "stop"
     }
@@ -742,17 +998,80 @@ data: [DONE]`
       "execution_time_ms": 58,
       "generated_files": ["executive_modernization_plan.md"]
     }
+  ],
+  "artifacts": [
+    {
+      "artifact_id": "84419384-8e98-4b7f-bc21-8f2abe21f44c",
+      "title": "Executive Modernization Plan",
+      "filename": "executive_modernization_plan.md",
+      "artifact_type": "document",
+      "current_version": 1,
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJartIjoiODQ0MTkzODQtOGU5OC00YjdmLWJjMjEtOGYyYWJlMjFmNDRjIiwidGVuIjoidGVuYW50XzEwMSIsImV4cCI6MTcwMDAwMTgwMH0...",
+      "embed_url": "/embed/canvas?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+    }
   ]
 }`,
       stream: `data: {"id": "chatcmpl-802", "object": "chat.completion.chunk", "created": 1700000000, "model": "gemini-2.5-flash", "choices": [{"index": 0, "delta": {"reasoning": "Invoking Create Artifact (Skill: Artifact Editor)...", "tool_call": {"name": "Create Artifact", "arguments": {"title": "Executive Modernization Plan", "artifact_type": "document", "filename": "executive_modernization_plan.md"}}}, "finish_reason": null}]}
 
 data: {"id": "chatcmpl-802", "object": "chat.completion.chunk", "created": 1700000000, "model": "gemini-2.5-flash", "choices": [{"index": 0, "delta": {"reasoning": "Create Artifact finished in 58ms.", "tool_result": {"tool_name": "Create Artifact", "skill_name": "Artifact Editor", "exit_code": 0, "execution_time_ms": 58, "artifact_data": {"id": "84419384-8e98-4b7f-bc21-8f2abe21f44c", "title": "Executive Modernization Plan", "filename": "executive_modernization_plan.md", "artifact_type": "document", "current_version": 1, "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...", "embed_url": "/embed/canvas?token=eyJhbGci..."}}}, "finish_reason": null}]}
 
-data: {"id": "chatcmpl-802", "object": "chat.completion.chunk", "created": 1700000000, "model": "gemini-2.5-flash", "choices": [{"index": 0, "delta": {"artifact": {"artifact_id": "84419384-8e98-4b7f-bc21-8f2abe21f44c", "title": "Executive Modernization Plan", "filename": "executive_modernization_plan.md", "artifact_type": "document", "current_version": 1, "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...", "embed_url": "/embed/canvas?token=eyJhbGci..."}}, "finish_reason": null}]}
+data: {"id": "chatcmpl-802", "object": "chat.completion.chunk", "created": 1700000000, "model": "gemini-2.5-flash", "choices": [{"index": 0, "delta": {"artifacts": [{"artifact_id": "84419384-8e98-4b7f-bc21-8f2abe21f44c", "title": "Executive Modernization Plan", "filename": "executive_modernization_plan.md", "artifact_type": "document", "current_version": 1, "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...", "embed_url": "/embed/canvas?token=eyJhbGci..."}]}}, "finish_reason": null}]}
 
 data: {"id": "chatcmpl-802", "object": "chat.completion.chunk", "created": 1700000000, "model": "gemini-2.5-flash", "choices": [{"index": 0, "delta": {"content": "I have created the Executive Modernization Plan in Canvas. You can view, co-edit, or export the document directly."}, "finish_reason": null}]}
 
-data: {"type": "done", "request_id": "req_993e7f22a", "tools_called": 1}
+data: {"type": "done", "request_id": "req_993e7f22a", "tools_called": 1, "artifacts": [{"artifact_id": "84419384-8e98-4b7f-bc21-8f2abe21f44c", "title": "Executive Modernization Plan", "filename": "executive_modernization_plan.md", "artifact_type": "document", "current_version": 1, "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...", "embed_url": "/embed/canvas?token=eyJhbGci..."}]}
+
+data: [DONE]`
+    },
+    multimodal: {
+      sync: `{
+  "id": "chatcmpl-multimodal_session_903",
+  "request_id": "req_f4a91b23c",
+  "object": "chat.completion",
+  "created": 1700000000,
+  "model": "gemini-2.5-flash",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "I have analyzed your reference sketch and generated the 1080p high-resolution concept image of the Swiss Alps at sunrise.\\n\\n**Generated Asset:** [Download Image](/api/v1/files/download/acme_corp/generated_image_1700000012.png)\\n\\n**Visual Analysis:** The lighting composition matches the golden hour gradient with dramatic mountain ridge reflections.",
+        "json": null,
+        "code": null
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "executed_tools": [
+    {
+      "tool_name": "generate_image",
+      "skill_name": "image_and_video_generation",
+      "exit_code": 0,
+      "execution_time_ms": 1840,
+      "generated_files": ["generated_image_1700000012.png"],
+      "stdout": "Image successfully generated with model gemini-2.5-flash-image and saved to sandbox/outputs/acme_corp/generated_image_1700000012.png"
+    },
+    {
+      "tool_name": "analyze_image",
+      "skill_name": "multimodal_analyst",
+      "exit_code": 0,
+      "execution_time_ms": 720,
+      "generated_files": [],
+      "stdout": "Visual Analysis complete: Lighting vector (45 deg east), High dynamic range terrain features."
+    }
+  ]
+}`,
+      stream: `data: {"id": "chatcmpl-901", "object": "chat.completion.chunk", "created": 1700000000, "model": "gemini-2.5-flash", "choices": [{"index": 0, "delta": {"reasoning": "Delegating vision inspection to Vision Analyst sub-agent (Model: gemini-2.5-flash)...", "tool_call": {"name": "Analyze Image", "arguments": {"image_url": "https://example.com/assets/sketch_blueprint.png"}}}, "finish_reason": null}]}
+
+data: {"id": "chatcmpl-901", "object": "chat.completion.chunk", "created": 1700000000, "model": "gemini-2.5-flash", "choices": [{"index": 0, "delta": {"reasoning": "Analyze Image finished in 720ms.", "tool_result": {"tool_name": "Analyze Image", "skill_name": "Multimodal Analyst", "exit_code": 0, "execution_time_ms": 720, "stdout": "Blueprint contains 4 architectural zones with neon grid patterns."}}, "finish_reason": null}]}
+
+data: {"id": "chatcmpl-901", "object": "chat.completion.chunk", "created": 1700000000, "model": "gemini-2.5-flash", "choices": [{"index": 0, "delta": {"reasoning": "Delegating image generation to Image Sub-Agent (Model: gemini-2.5-flash-image)...", "tool_call": {"name": "Generate Image", "arguments": {"prompt": "Futuristic cyberpunk skyline, 16:9, cybernetic architecture", "aspect_ratio": "16:9"}}}, "finish_reason": null}]}
+
+data: {"id": "chatcmpl-901", "object": "chat.completion.chunk", "created": 1700000000, "model": "gemini-2.5-flash", "choices": [{"index": 0, "delta": {"reasoning": "Generate Image completed in 1840ms.", "tool_result": {"tool_name": "Generate Image", "skill_name": "Image and Video Generation", "exit_code": 0, "execution_time_ms": 1840, "generated_files": ["generated_image_1700000012.png"], "stdout": "Image saved to sandbox/outputs/acme_corp/generated_image_1700000012.png"}}, "finish_reason": null}]}
+
+data: {"id": "chatcmpl-901", "object": "chat.completion.chunk", "created": 1700000000, "model": "gemini-2.5-flash", "choices": [{"index": 0, "delta": {"content": "I have created the cyberpunk skyline concept visual and analyzed your architectural sketch.\\n\\n**Generated Asset:** [Download Image](/api/v1/files/download/acme_corp/generated_image_1700000012.png)"}, "finish_reason": null}]}
+
+data: {"type": "done", "request_id": "req_f4a91b23c", "tools_called": 2}
 
 data: [DONE]`
     }
@@ -849,7 +1168,7 @@ data: [DONE]`
 
               <div style={{ display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap' }}>
                 {/* Model Type Selector */}
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
                   <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Model Type:</span>
                   <button
                     className={activeType === 'standard' ? 'btn-gradient' : 'btn-outline'}
@@ -857,6 +1176,13 @@ data: [DONE]`
                     style={{ padding: '5px 12px', fontSize: '0.8rem' }}
                   >
                     Standard Model
+                  </button>
+                  <button
+                    className={activeType === 'multimodal' ? 'btn-gradient' : 'btn-outline'}
+                    onClick={() => setActiveType('multimodal')}
+                    style={{ padding: '5px 12px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    <Sparkles size={14} color="var(--primary-cyan)" /> Multimodal Sub-Agents
                   </button>
                   <button
                     className={activeType === 'prochat' ? 'btn-gradient' : 'btn-outline'}
@@ -897,16 +1223,20 @@ data: [DONE]`
 
             <p style={{ color: 'var(--text-sub)', fontSize: '0.92rem', marginBottom: '16px', lineHeight: '1.6' }}>
               {activeMode === 'stream'
-                ? activeType === 'artifacts'
-                  ? 'Emits token-by-token OpenAI chunk events along with real-time delta.artifact payloads. Clients receive the artifact ID, format, cryptographic HMAC token, and embed URL to mount an interactive Document Canvas directly in their web apps.'
-                  : activeType === 'prochat'
-                    ? 'Emits token-by-token OpenAI chunk events. When using a ProChat Generative UI model, it yields delta.content for text, delta.json for the parsed UI schema, and delta.code for the component code as they stream.'
-                    : 'Emits token-by-token OpenAI chunk events (chat.completion.chunk). Includes live reasoning steps (delta.reasoning), tool invocation calls (delta.tool_call), and sandbox execution outputs (delta.tool_result) as the model thinks.'
-                : activeType === 'artifacts'
-                  ? 'Returns a complete synchronous JSON response containing the assistant text message and the full choices[0].message.artifact metadata object with title, block count, token, and ready-to-embed Canvas URL.'
-                  : activeType === 'prochat'
-                    ? 'Returns a complete synchronous JSON response containing the final text message, prochat UI configuration JSON, and the React component code inside choices[0].message.'
-                    : 'Returns a complete synchronous JSON response containing the final message object, tenant information, and executed_tools audit log array.'}
+                ? activeType === 'multimodal'
+                  ? 'Emits token-by-token OpenAI chunk events while delegating specialized image/video generation and vision/audio/video analysis to sub-agent models (image_gen_model, video_gen_model, image_model, audio_model, video_model). Yields live sub-agent reasoning steps, tool calls, and generated asset links in real time.'
+                  : activeType === 'artifacts'
+                    ? 'Emits token-by-token OpenAI chunk events along with real-time delta.artifacts array payloads. Clients receive an array of artifact objects containing the artifact ID, format, cryptographic HMAC token, and embed URL to mount interactive Document Canvases directly in their web apps.'
+                    : activeType === 'prochat'
+                      ? 'Emits token-by-token OpenAI chunk events. When using a ProChat Generative UI model, it yields delta.content for text, delta.json for the parsed UI schema, and delta.code for the component code as they stream.'
+                      : 'Emits token-by-token OpenAI chunk events (chat.completion.chunk). Includes live reasoning steps (delta.reasoning), tool invocation calls (delta.tool_call), and sandbox execution outputs (delta.tool_result) as the model thinks.'
+                : activeType === 'multimodal'
+                  ? 'Returns a complete synchronous JSON response containing the assistant text reply, executed sub-agent tools audit log, and sandbox file paths for all generated media assets.'
+                  : activeType === 'artifacts'
+                    ? 'Returns a complete synchronous JSON response containing the assistant text message and the full choices[0].message.artifacts array (and top-level artifacts array) with title, block count, token, and ready-to-embed Canvas URL.'
+                    : activeType === 'prochat'
+                      ? 'Returns a complete synchronous JSON response containing the final text message, prochat UI configuration JSON, and the React component code inside choices[0].message.'
+                      : 'Returns a complete synchronous JSON response containing the final message object, tenant information, and executed_tools audit log array.'}
             </p>
 
             {/* Language & View Switcher Bar */}
@@ -966,6 +1296,158 @@ data: [DONE]`
               <pre className="code-display" style={{ maxHeight: '320px', background: 'var(--bg-input)' }}>
                 {responseExamples[activeType][activeMode]}
               </pre>
+            </div>
+          </div>
+
+          {/* ═══════════════════════════════════════════════════════════════════ */}
+          {/* MULTIMODAL & GENERATIVE SUB-AGENTS ARCHITECTURAL GUIDE             */}
+          {/* ═══════════════════════════════════════════════════════════════════ */}
+          <div className="glass-box" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '12px' }}>
+              <div>
+                <h3 style={{ fontSize: '1.25rem', fontWeight: '700', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <Sparkles size={22} color="var(--primary-cyan)" /> Multimodal &amp; Sub-Agent Routing Architecture
+                </h3>
+                <p style={{ color: 'var(--text-sub)', fontSize: '0.9rem', marginTop: '6px', lineHeight: '1.6' }}>
+                  AI Skill Engine introduces <strong>Sub-Agent Modality Routing</strong>. Rather than forcing a single model to do everything, the engine routes image generation, video generation, vision analysis, audio comprehension, and video reasoning to specialized sub-agents with dedicated models.
+                </p>
+              </div>
+
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                <span className="badge-tag tag-process" style={{ fontSize: '0.75rem' }}><Image size={13} /> Image Gen</span>
+                <span className="badge-tag tag-docker" style={{ fontSize: '0.75rem' }}><Video size={13} /> Video Gen</span>
+                <span className="badge-tag tag-http" style={{ fontSize: '0.75rem' }}><Eye size={13} /> Vision Analyst</span>
+                <span className="badge-tag tag-shell" style={{ fontSize: '0.75rem' }}><Mic size={13} /> Audio &amp; Video Analyst</span>
+              </div>
+            </div>
+
+            {/* Parameter Reference Table */}
+            <div style={{ background: 'var(--bg-input)', padding: '16px', borderRadius: '10px', border: '1px solid var(--border-subtle)' }}>
+              <h4 style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Sliders size={16} color="var(--primary-violet)" /> Request Parameters for Modality &amp; Sub-Agent Routing
+              </h4>
+              <p style={{ fontSize: '0.84rem', color: 'var(--text-sub)', marginBottom: '12px', lineHeight: '1.5' }}>
+                Pass these fields in the root JSON request body (or inside <code>extra_body</code> when using the official OpenAI Python/Node SDKs):
+              </p>
+
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid var(--border-subtle)', textAlign: 'left', color: 'var(--text-muted)' }}>
+                      <th style={{ padding: '8px 10px' }}>Parameter</th>
+                      <th style={{ padding: '8px 10px' }}>Target Modality / Sub-Agent</th>
+                      <th style={{ padding: '8px 10px' }}>Skill / Tool Executed</th>
+                      <th style={{ padding: '8px 10px' }}>Example Compatible Models</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                      <td style={{ padding: '8px 10px', color: 'var(--primary-cyan)', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>model</td>
+                      <td style={{ padding: '8px 10px', color: 'var(--text-main)' }}>Primary Orchestrator &amp; Logical Planner</td>
+                      <td style={{ padding: '8px 10px', color: 'var(--text-sub)' }}>Main conversation, intent reasoning &amp; sub-agent dispatch</td>
+                      <td style={{ padding: '8px 10px', color: 'var(--text-muted)' }}><code>gemini-2.5-flash</code>, <code>gpt-4o</code>, <code>claude-3-5-sonnet</code></td>
+                    </tr>
+                    <tr style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                      <td style={{ padding: '8px 10px', color: 'var(--primary-violet)', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>image_gen_model</td>
+                      <td style={{ padding: '8px 10px', color: 'var(--text-main)' }}>AI Image Generation Sub-Agent</td>
+                      <td style={{ padding: '8px 10px', color: 'var(--text-sub)' }}><code>image_and_video_generation</code> (<code>generate_image</code>)</td>
+                      <td style={{ padding: '8px 10px', color: 'var(--text-muted)' }}><code>gemini-2.5-flash-image</code>, <code>dall-e-3</code>, <code>imagen-3.0</code></td>
+                    </tr>
+                    <tr style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                      <td style={{ padding: '8px 10px', color: 'var(--accent-emerald)', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>video_gen_model</td>
+                      <td style={{ padding: '8px 10px', color: 'var(--text-main)' }}>AI Video Generation Sub-Agent</td>
+                      <td style={{ padding: '8px 10px', color: 'var(--text-sub)' }}><code>image_and_video_generation</code> (<code>generate_video</code>)</td>
+                      <td style={{ padding: '8px 10px', color: 'var(--text-muted)' }}><code>veo-3.1-generate-preview</code>, <code>veo-3.1-fast-generate-preview</code></td>
+                    </tr>
+                    <tr style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                      <td style={{ padding: '8px 10px', color: 'var(--primary-indigo)', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>image_model</td>
+                      <td style={{ padding: '8px 10px', color: 'var(--text-main)' }}>Vision Analyst Sub-Agent</td>
+                      <td style={{ padding: '8px 10px', color: 'var(--text-sub)' }}><code>multimodal_analyst</code> (<code>analyze_image</code>)</td>
+                      <td style={{ padding: '8px 10px', color: 'var(--text-muted)' }}><code>gemini-2.5-flash</code>, <code>gpt-4o</code>, <code>claude-3-5-sonnet</code></td>
+                    </tr>
+                    <tr style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                      <td style={{ padding: '8px 10px', color: 'var(--accent-amber)', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>audio_model</td>
+                      <td style={{ padding: '8px 10px', color: 'var(--text-main)' }}>Audio Analyst Sub-Agent</td>
+                      <td style={{ padding: '8px 10px', color: 'var(--text-sub)' }}><code>multimodal_analyst</code> (<code>analyze_audio</code>)</td>
+                      <td style={{ padding: '8px 10px', color: 'var(--text-muted)' }}><code>gemini-2.5-flash</code>, <code>gemini-2.5-pro</code></td>
+                    </tr>
+                    <tr style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                      <td style={{ padding: '8px 10px', color: 'var(--accent-rose)', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>video_model</td>
+                      <td style={{ padding: '8px 10px', color: 'var(--text-main)' }}>Video Frame &amp; Timeline Analyst</td>
+                      <td style={{ padding: '8px 10px', color: 'var(--text-sub)' }}><code>multimodal_analyst</code> (<code>analyze_video</code>)</td>
+                      <td style={{ padding: '8px 10px', color: 'var(--text-muted)' }}><code>gemini-2.5-flash</code>, <code>gemini-2.5-pro</code></td>
+                    </tr>
+                    <tr>
+                      <td style={{ padding: '8px 10px', color: 'var(--primary-purple)', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>prochat_model</td>
+                      <td style={{ padding: '8px 10px', color: 'var(--text-main)' }}>Generative UI Sub-Agent</td>
+                      <td style={{ padding: '8px 10px', color: 'var(--text-sub)' }}>ProChat Dynamic React &amp; JSON generation</td>
+                      <td style={{ padding: '8px 10px', color: 'var(--text-muted)' }}><code>genui-mars-0.1</code>, <code>gemini-2.5-flash</code></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Multimodal Inputs & File Handling Grid */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '16px' }}>
+              {/* Card 1: Passing Multimodal Inputs */}
+              <div style={{ background: 'var(--bg-input)', padding: '16px', borderRadius: '10px', border: '1px solid var(--border-subtle)' }}>
+                <h5 style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Eye size={16} color="var(--primary-cyan)" /> 1. Passing Images &amp; Multimodal Payloads
+                </h5>
+                <p style={{ fontSize: '0.8rem', color: 'var(--text-sub)', lineHeight: '1.5', marginBottom: '10px' }}>
+                  Send multimodal content inside standard OpenAI-format <code>messages[].content</code> arrays or upload files directly:
+                </p>
+                <pre style={{ margin: 0, fontSize: '0.74rem', background: 'var(--bg-dark)', padding: '10px', borderRadius: '6px', color: 'var(--text-main)', fontFamily: 'var(--font-mono)', lineHeight: '1.4' }}>
+{`"content": [
+  { "type": "text", "text": "Analyze this architecture" },
+  {
+    "type": "image_url",
+    "image_url": {
+      "url": "https://example.com/blueprint.png" // or "data:image/png;base64,..."
+    }
+  }
+]`}
+                </pre>
+              </div>
+
+              {/* Card 2: REST File Upload API */}
+              <div style={{ background: 'var(--bg-input)', padding: '16px', borderRadius: '10px', border: '1px solid var(--border-subtle)' }}>
+                <h5 style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Upload size={16} color="var(--accent-emerald)" /> 2. Uploading Audio, Video &amp; Documents
+                </h5>
+                <p style={{ fontSize: '0.8rem', color: 'var(--text-sub)', lineHeight: '1.5', marginBottom: '10px' }}>
+                  Upload large media files prior to the chat call via multipart form data:
+                </p>
+                <pre style={{ margin: 0, fontSize: '0.74rem', background: 'var(--bg-dark)', padding: '10px', borderRadius: '6px', color: 'var(--text-main)', fontFamily: 'var(--font-mono)', lineHeight: '1.4' }}>
+{`curl -X POST http://localhost:8000/api/v1/files/upload \\
+  -H "Authorization: Bearer YOUR_KEY" \\
+  -F "file=@meeting_recording.mp4"
+
+# Then in chat messages:
+# "Please analyze meeting_recording.mp4"`}
+                </pre>
+              </div>
+
+              {/* Card 3: Generated Media Retrieval & URLs */}
+              <div style={{ background: 'var(--bg-input)', padding: '16px', borderRadius: '10px', border: '1px solid var(--border-subtle)', gridColumn: '1 / -1' }}>
+                <h5 style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Download size={16} color="var(--primary-violet)" /> 3. Generated Media Assets &amp; Tenant Isolation Paths
+                </h5>
+                <p style={{ fontSize: '0.82rem', color: 'var(--text-sub)', lineHeight: '1.6', marginBottom: '8px' }}>
+                  Generated images and videos are securely written to isolated per-tenant sandbox folders (<code>sandbox/outputs/&lt;tenant_name&gt;/&lt;filename&gt;</code>) and can be accessed or embedded directly:
+                </p>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '10px' }}>
+                  <div style={{ background: 'var(--bg-dark)', padding: '10px 12px', borderRadius: '6px', border: '1px solid var(--border-subtle)' }}>
+                    <span style={{ fontSize: '0.74rem', color: 'var(--primary-cyan)', fontWeight: 700, display: 'block' }}>Direct Download / Stream URL:</span>
+                    <code style={{ fontSize: '0.78rem', color: 'var(--text-main)' }}>GET /api/v1/files/download/{'{tenant_name}'}/{'{filename}'}</code>
+                  </div>
+                  <div style={{ background: 'var(--bg-dark)', padding: '10px 12px', borderRadius: '6px', border: '1px solid var(--border-subtle)' }}>
+                    <span style={{ fontSize: '0.74rem', color: 'var(--accent-emerald)', fontWeight: 700, display: 'block' }}>Frontend Embedding:</span>
+                    <code style={{ fontSize: '0.78rem', color: 'var(--text-main)' }}>&lt;img src="/api/v1/files/download/tenant/generated.png" /&gt;</code>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -1184,24 +1666,26 @@ data: [DONE]`
                   💡 Reading &amp; Extracting Artifact Data from the API Response
                 </h4>
                 <p style={{ fontSize: '0.86rem', color: 'var(--text-sub)', lineHeight: '1.6' }}>
-                  When your users prompt the LLM to create or modify a document, code script, or presentation, AI Skill Engine includes a structured <code>artifact</code> object in the response. You only need to read this payload and store it in your application state.
+                  When your users prompt the LLM to create or modify a document, code script, or presentation, AI Skill Engine includes a structured <code>artifacts</code> array in the response (available in <code>delta.artifacts</code> during streaming, or <code>message.artifacts</code> and top-level <code>response.artifacts</code> in synchronous responses). You only need to read this list and store it in your application state.
                 </p>
 
                 {/* Exact JSON Payload Inspection */}
                 <div style={{ marginTop: '12px', background: 'var(--bg-input)', padding: '12px 14px', borderRadius: '6px', border: '1px solid var(--border-subtle)' }}>
                   <span style={{ fontSize: '0.78rem', color: 'var(--primary-purple)', fontWeight: 600, display: 'block', marginBottom: '6px' }}>
-                    Artifact Payload Schema (Available in <code>delta.artifact</code> or <code>message.artifact</code>):
+                    Artifacts Array Schema (Available in <code>delta.artifacts</code> or <code>message.artifacts</code>):
                   </span>
                   <pre style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-main)', fontFamily: 'var(--font-mono)', lineHeight: '1.5' }}>
-                    {`{
-  "artifact_id": "84419384-8e98-4b7f-bc21-8f2abe21f44c", // Unique UUID of the artifact
-  "title": "Application for Leave of Absence",         // Human-readable title
-  "filename": "leave_application.md",                 // File name & format extension
-  "artifact_type": "document",                        // 'document' | 'code' | 'spreadsheet' | 'presentation' | 'svg'
-  "current_version": 1,                               // Version counter (increments on every edit)
-  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",  // Ephemeral HMAC security token
-  "embed_url": "/embed/canvas?token=eyJhbGci..."      // Pre-signed iframe path ready to mount
-}`}
+                    {`[
+  {
+    "artifact_id": "84419384-8e98-4b7f-bc21-8f2abe21f44c", // Unique UUID of the artifact
+    "title": "Application for Leave of Absence",         // Human-readable title
+    "filename": "leave_application.md",                 // File name & format extension
+    "artifact_type": "document",                        // 'document' | 'code' | 'spreadsheet' | 'presentation' | 'svg'
+    "current_version": 1,                               // Version counter (increments on every edit)
+    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",  // Ephemeral HMAC security token
+    "embed_url": "/embed/canvas?token=eyJhbGci..."      // Pre-signed iframe path ready to mount
+  }
+]`}
                   </pre>
                 </div>
 
@@ -1211,7 +1695,7 @@ data: [DONE]`
                       Method A: Streaming (stream: true)
                     </span>
                     <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: 0, lineHeight: '1.5' }}>
-                      In SSE chunks, inspect <code>chunk.choices[0].delta.artifact</code>. When present, attach it to the current message in your chat state.
+                      In SSE chunks, inspect <code>chunk.choices[0].delta.artifacts</code> (array). When present, iterate over the list and attach each artifact to your chat state.
                     </p>
                   </div>
                   <div style={{ background: 'var(--bg-input)', padding: '12px 14px', borderRadius: '6px', border: '1px solid var(--border-subtle)' }}>
@@ -1219,7 +1703,7 @@ data: [DONE]`
                       Method B: Synchronous (stream: false)
                     </span>
                     <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: 0, lineHeight: '1.5' }}>
-                      In the JSON response, inspect <code>response.choices[0].message.artifact</code>. It is directly accessible on the assistant message object.
+                      In the JSON response, inspect <code>response.choices[0].message.artifacts</code> (or top-level <code>response.artifacts</code>). It is directly accessible as an array of artifact objects.
                     </p>
                   </div>
                 </div>
@@ -1715,7 +2199,7 @@ curl -X POST http://localhost:8000/api/v1/files/upload \\
 # It returns the active Canvas iframe embed URL with real-time editing enabled!
 
 # SSE Response Chunk:
-# data: {"choices": [{"delta": {"artifact": {
+# data: {"choices": [{"delta": {"artifacts": [{
 #   "artifact_id": "b182ef01-382a-4421-99af-2c8b8813098e",
 #   "title": "Financial Report",
 #   "filename": "financial_report.docx",
@@ -1723,7 +2207,7 @@ curl -X POST http://localhost:8000/api/v1/files/upload \\
 #   "current_version": 1,
 #   "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
 #   "embed_url": "/embed/canvas?token=eyJhbGci..."
-# }}}}]}`}
+# }]}}]}`}
               </pre>
             </div>
           )}

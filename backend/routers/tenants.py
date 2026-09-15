@@ -111,12 +111,15 @@ def list_tenant_llms(
     current_user: User = Depends(get_current_user),
     page: Optional[int] = None,
     page_size: int = 10,
-    search: Optional[str] = None
+    search: Optional[str] = None,
+    model_type: Optional[str] = None
 ):
     from models import TenantLLM
     query = db.query(TenantLLM).filter(TenantLLM.tenant_id == tenant.id)
     if search:
         query = query.filter(TenantLLM.model_name.ilike(f"%{search}%") | TenantLLM.provider.ilike(f"%{search}%"))
+    if model_type:
+        query = query.filter((TenantLLM.model_type == model_type) | (TenantLLM.model_type == "multimodal"))
     query = query.order_by(TenantLLM.created_at.desc())
     def serialize(l):
         return {
@@ -128,6 +131,7 @@ def list_tenant_llms(
             "output_rate": l.output_rate,
             "audio_input_rate": l.audio_input_rate,
             "audio_output_rate": l.audio_output_rate,
+            "model_type": getattr(l, "model_type", "text") or "text",
             "is_active": l.is_active,
             "created_at": l.created_at.isoformat() if l.created_at else None
         }
@@ -155,7 +159,7 @@ def create_tenant_llm(
             detail=f"An LLM model with the name '{payload.model_name}' is already configured for this tenant workspace. Duplicate model names are not allowed."
         )
 
-    encrypted_key = encrypt_key(payload.api_key)
+    encrypted_key = encrypt_key(payload.api_key) if payload.api_key else ""
     
     new_llm = TenantLLM(
         tenant_id=tenant.id,
@@ -167,6 +171,7 @@ def create_tenant_llm(
         output_rate=payload.output_rate,
         audio_input_rate=payload.audio_input_rate,
         audio_output_rate=payload.audio_output_rate,
+        model_type=payload.model_type or "text",
         is_active=True
     )
     db.add(new_llm)
@@ -204,6 +209,8 @@ def update_tenant_llm(
     existing.output_rate = payload.output_rate
     existing.audio_input_rate = payload.audio_input_rate
     existing.audio_output_rate = payload.audio_output_rate
+    if payload.model_type:
+        existing.model_type = payload.model_type
     
     db.commit()
     db.refresh(existing)

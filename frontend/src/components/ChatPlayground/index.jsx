@@ -526,25 +526,39 @@ export default function ChatPlayground({ isSidebarOpen, toggleSidebar }) {
       const data = await tenantsApi.listLlms(null, { tenant_id: selectedTenantId || undefined });
       const items = Array.isArray(data) ? data : (data.items || []);
       setTenantModels(items || []);
-      const nonProchat = (items || []).filter(
-        m => m.provider !== 'prochat' && !m.model_name.toLowerCase().includes('genui')
+      // Categorize models by modality
+      const textModels = (items || []).filter(
+        m => m.provider !== 'prochat' && !m.model_name.toLowerCase().includes('genui') && (m.model_type === 'text' || m.model_type === 'multimodal' || !m.model_type)
       );
-      const urlModelExists = selectedModel && nonProchat.some(m => m.model_name === selectedModel);
+      const imageGenModels = (items || []).filter(
+        m => m.model_type === 'image_gen' || m.model_type === 'multimodal'
+      );
+      const videoGenModels = (items || []).filter(
+        m => m.model_type === 'video_gen' || m.model_type === 'multimodal'
+      );
+      const visionModels = (items || []).filter(
+        m => m.provider !== 'prochat' && (m.model_type === 'text' || m.model_type === 'multimodal' || !m.model_type)
+      );
+
+      const urlModelExists = selectedModel && textModels.some(m => m.model_name === selectedModel);
       if (!urlModelExists) {
-        if (nonProchat.length > 0) {
-          setSelectedModel(nonProchat[0].model_name);
+        if (textModels.length > 0) {
+          setSelectedModel(textModels[0].model_name);
         } else {
           setSelectedModel('');
         }
       }
 
-      // Default Multimodal Sub-Agent dropdowns to the first model
-      const firstAvailableModel = (nonProchat.length > 0 ? nonProchat[0] : (items[0] || null))?.model_name || '';
-      setImageModel(prev => prev && items.some(m => m.model_name === prev) ? prev : firstAvailableModel);
-      setImageGenModel(prev => prev && items.some(m => m.model_name === prev) ? prev : firstAvailableModel);
-      setAudioModel(prev => prev && items.some(m => m.model_name === prev) ? prev : firstAvailableModel);
-      setVideoModel(prev => prev && items.some(m => m.model_name === prev) ? prev : firstAvailableModel);
-      setVideoGenModel(prev => prev && items.some(m => m.model_name === prev) ? prev : firstAvailableModel);
+      // Default Sub-Agent dropdowns to respective first matching models
+      const firstVision = visionModels[0]?.model_name || '';
+      const firstImageGen = (imageGenModels.length > 0 ? imageGenModels[0] : visionModels[0])?.model_name || '';
+      const firstVideoGen = (videoGenModels.length > 0 ? videoGenModels[0] : visionModels[0])?.model_name || '';
+
+      setImageModel(prev => prev && visionModels.some(m => m.model_name === prev) ? prev : firstVision);
+      setImageGenModel(prev => prev && imageGenModels.some(m => m.model_name === prev) ? prev : firstImageGen);
+      setAudioModel(prev => prev && visionModels.some(m => m.model_name === prev) ? prev : firstVision);
+      setVideoModel(prev => prev && visionModels.some(m => m.model_name === prev) ? prev : firstVision);
+      setVideoGenModel(prev => prev && videoGenModels.some(m => m.model_name === prev) ? prev : firstVideoGen);
     } catch (e) {
       console.error('Failed to fetch playground models:', e);
     }
