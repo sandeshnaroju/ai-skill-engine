@@ -24,10 +24,14 @@ export default function ConfigDrawer({
   setProchatModel,
   imageModel,
   setImageModel,
+  imageGenModel,
+  setImageGenModel,
   audioModel,
   setAudioModel,
   videoModel,
   setVideoModel,
+  videoGenModel,
+  setVideoGenModel,
   selectedSkillNames,
   setSelectedSkillNames,
   templates,
@@ -390,6 +394,47 @@ export default function ConfigDrawer({
                   </div>
                 </div>
 
+                {/* 🎨 Image Generation Model (DALL-E / Nano Banana / Gemini Flash Image) */}
+                <div>
+                  <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.72rem', fontWeight: '600', color: 'var(--text-sub)', marginBottom: '4px' }}>
+                    <span>🎨 Image Generation Model</span>
+                  </label>
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <select
+                      value={imageGenModel || ''}
+                      onChange={(e) => setImageGenModel(e.target.value)}
+                      disabled={!selectedTenantId}
+                      style={{
+                        flex: 1,
+                        fontSize: '0.8rem',
+                        padding: '7px 10px',
+                        borderRadius: '8px',
+                        border: '1px solid var(--border-subtle)',
+                        background: imageGenModel ? 'rgba(168, 85, 247, 0.08)' : 'var(--bg-input)',
+                        color: imageGenModel ? 'var(--primary-purple, #a855f7)' : 'var(--text-sub)',
+                        outline: 'none',
+                      }}
+                    >
+                      <option value="">— tenant default (auto) —</option>
+                      {tenantModels.map(m => (
+                        <option key={m.id} value={m.model_name}>
+                          {m.model_name} ({m.provider})
+                        </option>
+                      ))}
+                    </select>
+                    {imageGenModel && (
+                      <button
+                        onClick={() => setImageGenModel('')}
+                        title="Clear image generation model override"
+                        className="btn-outline"
+                        style={{ padding: '6px', borderRadius: '8px' }}
+                      >
+                        <X size={13} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
                 {/* 🎙️ Audio Sub-Agent Model */}
                 <div>
                   <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.72rem', fontWeight: '600', color: 'var(--text-sub)', marginBottom: '4px' }}>
@@ -463,6 +508,47 @@ export default function ConfigDrawer({
                       <button
                         onClick={() => setVideoModel('')}
                         title="Clear video model override"
+                        className="btn-outline"
+                        style={{ padding: '6px', borderRadius: '8px' }}
+                      >
+                        <X size={13} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* 🎬 Video Generation Model (Veo 3.1, Luma Ray 2, HunyuanVideo) */}
+                <div>
+                  <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.72rem', fontWeight: '600', color: 'var(--text-sub)', marginBottom: '4px' }}>
+                    <span>🎬 Video Generation Model</span>
+                  </label>
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <select
+                      value={videoGenModel || ''}
+                      onChange={(e) => setVideoGenModel(e.target.value)}
+                      disabled={!selectedTenantId}
+                      style={{
+                        flex: 1,
+                        fontSize: '0.8rem',
+                        padding: '7px 10px',
+                        borderRadius: '8px',
+                        border: '1px solid var(--border-subtle)',
+                        background: videoGenModel ? 'rgba(6, 182, 212, 0.08)' : 'var(--bg-input)',
+                        color: videoGenModel ? 'var(--primary-cyan, #06b6d4)' : 'var(--text-sub)',
+                        outline: 'none',
+                      }}
+                    >
+                      <option value="">— tenant default (auto) —</option>
+                      {tenantModels.map(m => (
+                        <option key={m.id} value={m.model_name}>
+                          {m.model_name} ({m.provider})
+                        </option>
+                      ))}
+                    </select>
+                    {videoGenModel && (
+                      <button
+                        onClick={() => setVideoGenModel('')}
+                        title="Clear video generation model override"
                         className="btn-outline"
                         style={{ padding: '6px', borderRadius: '8px' }}
                       >

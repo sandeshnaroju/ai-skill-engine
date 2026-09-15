@@ -63,7 +63,9 @@ def prefetch_mcp_servers(tool_calls, db: Session, tenant_id: str = None) -> dict
 
 def execute_tool(fn_name: str, args: dict, tool_def: dict, user_data: dict,
                  tenant, session_id: str, db: Session, mcp_servers: dict,
-                 image_model: str = None, audio_model: str = None, video_model: str = None) -> tuple:
+                 image_model: str = None, image_gen_model: str = None,
+                 audio_model: str = None, video_model: str = None,
+                 video_gen_model: str = None) -> tuple:
     """
     Dispatch a single tool call and return (command, exec_res, tool_result).
 
@@ -92,60 +94,68 @@ def execute_tool(fn_name: str, args: dict, tool_def: dict, user_data: dict,
     elif tool_type in ("mcp", "mcp_stdio"):
         from executors.mcp_executor import mcp_executor
         exec_res = mcp_executor.execute(tool_def=exec_tool_def, arguments=exec_args)
-        command = tool_def.get("mcp_command") or tool_def.get("command") or f"MCP Call {fn_name}"
+        command = f"MCP tool {tool_def.get('name', fn_name)} params={json.dumps(args)}"
 
     elif tool_type == "mcp_server":
-        from mcp_manager import mcp_manager
         srv_id = tool_def.get("mcp_server_id")
         srv_data = mcp_servers.get(srv_id)
-        if srv_data:
-            srv_obj = SimpleMcpServerObj(**srv_data)
-            exec_res = mcp_manager.call_tool(srv_obj, exec_tool_def.get("name"), exec_args)
-            command = f"MCP Server {srv_obj.name} -> tool {tool_def.get('name')}"
-        else:
-            exec_res = {"stdout": "", "stderr": "MCP Server not found", "exit_code": 1,
-                        "execution_time_ms": 0, "sandbox_type": "mcp"}
-            command = "MCP Call"
+        if not srv_data:
+            from models import McpServer
+            srv_obj = db.query(McpServer).filter(McpServer.id == srv_id).first()
+            if not srv_obj:
+                tool_result = f"Error: MCP server {srv_id} not found."
+                return f"Error: MCP server not found", {"stdout": "", "stderr": tool_result, "exit_code": 1, "execution_time_ms": 0}, tool_result
+            srv_data = {"name": srv_obj.name, "transport": srv_obj.transport, "command": srv_obj.command, "url": srv_obj.url, "env": srv_obj.env}
+
+        from executors.mcp_client import mcp_manager
+        real_tool_name = tool_def.get("name", fn_name)
+        srv_obj = SimpleMcpServerObj(**srv_data)
+        exec_res = mcp_manager.call_tool_sync(srv_obj, real_tool_name, exec_args)
+        command = f"MCP [{srv_data['name']}] call {real_tool_name}({json.dumps(args)})"
 
     else:
+        # Shell-based or built-in dispatch
         exec_command = exec_tool_def.get("command", "")
-        command = tool_def.get("command", "")
         code = exec_args.get("code") if tool_type == "code" else None
         if tool_type == "code" and code:
             command = code
-        elif not command:
-            command = exec_command
+        else:
+            command = exec_command or fn_name
         tenant_name = tenant.name if tenant else "default"
 
-        # Intercept built-in host-executed tools
-        if fn_name == "cloud_storage__upload_to_storage":
-            exec_res = run_upload_to_storage_tool(db, exec_args, tenant)
-        elif fn_name == "cloud_storage__download_from_storage":
-            exec_res = run_download_from_storage_tool(db, exec_args, tenant)
-        elif fn_name == "http_fetcher__download_public_file":
-            exec_res = run_download_public_file_tool(db, exec_args, tenant)
-        elif fn_name == "sandbox_file_manager__list_sandbox_files":
-            exec_res = run_list_sandbox_files(db, session_id, tenant=tenant)
-        elif fn_name == "sandbox_file_manager__download_sandbox_file":
-            exec_res = run_download_sandbox_file(db, session_id, exec_args, tenant=tenant)
-        elif fn_name == "sandbox_file_manager__upload_sandbox_file":
-            exec_res = run_upload_sandbox_file(db, session_id, exec_args, tenant=tenant)
-        elif fn_name == "email__send_email":
-            exec_res = run_send_email_tool(db, exec_args, tenant)
-        elif fn_name == "artifact_editor__open_or_update_artifact":
-            exec_res = run_open_or_update_artifact(db, exec_args, tenant, session_id)
-        elif fn_name == "artifact_editor__open_uploaded_file_as_artifact":
-            exec_res = run_open_uploaded_file_as_artifact(db, exec_args, tenant, session_id)
-        elif fn_name == "artifact_editor__artifact_search":
+        if fn_name == "list_sandbox_files":
+            exec_res = run_list_sandbox_files(db, session_id=session_id, tenant=tenant)
+        elif fn_name == "download_public_file":
+            exec_res = run_download_public_file(exec_args, tenant=tenant)
+        elif fn_name == "upload_file_to_sandbox":
+            exec_res = run_upload_file_to_sandbox(db, exec_args, session_id=session_id, tenant=tenant)
+        elif fn_name in ("artifact_editor__open_or_update_artifact", "open_or_update_artifact"):
+            exec_res = run_open_or_update_artifact(db, exec_args, tenant, session_id=session_id)
+        elif fn_name in ("artifact_editor__open_uploaded_file_as_artifact", "open_uploaded_file_as_artifact"):
+            exec_res = run_open_uploaded_file_as_artifact(db, exec_args, tenant, session_id=session_id)
+        elif fn_name in ("artifact_editor__search_artifacts", "artifact_search"):
             exec_res = run_artifact_search(db, exec_args)
-        elif fn_name == "artifact_editor__artifact_semantic_search":
+        elif fn_name in ("artifact_editor__artifact_semantic_search", "artifact_semantic_search"):
             exec_res = run_artifact_semantic_search(db, exec_args)
-        elif fn_name == "artifact_editor__edit_artifact_section":
+        elif fn_name in ("artifact_editor__edit_artifact_section", "edit_artifact_section"):
             exec_res = run_edit_artifact_section(db, exec_args, author="assistant", session_id=session_id)
-        elif fn_name == "artifact_editor__patch_artifact":
+        elif fn_name in ("artifact_editor__patch_artifact", "patch_artifact"):
             exec_res = run_patch_artifact(db, exec_args, author="assistant", session_id=session_id)
-        elif fn_name == "artifact_editor__rollback_artifact_block":
+        elif fn_name in ("artifact_editor__rollback_artifact_block", "rollback_artifact_block"):
             exec_res = run_rollback_artifact_block(db, exec_args, author="assistant", session_id=session_id)
+        elif fn_name.startswith("media_generator__") or fn_name in ("generate_image", "generate_video"):
+            exec_res = run_multimodal_subagent_tool(
+                db=db,
+                args=exec_args,
+                tenant=tenant,
+                session_id=session_id,
+                tool_name=fn_name,
+                image_model=image_model,
+                image_gen_model=image_gen_model,
+                audio_model=audio_model,
+                video_model=video_model,
+                video_gen_model=video_gen_model
+            )
         elif fn_name.startswith("multimodal_analyst__") or fn_name in ("analyze_image", "analyze_audio", "analyze_video"):
             exec_res = run_multimodal_subagent_tool(
                 db=db,
@@ -154,20 +164,27 @@ def execute_tool(fn_name: str, args: dict, tool_def: dict, user_data: dict,
                 session_id=session_id,
                 tool_name=fn_name,
                 image_model=image_model,
+                image_gen_model=image_gen_model,
                 audio_model=audio_model,
-                video_model=video_model
+                video_model=video_model,
+                video_gen_model=video_gen_model
             )
         else:
             exec_res = sandbox_manager.execute(command=exec_command, code=code, session_id=session_id, tenant_id=tenant.id if tenant else None, tenant_folder=tenant_name)
-            exec_res = map_local_generated_files_to_tenant(exec_res, tenant_name=tenant_name)
 
     tool_result = exec_res.get("stdout") or exec_res.get("stderr") or "Execution completed cleanly with no output."
     generated_files = exec_res.get("generated_files", [])
     if generated_files:
-        files_str = "\n\nGenerated files:\n" + "\n".join(
-            f"- {f['original_name']} (URL: {f['url']}, Sandbox Path: {f['sandbox_path']})"
-            for f in generated_files
-        )
-        tool_result += files_str
+        lines = []
+        for f in generated_files:
+            if isinstance(f, dict):
+                orig = f.get('original_name') or f.get('filename') or 'file'
+                url = f.get('url', '')
+                path = f.get('sandbox_path', '')
+                lines.append(f"- {orig} (URL: {url}, Sandbox Path: {path})")
+            elif isinstance(f, str):
+                lines.append(f"- {f}")
+        if lines:
+            tool_result += "\n\nGenerated files:\n" + "\n".join(lines)
 
     return command, exec_res, tool_result

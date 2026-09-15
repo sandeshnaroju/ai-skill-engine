@@ -380,11 +380,53 @@ def run_multimodal_subagent_tool(
     session_id: str,
     tool_name: str,
     image_model: str = None,
+    image_gen_model: str = None,
     audio_model: str = None,
-    video_model: str = None
+    video_model: str = None,
+    video_gen_model: str = None
 ) -> dict:
-    """Dispatches image, audio, or video sub-agent analysis using engine.subagents."""
-    from engine.subagents import run_multimodal_subagent
+    """Dispatches image, audio, video sub-agent analysis or image/video generation using engine.subagents."""
+    from engine.subagents import run_multimodal_subagent, run_image_generation_subagent, run_video_generation_subagent
+
+    if "generate_video" in tool_name or tool_name == "generate_video":
+        prompt = args.get("prompt") or args.get("query") or args.get("instruction") or ""
+        duration_seconds = args.get("duration_seconds") or 5
+        aspect_ratio = args.get("aspect_ratio") or "16:9"
+        source_image_path = args.get("image_path") or args.get("source_image_path") or args.get("file_path")
+        tool_model_arg = args.get("model")
+
+        return run_video_generation_subagent(
+            prompt=prompt,
+            tenant=tenant,
+            db=db,
+            session_id=session_id,
+            duration_seconds=duration_seconds,
+            aspect_ratio=aspect_ratio,
+            source_image_path=source_image_path,
+            flat_request_model=video_gen_model,
+            tool_model_arg=tool_model_arg
+        )
+
+    if "generate_image" in tool_name or tool_name == "generate_image":
+        prompt = args.get("prompt") or args.get("query") or args.get("instruction") or ""
+        aspect_ratio = args.get("aspect_ratio") or "1:1"
+        size = args.get("size")
+        style = args.get("style")
+        source_image_path = args.get("image_path") or args.get("source_image_path") or args.get("file_path")
+        tool_model_arg = args.get("model")
+
+        return run_image_generation_subagent(
+            prompt=prompt,
+            tenant=tenant,
+            db=db,
+            session_id=session_id,
+            aspect_ratio=aspect_ratio,
+            size=size,
+            style=style,
+            source_image_path=source_image_path,
+            flat_request_model=image_gen_model,
+            tool_model_arg=tool_model_arg
+        )
 
     if "analyze_image" in tool_name:
         media_type = "image"

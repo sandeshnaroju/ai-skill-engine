@@ -635,8 +635,10 @@ class SkillEngine:
         request_source: str = "api",
         prochat_model: str = None,
         image_model: str = None,
+        image_gen_model: str = None,
         audio_model: str = None,
         video_model: str = None,
+        video_gen_model: str = None,
         user_data: dict = None,
         skill_names: list = None,
         client_messages: list = None,
@@ -797,7 +799,9 @@ class SkillEngine:
                         try:
                             command, exec_res, tool_result = execute_tool(
                                 fn, args, tool_def, user_data, tenant, session_id, worker_db, mcp_servers,
-                                image_model=image_model, audio_model=audio_model, video_model=video_model
+                                image_model=image_model, image_gen_model=image_gen_model,
+                                audio_model=audio_model, video_model=video_model,
+                                video_gen_model=video_gen_model
                             )
                             worker_db.commit()
                         except Exception as e:
@@ -896,8 +900,10 @@ class SkillEngine:
         request_source: str = "api",
         prochat_model: str = None,
         image_model: str = None,
+        image_gen_model: str = None,
         audio_model: str = None,
         video_model: str = None,
+        video_gen_model: str = None,
         user_data: dict = None,
         skill_names: list = None,
         client_messages: list = None,
@@ -1215,7 +1221,9 @@ class SkillEngine:
                         try:
                             command, exec_res, tool_result = execute_tool(
                                 fn, args, tool_def, user_data, tenant, session_id, worker_db, mcp_servers,
-                                image_model=image_model, audio_model=audio_model, video_model=video_model
+                                image_model=image_model, image_gen_model=image_gen_model,
+                                audio_model=audio_model, video_model=video_model,
+                                video_gen_model=video_gen_model
                             )
                             worker_db.commit()
                         except Exception as e:

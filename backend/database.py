@@ -305,12 +305,18 @@ def init_db():
             if "default_image_model" not in columns:
                 db.execute(text("ALTER TABLE tenants ADD COLUMN default_image_model TEXT DEFAULT 'gemini-2.5-flash'"))
                 print("Migration: Added 'default_image_model' column to tenants table")
+            if "default_image_gen_model" not in columns:
+                db.execute(text("ALTER TABLE tenants ADD COLUMN default_image_gen_model TEXT DEFAULT 'gemini-3.1-flash-image'"))
+                print("Migration: Added 'default_image_gen_model' column to tenants table")
             if "default_audio_model" not in columns:
                 db.execute(text("ALTER TABLE tenants ADD COLUMN default_audio_model TEXT DEFAULT 'gemini-2.5-flash'"))
                 print("Migration: Added 'default_audio_model' column to tenants table")
             if "default_video_model" not in columns:
                 db.execute(text("ALTER TABLE tenants ADD COLUMN default_video_model TEXT DEFAULT 'gemini-2.5-flash'"))
                 print("Migration: Added 'default_video_model' column to tenants table")
+            if "default_video_gen_model" not in columns:
+                db.execute(text("ALTER TABLE tenants ADD COLUMN default_video_gen_model TEXT DEFAULT 'veo-3.1-fast-generate-preview'"))
+                print("Migration: Added 'default_video_gen_model' column to tenants table")
             db.commit()
         except Exception as e:
             print(f"Migration warning: Could not update tenants table columns: {e}")

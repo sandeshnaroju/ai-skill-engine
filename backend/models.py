@@ -58,8 +58,10 @@ class Tenant(Base):
 
     # Default Multimodal Sub-Agent Models
     default_image_model = Column(String, nullable=True, default="gemini-2.5-flash")
+    default_image_gen_model = Column(String, nullable=True, default="gemini-3.1-flash-image")
     default_audio_model = Column(String, nullable=True, default="gemini-2.5-flash")
     default_video_model = Column(String, nullable=True, default="gemini-2.5-flash")
+    default_video_gen_model = Column(String, nullable=True, default="veo-3.1-fast-generate-preview")
 
     # Relationships
     user = relationship("User", back_populates="tenants")

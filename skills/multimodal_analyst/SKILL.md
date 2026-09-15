@@ -50,7 +50,7 @@ tools:
 
 # Multimodal Analyst Sub-Agent Guidelines
 
-Use this skill whenever the user provides, mentions, attaches, or links an **image**, **audio recording**, or **video file**.
+Use this skill whenever the user provides, mentions, attaches, or links an **image**, **audio recording**, or **video file** to analyze, transcribe, explain, inspect, or query.
 
 ### 1. Automatic File Reference Detection
 When a user uploads a file through the Chat Playground, the system automatically appends file references to the user prompt in the format:

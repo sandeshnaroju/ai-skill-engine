@@ -228,8 +228,10 @@ export default function ChatPlayground({ isSidebarOpen, toggleSidebar }) {
 
   const [prochatModel, setProchatModel] = useState('');
   const [imageModel, setImageModel] = useState('');
+  const [imageGenModel, setImageGenModel] = useState('');
   const [audioModel, setAudioModel] = useState('');
   const [videoModel, setVideoModel] = useState('');
+  const [videoGenModel, setVideoGenModel] = useState('');
 
   // File Upload states
   const fileInputRef = useRef(null);
@@ -539,8 +541,10 @@ export default function ChatPlayground({ isSidebarOpen, toggleSidebar }) {
       // Default Multimodal Sub-Agent dropdowns to the first model
       const firstAvailableModel = (nonProchat.length > 0 ? nonProchat[0] : (items[0] || null))?.model_name || '';
       setImageModel(prev => prev && items.some(m => m.model_name === prev) ? prev : firstAvailableModel);
+      setImageGenModel(prev => prev && items.some(m => m.model_name === prev) ? prev : firstAvailableModel);
       setAudioModel(prev => prev && items.some(m => m.model_name === prev) ? prev : firstAvailableModel);
       setVideoModel(prev => prev && items.some(m => m.model_name === prev) ? prev : firstAvailableModel);
+      setVideoGenModel(prev => prev && items.some(m => m.model_name === prev) ? prev : firstAvailableModel);
     } catch (e) {
       console.error('Failed to fetch playground models:', e);
     }
@@ -686,8 +690,10 @@ export default function ChatPlayground({ isSidebarOpen, toggleSidebar }) {
         user_data: getUserDataPayload(),
         prochat_model: prochatModel.trim() || undefined,
         image_model: imageModel.trim() || undefined,
+        image_gen_model: imageGenModel.trim() || undefined,
         audio_model: audioModel.trim() || undefined,
         video_model: videoModel.trim() || undefined,
+        video_gen_model: videoGenModel.trim() || undefined,
         skill_names: selectedSkillNames.length > 0 ? selectedSkillNames : undefined,
         system_prompt: systemPrompt || undefined,
         attachments: currentFiles.map(f => ({
@@ -1346,10 +1352,14 @@ export default function ChatPlayground({ isSidebarOpen, toggleSidebar }) {
         setProchatModel={setProchatModel}
         imageModel={imageModel}
         setImageModel={setImageModel}
+        imageGenModel={imageGenModel}
+        setImageGenModel={setImageGenModel}
         audioModel={audioModel}
         setAudioModel={setAudioModel}
         videoModel={videoModel}
         setVideoModel={setVideoModel}
+        videoGenModel={videoGenModel}
+        setVideoGenModel={setVideoGenModel}
         selectedSkillNames={selectedSkillNames}
         setSelectedSkillNames={setSelectedSkillNames}
         templates={templates}

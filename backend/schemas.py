@@ -7,8 +7,10 @@ class PlaygroundChatRequest(BaseModel):
     model: Optional[str] = None
     prochat_model: Optional[str] = None
     image_model: Optional[str] = None
+    image_gen_model: Optional[str] = None
     audio_model: Optional[str] = None
     video_model: Optional[str] = None
+    video_gen_model: Optional[str] = None
     user_data: Optional[dict] = None
     skill_names: Optional[List[str]] = None
     temperature: Optional[float] = None
@@ -48,8 +50,10 @@ class OpenAIChatRequest(BaseModel):
     stream: Optional[bool] = False
     prochat_model: Optional[str] = None
     image_model: Optional[str] = None
+    image_gen_model: Optional[str] = None
     audio_model: Optional[str] = None
     video_model: Optional[str] = None
+    video_gen_model: Optional[str] = None
     user_data: Optional[dict] = None
     skill_names: Optional[List[str]] = None
     temperature: Optional[float] = None
