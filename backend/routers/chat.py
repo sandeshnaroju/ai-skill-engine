@@ -242,7 +242,8 @@ def list_chat_requests(
     search: Optional[str] = None
 ):
     from models import Tenant
-    query = db.query(ChatRequest)
+    user_tenant_ids = db.query(Tenant.id).filter(Tenant.user_id == current_user.id)
+    query = db.query(ChatRequest).filter(ChatRequest.tenant_id.in_(user_tenant_ids))
     if request_source:
         query = query.filter(ChatRequest.request_source == request_source)
     if status:
@@ -284,7 +285,11 @@ def get_chat_request(
     current_user: User = Depends(get_current_user)
 ):
     from models import Tenant
-    r = db.query(ChatRequest).filter(ChatRequest.id == request_id).first()
+    user_tenant_ids = db.query(Tenant.id).filter(Tenant.user_id == current_user.id)
+    r = db.query(ChatRequest).filter(
+        ChatRequest.id == request_id,
+        ChatRequest.tenant_id.in_(user_tenant_ids)
+    ).first()
     if not r:
         raise HTTPException(status_code=404, detail="Request not found")
     tenant_obj = db.query(Tenant).filter(Tenant.id == r.tenant_id).first() if r.tenant_id else None

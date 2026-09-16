@@ -16,16 +16,18 @@ def get_logs_filters(
     search_tenant: Optional[str] = None,
     search_model: Optional[str] = None
 ):
-    t_query = db.query(Tenant.name).join(ExecutionLog).distinct()
+    user_tenant_ids = db.query(Tenant.id).filter(Tenant.user_id == current_user.id)
+
+    t_query = db.query(Tenant.name).join(ExecutionLog).filter(Tenant.id.in_(user_tenant_ids)).distinct()
     if search_tenant:
         t_query = t_query.filter(Tenant.name.ilike(f"%{search_tenant}%"))
     tenants = t_query.limit(10).all() if not search_tenant else t_query.all()
-    
-    m_query = db.query(ExecutionLog.model_name).distinct()
+
+    m_query = db.query(ExecutionLog.model_name).filter(ExecutionLog.tenant_id.in_(user_tenant_ids)).distinct()
     if search_model:
         m_query = m_query.filter(ExecutionLog.model_name.ilike(f"%{search_model}%"))
     models = m_query.limit(10).all() if not search_model else m_query.all()
-    
+
     return {
         "tenants": [t[0] for t in tenants if t[0]],
         "models": [m[0] for m in models if m[0]]
@@ -43,7 +45,8 @@ def get_logs(
     model_name: Optional[str] = None,
     sandbox_type: Optional[str] = None
 ):
-    query = db.query(ExecutionLog)
+    user_tenant_ids = db.query(Tenant.id).filter(Tenant.user_id == current_user.id)
+    query = db.query(ExecutionLog).filter(ExecutionLog.tenant_id.in_(user_tenant_ids))
     if request_source:
         if request_source == 'dashboard':
             query = query.filter(ExecutionLog.request_source == 'dashboard')
@@ -90,7 +93,8 @@ def get_chat_requests(
     status: Optional[str] = None,
     search: Optional[str] = None
 ):
-    query = db.query(ChatRequest)
+    user_tenant_ids = db.query(Tenant.id).filter(Tenant.user_id == current_user.id)
+    query = db.query(ChatRequest).filter(ChatRequest.tenant_id.in_(user_tenant_ids))
     if request_source and request_source != 'ALL':
         query = query.filter(ChatRequest.request_source == request_source)
     if status and status != 'ALL':
@@ -139,7 +143,11 @@ def get_chat_request_detail(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    r = db.query(ChatRequest).filter(ChatRequest.id == request_id).first()
+    user_tenant_ids = db.query(Tenant.id).filter(Tenant.user_id == current_user.id)
+    r = db.query(ChatRequest).filter(
+        ChatRequest.id == request_id,
+        ChatRequest.tenant_id.in_(user_tenant_ids)
+    ).first()
     if not r:
         raise HTTPException(status_code=404, detail="Request not found")
     tenant_obj = db.query(Tenant).filter(Tenant.id == r.tenant_id).first() if r.tenant_id else None
@@ -200,6 +208,8 @@ def get_usage_summary(
     current_user: User = Depends(get_current_user)
 ):
     target_page = page or 1
+    user_tenant_ids = db.query(Tenant.id).filter(Tenant.user_id == current_user.id)
+
     # Primary models aggregation
     primary_query = db.query(
         ChatRequest.tenant_id,
@@ -209,7 +219,7 @@ def get_usage_summary(
         func.sum(ChatRequest.primary_prompt_tokens).label("total_prompt_tokens"),
         func.sum(ChatRequest.primary_completion_tokens).label("total_completion_tokens"),
         func.sum(ChatRequest.primary_cost_usd).label("total_cost_usd")
-    ).filter(ChatRequest.status == "completed")
+    ).filter(ChatRequest.status == "completed", ChatRequest.tenant_id.in_(user_tenant_ids))
 
     if model_name:
         primary_query = primary_query.filter(func.coalesce(ChatRequest.primary_model_name, ChatRequest.model_name).ilike(f"%{model_name}%"))
@@ -235,7 +245,8 @@ def get_usage_summary(
         func.sum(ChatRequest.secondary_cost_usd).label("total_cost_usd")
     ).filter(
         ChatRequest.status == "completed",
-        ChatRequest.secondary_model_name != None
+        ChatRequest.secondary_model_name != None,
+        ChatRequest.tenant_id.in_(user_tenant_ids)
     )
 
     if model_name:
@@ -277,7 +288,7 @@ def get_usage_summary(
         func.count(ChatRequest.id).label("request_count"),
         func.sum(ChatRequest.prompt_tokens).label("prompt_tokens"),
         func.sum(ChatRequest.completion_tokens).label("completion_tokens")
-    ).filter(ChatRequest.status == "completed")
+    ).filter(ChatRequest.status == "completed", ChatRequest.tenant_id.in_(user_tenant_ids))
 
     if model_name:
         totals_query = totals_query.filter(
