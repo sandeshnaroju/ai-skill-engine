@@ -116,10 +116,14 @@ class GoogleGeminiVeoProvider(BaseMediaProvider):
             return None
 
         veo_model = self.model_name
-        if "veo" in veo_model.lower() and ("veo-2" in veo_model.lower() or veo_model == "veo-2.0-generate-001"):
+        if "/" in veo_model:
+            veo_model = veo_model.split("/")[-1]
+        if "veo" not in veo_model.lower():
             veo_model = "veo-3.1-fast-generate-preview"
-        elif "veo" not in veo_model.lower():
+        elif "veo-3" in veo_model.lower():
             veo_model = "veo-3.1-fast-generate-preview"
+        elif "veo-2" in veo_model.lower() or veo_model == "veo-2.0-generate-001":
+            veo_model = "veo-2.0-generate-001"
 
         try:
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{veo_model}:predictLongRunning?key={gemini_api_key}"
@@ -150,12 +154,16 @@ class GoogleGeminiVeoProvider(BaseMediaProvider):
                 op_name = init_data.get("name")
                 if op_name:
                     poll_url = f"https://generativelanguage.googleapis.com/v1beta/{op_name}?key={gemini_api_key}"
-                    for _ in range(24):
+                    for _ in range(36):
                         time.sleep(5)
                         poll_resp = requests.get(poll_url, timeout=15)
                         if poll_resp.status_code == 200:
                             poll_data = poll_resp.json()
                             if poll_data.get("done"):
+                                if "error" in poll_data:
+                                    import logging
+                                    logging.getLogger("google_veo").warning(f"Veo operation error: {poll_data['error']}")
+                                    break
                                 res = poll_data.get("response", {})
                                 video_b64 = None
                                 if "video" in res and "bytesBase64Encoded" in res["video"]:

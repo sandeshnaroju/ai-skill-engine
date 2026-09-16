@@ -433,9 +433,10 @@ def list_conversation_sessions(
             ChatMessage.session_id == s.id,
             ChatMessage.role == "user"
         ).order_by(ChatMessage.created_at.asc()).first()
-        title = (first_msg.content[:40] + "...") if first_msg and first_msg.content else f"Session {s.session_id}"
+        effective_session_id = (s.session_id or "").strip() or s.id
+        title = (first_msg.content[:40] + "...") if first_msg and first_msg.content else f"Session {effective_session_id[:12]}"
         return {
-            "id": s.session_id,
+            "id": effective_session_id,
             "db_id": s.id,
             "title": title,
             "created_at": s.created_at.isoformat() if s.created_at else None
@@ -456,9 +457,19 @@ def get_session_messages(
     import re
     from models import ConversationSession, ChatMessage, SessionArtifact
     from artifacts.manager import mint_embed_token
+    clean_session_id = (session_id or "").strip()
+    if not clean_session_id:
+        return [] if page is None else {
+            "items": [],
+            "total": 0,
+            "page": page,
+            "page_size": page_size,
+            "pages": 0
+        }
+
     s = db.query(ConversationSession).filter(
         ConversationSession.tenant_id == tenant.id,
-        ConversationSession.session_id == session_id
+        (ConversationSession.session_id == clean_session_id) | (ConversationSession.id == clean_session_id)
     ).first()
 
     if not s:
@@ -633,10 +644,13 @@ def delete_session(
     tenant: Tenant = Depends(get_current_tenant),
     db: Session = Depends(get_db)
 ):
-    from models import ConversationSession, ChatMessage, SessionArtifact
+    clean_session_id = (session_id or "").strip()
+    if not clean_session_id:
+        raise HTTPException(status_code=400, detail="Invalid session ID")
+
     s = db.query(ConversationSession).filter(
         ConversationSession.tenant_id == tenant.id,
-        ConversationSession.session_id == session_id
+        (ConversationSession.session_id == clean_session_id) | (ConversationSession.id == clean_session_id)
     ).first()
 
     if not s:

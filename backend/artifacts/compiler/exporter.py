@@ -72,6 +72,26 @@ def export_artifact(artifact: SessionArtifact, target_format: str = None) -> Tup
             out_name = f"{base_name}.{ext}" if not artifact.filename.endswith(f".{ext}") else artifact.filename
             return img_bytes, mime, out_name
 
+    elif ext in ("mp4", "webm", "mov", "mkv", "avi") or getattr(artifact, "artifact_type", None) == "video":
+        video_bytes = None
+        if getattr(artifact, "media_url", None):
+            video_bytes = _fetch_image_bytes(artifact.media_url)
+        if not video_bytes and getattr(artifact, "filename", None):
+            video_bytes = _fetch_image_bytes(artifact.filename)
+        if video_bytes:
+            out_name = f"{base_name}.{ext}" if not artifact.filename.endswith(f".{ext}") else artifact.filename
+            return video_bytes, f"video/{ext if ext != 'mov' else 'quicktime'}", out_name
+
+    elif ext in ("mp3", "wav", "ogg", "m4a", "aac", "flac") or getattr(artifact, "artifact_type", None) == "audio":
+        audio_bytes = None
+        if getattr(artifact, "media_url", None):
+            audio_bytes = _fetch_image_bytes(artifact.media_url)
+        if not audio_bytes and getattr(artifact, "filename", None):
+            audio_bytes = _fetch_image_bytes(artifact.filename)
+        if audio_bytes:
+            out_name = f"{base_name}.{ext}" if not artifact.filename.endswith(f".{ext}") else artifact.filename
+            return audio_bytes, f"audio/{ext if ext != 'mp3' else 'mpeg'}", out_name
+
     # Default: raw text/code
     full_text = assemble_full_content(artifact)
     mime = "text/plain"
