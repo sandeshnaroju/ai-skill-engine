@@ -389,10 +389,29 @@ def run_multimodal_subagent_tool(
     from engine.subagents import run_multimodal_subagent, run_image_generation_subagent, run_video_generation_subagent
 
     if "generate_video" in tool_name or tool_name == "generate_video":
-        prompt = args.get("prompt") or args.get("query") or args.get("instruction") or ""
-        duration_seconds = args.get("duration_seconds") or 5
-        aspect_ratio = args.get("aspect_ratio") or "16:9"
-        source_image_path = args.get("image_path") or args.get("source_image_path") or args.get("file_path")
+        prompt = (
+            args.get("prompt")
+            or args.get("query")
+            or args.get("instruction")
+            or args.get("description")
+            or args.get("video_prompt")
+            or args.get("image_prompt")
+            or args.get("text")
+            or args.get("scene")
+            or args.get("scene_description")
+            or args.get("caption")
+            or args.get("content")
+            or ""
+        )
+        duration_seconds = args.get("duration_seconds") or args.get("duration") or 5
+        aspect_ratio = args.get("aspect_ratio") or args.get("ratio") or "16:9"
+        source_image_path = (
+            args.get("image_path")
+            or args.get("source_image_path")
+            or args.get("file_path")
+            or args.get("image_url")
+            or args.get("frame_image")
+        )
         tool_model_arg = args.get("model")
 
         return run_video_generation_subagent(
@@ -408,11 +427,26 @@ def run_multimodal_subagent_tool(
         )
 
     if "generate_image" in tool_name or tool_name == "generate_image":
-        prompt = args.get("prompt") or args.get("query") or args.get("instruction") or ""
-        aspect_ratio = args.get("aspect_ratio") or "1:1"
-        size = args.get("size")
+        prompt = (
+            args.get("prompt")
+            or args.get("query")
+            or args.get("instruction")
+            or args.get("description")
+            or args.get("image_prompt")
+            or args.get("text")
+            or args.get("caption")
+            or args.get("content")
+            or ""
+        )
+        aspect_ratio = args.get("aspect_ratio") or args.get("ratio") or "1:1"
+        size = args.get("size") or args.get("resolution")
         style = args.get("style")
-        source_image_path = args.get("image_path") or args.get("source_image_path") or args.get("file_path")
+        source_image_path = (
+            args.get("image_path")
+            or args.get("source_image_path")
+            or args.get("file_path")
+            or args.get("image_url")
+        )
         tool_model_arg = args.get("model")
 
         return run_image_generation_subagent(
