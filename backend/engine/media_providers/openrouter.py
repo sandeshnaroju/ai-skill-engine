@@ -67,10 +67,22 @@ class OpenRouterMediaProvider(BaseMediaProvider):
             }
             if aspect_ratio and aspect_ratio in ("1:1", "16:9", "9:16", "4:3", "3:4"):
                 payload["aspect_ratio"] = aspect_ratio
+            
+            # Map size/resolution to OpenRouter resolution enum: "512" | "1K" | "2K" | "4K"
             if size:
-                payload["resolution"] = size
+                s_str = str(size).lower().strip()
+                if s_str in ("512", "1k", "2k", "4k"):
+                    payload["resolution"] = s_str.upper() if s_str != "512" else "512"
+                elif any(k in s_str for k in ("3840", "4096", "4k")):
+                    payload["resolution"] = "4K"
+                elif any(k in s_str for k in ("2048", "2560", "2k")):
+                    payload["resolution"] = "2K"
+                elif any(k in s_str for k in ("512", "256")):
+                    payload["resolution"] = "512"
+                elif any(k in s_str for k in ("1024", "1792", "768", "1k")):
+                    payload["resolution"] = "1K"
 
-            resp = requests.post(url, json=payload, headers=headers, timeout=45)
+            resp = requests.post(url, json=payload, headers=headers, timeout=60)
             if resp.status_code in (200, 201):
                 data = resp.json()
                 items = data.get("data", [])
@@ -87,7 +99,7 @@ class OpenRouterMediaProvider(BaseMediaProvider):
                             provider_name=f"OpenRouter ({self.model_name})",
                             revised_prompt=full_prompt,
                             aspect_ratio=aspect_ratio,
-                            resolution=size
+                            resolution=payload.get("resolution") or size
                         )
                     # Fallback if returned as direct URL
                     img_url = item.get("url")
@@ -100,10 +112,26 @@ class OpenRouterMediaProvider(BaseMediaProvider):
                                 provider_name=f"OpenRouter ({self.model_name})",
                                 revised_prompt=full_prompt,
                                 aspect_ratio=aspect_ratio,
-                                resolution=size
+                                resolution=payload.get("resolution") or size
                             )
-        except Exception:
-            pass
+            else:
+                import logging
+                err_msg = resp.text[:300]
+                logging.getLogger("openrouter_media").warning(
+                    f"[OpenRouter Image] HTTP {resp.status_code}: {err_msg}"
+                )
+                try:
+                    err_json = resp.json()
+                    detail = err_json.get("error", {}).get("message") or err_msg
+                except Exception:
+                    detail = err_msg
+                raise RuntimeError(f"OpenRouter Image API error (HTTP {resp.status_code}): {detail}")
+        except RuntimeError:
+            raise
+        except Exception as e:
+            import logging
+            logging.getLogger("openrouter_media").error(f"[OpenRouter Image Exception] {e}")
+            raise RuntimeError(f"OpenRouter Image generation failed: {e}")
         return None
 
     def generate_video(
@@ -138,7 +166,18 @@ class OpenRouterMediaProvider(BaseMediaProvider):
             model_name = model_name[len("openrouter/"):]
 
         ratio = aspect_ratio if aspect_ratio in ("16:9", "9:16", "1:1", "4:3", "3:4", "3:2", "2:3", "21:9", "9:21") else "16:9"
-        duration = 5 if duration_seconds in (5, "5") else 10
+        
+        # Duration mapping: google/veo models on OpenRouter support only [4, 6, 8] seconds
+        if "veo" in model_name.lower():
+            req_d = int(duration_seconds) if str(duration_seconds).isdigit() else 5
+            if req_d <= 4:
+                duration = 4
+            elif req_d <= 6:
+                duration = 6
+            else:
+                duration = 8
+        else:
+            duration = 5 if duration_seconds in (5, "5") else 10
 
         payload = {
             "model": model_name,
@@ -164,8 +203,8 @@ class OpenRouterMediaProvider(BaseMediaProvider):
                 poll_url = data.get("polling_url") or (f"https://openrouter.ai/api/v1/videos/{job_id}" if job_id else None)
 
                 if poll_url:
-                    # 2. Poll up to 120 seconds
-                    for _ in range(24):
+                    # 2. Poll up to 180 seconds
+                    for _ in range(36):
                         time.sleep(5)
                         poll_resp = requests.get(poll_url, headers=headers, timeout=15)
                         if poll_resp.status_code == 200:
@@ -185,7 +224,7 @@ class OpenRouterMediaProvider(BaseMediaProvider):
                                         or (p_data.get("assets", {}) if isinstance(p_data.get("assets"), dict) else {}).get("video")
                                     )
                                 if video_url:
-                                    dl = requests.get(video_url, timeout=60)
+                                    dl = requests.get(video_url, headers=headers, timeout=60)
                                     if dl.status_code == 200 and len(dl.content) > 1000:
                                         return MediaGenerationResult(
                                             bytes_data=dl.content,
@@ -196,7 +235,27 @@ class OpenRouterMediaProvider(BaseMediaProvider):
                                             aspect_ratio=ratio
                                         )
                             elif status in ("failed", "error", "rejected"):
+                                import logging
+                                logging.getLogger("openrouter_media").warning(
+                                    f"[OpenRouter Video] Job failed: {p_data}"
+                                )
                                 break
-        except Exception:
+            else:
+                import logging
+                err_msg = resp.text[:300]
+                logging.getLogger("openrouter_media").warning(
+                    f"[OpenRouter Video] HTTP {resp.status_code}: {err_msg}"
+                )
+                try:
+                    err_json = resp.json()
+                    detail = err_json.get("error", {}).get("message") or err_msg
+                except Exception:
+                    detail = err_msg
+                raise RuntimeError(f"OpenRouter Video API error (HTTP {resp.status_code}): {detail}")
+        except RuntimeError:
+            raise
+        except Exception as e:
+            import logging
+            logging.getLogger("openrouter_media").error(f"[OpenRouter Video Exception] {e}")
             pass
         return None

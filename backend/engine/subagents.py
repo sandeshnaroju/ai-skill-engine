@@ -374,7 +374,7 @@ def run_image_generation_subagent(
     """
     import secrets
     from artifacts.manager import create_artifact, mint_embed_token
-    from engine.media_providers import resolve_media_provider_chain
+    from engine.media_providers import resolve_media_provider
 
     start_time = time.time()
     tenant_name = tenant.name if tenant else "default"
@@ -413,38 +413,27 @@ def run_image_generation_subagent(
         target_size = "768x1024"
 
     try:
-        providers = resolve_media_provider_chain(
+        provider = resolve_media_provider(
             model_name=resolved_model,
             media_type="image_gen",
             tenant=tenant,
             db=db
         )
+        if not provider:
+            raise RuntimeError(f"No media provider configured for model '{resolved_model}'")
 
-        gen_result = None
-        for provider in providers:
-            try:
-                gen_result = provider.generate_image(
-                    prompt=clean_prompt,
-                    aspect_ratio=aspect_ratio or "1:1",
-                    size=target_size,
-                    style=style,
-                    source_image_path=source_image_path,
-                    tenant_id=tenant_id,
-                    db=db
-                )
-                if gen_result and gen_result.bytes_data:
-                    break
-            except Exception:
-                continue
+        gen_result = provider.generate_image(
+            prompt=clean_prompt,
+            aspect_ratio=aspect_ratio or "1:1",
+            size=target_size,
+            style=style,
+            source_image_path=source_image_path,
+            tenant_id=tenant_id,
+            db=db
+        )
 
         if not gen_result or not gen_result.bytes_data:
-            from engine.media_providers.synthesizer import SynthesizerFallbackProvider
-            gen_result = SynthesizerFallbackProvider(resolved_model).generate_image(
-                prompt=clean_prompt,
-                aspect_ratio=aspect_ratio or "1:1",
-                size=target_size,
-                style=style
-            )
+            raise RuntimeError(f"Image generation failed for model '{resolved_model}'. Provider returned no image data.")
 
         image_bytes = gen_result.bytes_data
         ext = f".{gen_result.media_format.lstrip('.')}"
@@ -506,6 +495,7 @@ def run_image_generation_subagent(
         elapsed_ms = int((time.time() - start_time) * 1000)
         stdout_msg = (
             f"Successfully generated image using **{provider_used}** ({resolved_model})!\n\n"
+            f"![{art_title}]({media_url})\n\n"
             f"- **File:** `{unique_fn}`\n"
             f"- **Sandbox Path:** `{relative_sandbox_path}`\n"
             f"- **Size:** {target_size}\n"
@@ -560,7 +550,7 @@ def run_video_generation_subagent(
     """
     import secrets
     from artifacts.manager import create_artifact, mint_embed_token
-    from engine.media_providers import resolve_media_provider_chain
+    from engine.media_providers import resolve_media_provider
 
     start_time = time.time()
     tenant_name = tenant.name if tenant else "default"
@@ -592,36 +582,26 @@ def run_video_generation_subagent(
     ratio = aspect_ratio if aspect_ratio in ("16:9", "9:16", "1:1") else "16:9"
 
     try:
-        providers = resolve_media_provider_chain(
+        provider = resolve_media_provider(
             model_name=resolved_model,
             media_type="video_gen",
             tenant=tenant,
             db=db
         )
+        if not provider:
+            raise RuntimeError(f"No media provider configured for model '{resolved_model}'")
 
-        gen_result = None
-        for provider in providers:
-            try:
-                gen_result = provider.generate_video(
-                    prompt=clean_prompt,
-                    duration_seconds=duration,
-                    aspect_ratio=ratio,
-                    source_image_path=source_image_path,
-                    tenant_id=tenant_id,
-                    db=db
-                )
-                if gen_result and gen_result.bytes_data:
-                    break
-            except Exception:
-                continue
+        gen_result = provider.generate_video(
+            prompt=clean_prompt,
+            duration_seconds=duration,
+            aspect_ratio=ratio,
+            source_image_path=source_image_path,
+            tenant_id=tenant_id,
+            db=db
+        )
 
         if not gen_result or not gen_result.bytes_data:
-            from engine.media_providers.synthesizer import SynthesizerFallbackProvider
-            gen_result = SynthesizerFallbackProvider(resolved_model).generate_video(
-                prompt=clean_prompt,
-                duration_seconds=duration,
-                aspect_ratio=ratio
-            )
+            raise RuntimeError(f"Video generation failed for model '{resolved_model}'. Provider returned no video data.")
 
         video_bytes = gen_result.bytes_data
         ext = f".{gen_result.media_format.lstrip('.')}"
@@ -682,6 +662,7 @@ def run_video_generation_subagent(
         elapsed_ms = int((time.time() - start_time) * 1000)
         stdout_msg = (
             f"Successfully generated video using **{provider_used}** ({resolved_model})!\n\n"
+            f"![{art_title}]({media_url})\n\n"
             f"- **File:** `{unique_fn}`\n"
             f"- **Sandbox Path:** `{relative_sandbox_path}`\n"
             f"- **Duration:** {duration}s\n"
