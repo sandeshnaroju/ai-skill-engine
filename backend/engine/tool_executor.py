@@ -107,7 +107,7 @@ def execute_tool(fn_name: str, args: dict, tool_def: dict, user_data: dict,
                 return f"Error: MCP server not found", {"stdout": "", "stderr": tool_result, "exit_code": 1, "execution_time_ms": 0}, tool_result
             srv_data = {"name": srv_obj.name, "transport": srv_obj.transport, "command": srv_obj.command, "url": srv_obj.url, "env": srv_obj.env}
 
-        from executors.mcp_client import mcp_manager
+        from mcp_manager import mcp_manager
         real_tool_name = tool_def.get("name", fn_name)
         srv_obj = SimpleMcpServerObj(**srv_data)
         exec_res = mcp_manager.call_tool_sync(srv_obj, real_tool_name, exec_args)
@@ -123,12 +123,18 @@ def execute_tool(fn_name: str, args: dict, tool_def: dict, user_data: dict,
             command = exec_command or fn_name
         tenant_name = tenant.name if tenant else "default"
 
-        if fn_name == "list_sandbox_files":
+        if fn_name in ("list_sandbox_files", "sandbox_file_manager__list_sandbox_files"):
             exec_res = run_list_sandbox_files(db, session_id=session_id, tenant=tenant)
-        elif fn_name == "download_public_file":
-            exec_res = run_download_public_file(exec_args, tenant=tenant)
-        elif fn_name == "upload_file_to_sandbox":
-            exec_res = run_upload_file_to_sandbox(db, exec_args, session_id=session_id, tenant=tenant)
+        elif fn_name in ("download_sandbox_file", "sandbox_file_manager__download_sandbox_file"):
+            exec_res = run_download_sandbox_file(db, session_id=session_id, args=exec_args, tenant=tenant)
+        elif fn_name in ("upload_sandbox_file", "sandbox_file_manager__upload_sandbox_file", "upload_file_to_sandbox"):
+            exec_res = run_upload_sandbox_file(db, session_id=session_id, args=exec_args, tenant=tenant)
+        elif fn_name in ("download_from_storage", "cloud_storage__download_from_storage"):
+            exec_res = run_download_from_storage_tool(db, args=exec_args, tenant=tenant)
+        elif fn_name in ("upload_to_storage", "cloud_storage__upload_to_storage"):
+            exec_res = run_upload_to_storage_tool(db, args=exec_args, tenant=tenant)
+        elif fn_name in ("download_public_file", "http_fetcher__download_public_file"):
+            exec_res = run_download_public_file_tool(db, args=exec_args, tenant=tenant)
         elif fn_name in ("artifact_editor__open_or_update_artifact", "open_or_update_artifact"):
             exec_res = run_open_or_update_artifact(db, exec_args, tenant, session_id=session_id)
         elif fn_name in ("artifact_editor__open_uploaded_file_as_artifact", "open_uploaded_file_as_artifact"):
