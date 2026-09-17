@@ -249,6 +249,10 @@ export default function ChatPlayground({ isSidebarOpen, toggleSidebar }) {
       for (const file of files) {
         const formData = new FormData();
         formData.append('file', file);
+        if (activeSessionId) {
+          formData.append('session_id', activeSessionId);
+        }
+        formData.append('origin', 'chat_playground');
 
         const data = await apiClient.post('/api/v1/files/upload', formData, {
           tenantKey: apiKey.trim() || undefined

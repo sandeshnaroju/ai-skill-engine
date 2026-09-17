@@ -266,6 +266,8 @@ export default function ApiTester() {
     try {
       const formData = new FormData();
       formData.append('file', file);
+      formData.append('session_id', 'api_tester_session');
+      formData.append('origin', 'external_api');
 
       const [data, base64] = await Promise.all([
         apiClient.post('/api/v1/files/upload', formData, {

@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import { HardDrive, UploadCloud, Server, Check, X, Loader, Save, Zap, Eye, EyeOff } from 'lucide-react';
+import { useSearchParams, useNavigate } from 'react-router-dom';
+import { 
+  HardDrive, UploadCloud, Server, Check, X, Loader, Save, Zap, Eye, EyeOff, FolderOpen
+} from 'lucide-react';
 import AsyncSearchableDropdown from './AsyncSearchableDropdown';
 import { systemApi, tenantsApi, apiClient } from '../api';
 
@@ -96,6 +98,7 @@ function Field({ id, label, value, onChange, placeholder, type = 'text' }) {
 }
 
 export default function StorageSettings() {
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const provider = searchParams.get('provider') || 'local';
   const [tenantName, setTenantName] = useState('Global');
@@ -211,6 +214,7 @@ export default function StorageSettings() {
   };
 
   const activeProvider = PROVIDERS.find(p => p.id === provider) || PROVIDERS[0];
+  const activeTenant = tenants.find(t => t.id === selectedTenantId) || tenants[0] || null;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
@@ -305,6 +309,35 @@ export default function StorageSettings() {
                 );
               })}
             </div>
+          </div>
+
+          {/* Session & Storage Files Manager Card - Placed just below Storage Provider Tabs */}
+          <div className="glass-box" style={{ 
+            padding: '16px 20px', 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: '14px',
+            border: '1px solid rgba(139, 92, 246, 0.28)',
+            background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.08), rgba(99, 102, 241, 0.04))'
+          }}>
+            <div>
+              <div style={{ fontWeight: '700', fontSize: '0.94rem', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <FolderOpen size={18} color="var(--primary-violet)" />
+                Session Storage & Cloud Files Manager
+              </div>
+              <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '3px' }}>
+                Explore, filter, download, or purge files across your {PROVIDERS.find(p => p.id === provider)?.label || 'storage'} and sessions.
+              </div>
+            </div>
+            <button
+              className="btn-outline"
+              onClick={() => navigate('/session-files')}
+              style={{ padding: '8px 16px', fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: '600' }}
+            >
+              Open Files Manager &rarr;
+            </button>
           </div>
 
           {/* Configuration Form */}

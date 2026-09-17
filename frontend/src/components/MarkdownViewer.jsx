@@ -150,6 +150,19 @@ export function parseMarkdownToHtml(src, options = {}) {
       if (isVideoUrl(cleanUrl)) {
         return renderVideoPlayer(cleanUrl, label);
       }
+
+      // Check if this is an internal markdown doc link like 'installation.md' or './installation.md'
+      const isDocLink = /^(?:\.\/)?([a-z0-9_-]+)\.md(?:#.*)?$/i.exec(cleanUrl);
+      if (isDocLink) {
+        const docId = isDocLink[1];
+        return `<a href="#doc-${docId}" data-doc-id="${docId}" class="doc-internal-link" style="color: ${linkColor}; text-decoration: underline; font-weight: 600; cursor: pointer;">${label} →</a>`;
+      }
+
+      // In-app app route links like '/skills', '/playground', etc.
+      if (cleanUrl.startsWith('/') && !cleanUrl.startsWith('//')) {
+        return `<a href="${cleanUrl}" data-app-route="${cleanUrl}" class="app-internal-link" style="color: ${linkColor}; text-decoration: underline; font-weight: 600; cursor: pointer;">${label}</a>`;
+      }
+
       return `<a href="${cleanUrl}" target="_blank" rel="noopener noreferrer" style="color: ${linkColor}; text-decoration: underline; font-weight: 500;">${label}</a>`;
     });
 
@@ -367,13 +380,44 @@ export function parseMarkdownToHtml(src, options = {}) {
 /**
  * Reusable Markdown Viewer Component
  */
-export default function MarkdownViewer({ content, className = '', style = {}, linkColor }) {
+export default function MarkdownViewer({ 
+  content, 
+  className = '', 
+  style = {}, 
+  linkColor, 
+  onDocNavigate,
+  onAppNavigate 
+}) {
   if (!content) return null;
   const html = parseMarkdownToHtml(content, { linkColor });
+
+  const handleClick = (e) => {
+    // Find closest anchor tag clicked
+    const anchor = e.target.closest('a');
+    if (!anchor) return;
+
+    const docId = anchor.getAttribute('data-doc-id');
+    if (docId) {
+      e.preventDefault();
+      if (onDocNavigate) {
+        onDocNavigate(docId);
+      }
+      return;
+    }
+
+    const appRoute = anchor.getAttribute('data-app-route');
+    if (appRoute && onAppNavigate) {
+      e.preventDefault();
+      onAppNavigate(appRoute);
+      return;
+    }
+  };
+
   return (
     <div
       className={`markdown-body ${className}`}
       style={style}
+      onClick={handleClick}
       dangerouslySetInnerHTML={{ __html: html }}
     />
   );

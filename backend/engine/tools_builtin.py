@@ -91,7 +91,7 @@ def run_send_email_tool(db, args: dict, tenant) -> dict:
             "sandbox_type": "host"
         }
 
-def run_upload_to_storage_tool(db, args: dict, tenant) -> dict:
+def run_upload_to_storage_tool(db, args: dict, tenant, session_id: str = None) -> dict:
     filename = args.get("filename")
     if not filename:
         return {"stdout": "", "stderr": "Error: filename is required.", "exit_code": 1, "execution_time_ms": 0, "sandbox_type": "host"}
@@ -126,6 +126,32 @@ def run_upload_to_storage_tool(db, args: dict, tenant) -> dict:
             data = f.read()
         cloud_url = backend.upload(filename, data, "application/octet-stream", tenant_name=tenant_name)
         elapsed_ms = int((time.time() - start_time) * 1000)
+
+        # Track tool-generated file in SessionFile
+        try:
+            from models import SessionFile
+            provider_name = getattr(backend, "__class__", type(backend)).__name__.lower().replace("storage", "")
+            if provider_name not in ("azure", "s3", "local"):
+                provider_name = "azure" if "azure" in provider_name else ("s3" if "s3" in provider_name else "local")
+            clean_session_id = session_id.strip() if (session_id and isinstance(session_id, str) and session_id.strip()) else None
+
+            sf = SessionFile(
+                tenant_id=tenant.id if tenant else None,
+                session_id=clean_session_id,
+                filename=filename,
+                original_name=filename,
+                storage_provider=provider_name,
+                storage_url=cloud_url,
+                file_size=len(data),
+                file_type="application/octet-stream",
+                source="tool_generated",
+                origin="external_api"
+            )
+            db.add(sf)
+            db.commit()
+        except Exception as sf_err:
+            print(f"Notice: Could not track tool-generated SessionFile: {sf_err}")
+
         return {
             "stdout": f"File '{filename}' successfully uploaded to storage. URL: {cloud_url}",
             "stderr": "",

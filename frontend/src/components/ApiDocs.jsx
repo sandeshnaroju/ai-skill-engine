@@ -4,8 +4,10 @@ import {
   BookOpen, Key, Terminal, Code, Check, Copy, Zap, Cpu, Server,
   ShieldCheck, Activity, Layers, Globe, FileText, Layout, ExternalLink,
   ArrowRight, Sparkles, Download, Lock, CheckCircle2, Sliders, Eye,
-  Sun, Moon, LayoutDashboard, LogIn, Image, Video, Mic, Film, Play, Upload
+  Sun, Moon, LayoutDashboard, LogIn, Image, Video, Mic, Film, Play, Upload,
+  HardDrive, Trash2
 } from 'lucide-react';
+import DocumentationBrowser from './DocumentationBrowser';
 
 export default function ApiDocs({ isStandalone = false, theme: propTheme, toggleTheme: propToggleTheme, isAuthenticated }) {
   const navigate = useNavigate();
@@ -1143,6 +1145,24 @@ data: [DONE]`
             <Layout size={18} />
             <span>2. Frontend Integration (Canvas Artifacts &amp; Iframe)</span>
           </button>
+
+          <button
+            onClick={() => setActiveSection('guides')}
+            className={activeSection === 'guides' ? 'btn-gradient' : 'btn-outline'}
+            style={{
+              padding: '10px 20px',
+              fontSize: '0.92rem',
+              fontWeight: '700',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              borderRadius: '8px',
+              cursor: 'pointer'
+            }}
+          >
+            <BookOpen size={18} />
+            <span>3. Complete Knowledge Base &amp; Guides</span>
+          </button>
         </div>
 
         <div style={{ display: 'flex', gap: '10px', marginTop: '14px', flexWrap: 'wrap' }}>
@@ -1404,28 +1424,36 @@ data: [DONE]`
   {
     "type": "image_url",
     "image_url": {
-      "url": "https://example.com/blueprint.png" // or "data:image/png;base64,..."
+      "url": "https://example.com/blueprint.png"
     }
   }
 ]`}
                 </pre>
               </div>
 
-              {/* Card 2: REST File Upload API */}
+              {/* Card 2: REST File Upload API & Session Tracking */}
               <div style={{ background: 'var(--bg-input)', padding: '16px', borderRadius: '10px', border: '1px solid var(--border-subtle)' }}>
                 <h5 style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Upload size={16} color="var(--accent-emerald)" /> 2. Uploading Audio, Video &amp; Documents
+                  <Upload size={16} color="var(--accent-emerald)" /> 2. Uploading Files Tied to Chat Sessions
                 </h5>
                 <p style={{ fontSize: '0.8rem', color: 'var(--text-sub)', lineHeight: '1.5', marginBottom: '10px' }}>
-                  Upload large media files prior to the chat call via multipart form data:
+                  Upload documents, spreadsheets, images, or media files with a <code>session_id</code>. Files automatically stream to your configured storage (Azure Blob, AWS S3, or Local Disk) and are tracked:
                 </p>
                 <pre style={{ margin: 0, fontSize: '0.74rem', background: 'var(--bg-dark)', padding: '10px', borderRadius: '6px', color: 'var(--text-main)', fontFamily: 'var(--font-mono)', lineHeight: '1.4' }}>
 {`curl -X POST http://localhost:8000/api/v1/files/upload \\
-  -H "Authorization: Bearer YOUR_KEY" \\
-  -F "file=@meeting_recording.mp4"
+  -H "Authorization: Bearer sk_mgr_YOUR_TENANT_API_KEY" \\
+  -F "file=@financial_report.xlsx" \\
+  -F "session_id=user_chat_thread_101" \\
+  -F "origin=external_api"
 
-# Then in chat messages:
-# "Please analyze meeting_recording.mp4"`}
+# Response:
+# {
+#   "status": "success",
+#   "id": "file_uuid_456",
+#   "filename": "uuid_financial_report.xlsx",
+#   "url": "https://<storage>/...",
+#   "session_id": "user_chat_thread_101"
+# }`}
                 </pre>
               </div>
 
@@ -1494,6 +1522,134 @@ data: [DONE]`
               </div>
               <p style={{ color: 'var(--text-sub)', fontSize: '0.86rem', lineHeight: '1.5' }}>
                 Fetches sandbox execution logs (commands, stdout, stderr, execution duration, sandbox type).
+              </p>
+            </div>
+
+            {/* Session Files Lifecycle & Purge APIs */}
+            <div className="glass-box" style={{ padding: '20px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
+                <span style={{ background: 'rgba(239, 68, 68, 0.2)', color: '#ef4444', padding: '4px 8px', borderRadius: '6px', fontWeight: '700', fontSize: '0.78rem' }}>GET / DELETE</span>
+                <code style={{ fontSize: '0.92rem', fontWeight: '600', color: 'var(--text-main)' }}>/api/v1/files/session/{'{id}'}</code>
+              </div>
+              <p style={{ color: 'var(--text-sub)', fontSize: '0.86rem', lineHeight: '1.5' }}>
+                List and purge files across cloud storage (Azure Blob, AWS S3, Local) tied to chat threads when deleted by end users.
+              </p>
+            </div>
+          </div>
+
+          {/* Business Backend: Session Storage & Cloud Files Lifecycle Deep Dive */}
+          <div className="glass-box" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px', border: '1px solid rgba(139, 92, 246, 0.25)' }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
+                <HardDrive size={20} color="var(--primary-violet)" />
+                <h4 style={{ fontSize: '1.1rem', fontWeight: '700', color: 'var(--text-main)', margin: 0 }}>
+                  Business Backend Guide: Managing &amp; Purging Session Storage Files
+                </h4>
+              </div>
+              <p style={{ fontSize: '0.84rem', color: 'var(--text-sub)', lineHeight: '1.6', margin: 0 }}>
+                When your business application calls the AI Skill Engine with user sessions, files uploaded by users or generated during tool execution (e.g. Python matplotlib charts, generated reports, CSV exports) are automatically tracked under that <code>session_id</code> and stored in your configured cloud storage (Azure Blob container, AWS S3 bucket, or Local Disk). When a user deletes a chat thread in your CRM, SaaS app, or customer portal, your backend should invoke these lifecycle APIs to permanently clean up cloud assets.
+              </p>
+            </div>
+
+            {/* Endpoint 1: List Files for a Session */}
+            <div style={{ background: 'var(--bg-input)', padding: '16px 20px', borderRadius: '10px', border: '1px solid var(--border-subtle)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px', marginBottom: '10px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <span style={{ background: 'rgba(59, 130, 246, 0.2)', color: '#3b82f6', padding: '4px 8px', borderRadius: '6px', fontWeight: '700', fontSize: '0.78rem' }}>GET</span>
+                  <code style={{ fontSize: '0.90rem', fontWeight: '600', color: 'var(--text-main)' }}>/api/v1/files/session/{'{session_id}'}</code>
+                </div>
+                <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>Query params: <code>source</code> (upload | tool_generated), <code>origin</code></span>
+              </div>
+              <p style={{ fontSize: '0.82rem', color: 'var(--text-sub)', lineHeight: '1.5', marginBottom: '10px' }}>
+                Retrieves metadata and storage download URLs for all files associated with a specific chat thread or session.
+              </p>
+              <pre style={{ margin: 0, fontSize: '0.74rem', background: 'var(--bg-dark)', padding: '12px', borderRadius: '6px', color: 'var(--text-main)', fontFamily: 'var(--font-mono)', lineHeight: '1.4' }}>
+{`curl -X GET "http://localhost:8000/api/v1/files/session/user_chat_thread_101" \\
+  -H "Authorization: Bearer sk_mgr_YOUR_TENANT_API_KEY"
+
+# Response:
+{
+  "session_id": "user_chat_thread_101",
+  "total": 2,
+  "files": [
+    {
+      "id": "7fa3b210-9c1a-45d2-b34e-01a2b3c4d5e6",
+      "filename": "f8a9c2_financial_report.xlsx",
+      "original_name": "financial_report.xlsx",
+      "storage_provider": "azure",
+      "url": "https://mystorage.blob.core.windows.net/sessions/f8a9c2_financial_report.xlsx?sv=...",
+      "file_size": 24576,
+      "source": "user_upload",
+      "origin": "external_api",
+      "created_at": "2026-09-17T12:00:00Z"
+    }
+  ]
+}`}
+              </pre>
+            </div>
+
+            {/* Endpoint 2: Purge Entire Session Storage (Cascade Delete) */}
+            <div style={{ background: 'var(--bg-input)', padding: '16px 20px', borderRadius: '10px', border: '1px solid var(--border-subtle)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px', marginBottom: '10px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <span style={{ background: 'rgba(239, 68, 68, 0.2)', color: '#ef4444', padding: '4px 8px', borderRadius: '6px', fontWeight: '700', fontSize: '0.78rem' }}>DELETE</span>
+                  <code style={{ fontSize: '0.90rem', fontWeight: '600', color: 'var(--text-main)' }}>/api/v1/files/session/{'{session_id}'}</code>
+                </div>
+                <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>Cascade purges cloud storage blobs + DB records</span>
+              </div>
+              <p style={{ fontSize: '0.82rem', color: 'var(--text-sub)', lineHeight: '1.5', marginBottom: '10px' }}>
+                Permanently deletes all storage blobs from your active cloud backend (Azure Blob Storage, AWS S3, or Local Disk), clears local execution sandbox caches, and removes database records for that chat session.
+              </p>
+              <pre style={{ margin: 0, fontSize: '0.74rem', background: 'var(--bg-dark)', padding: '12px', borderRadius: '6px', color: 'var(--text-main)', fontFamily: 'var(--font-mono)', lineHeight: '1.4' }}>
+{`curl -X DELETE "http://localhost:8000/api/v1/files/session/user_chat_thread_101" \\
+  -H "Authorization: Bearer sk_mgr_YOUR_TENANT_API_KEY"
+
+# Response:
+{
+  "status": "success",
+  "session_id": "user_chat_thread_101",
+  "storage_provider": "azure",
+  "deleted_count": 2,
+  "deleted_files": [
+    "f8a9c2_financial_report.xlsx",
+    "d4e5f6_quarterly_chart.png"
+  ]
+}`}
+              </pre>
+            </div>
+
+            {/* Endpoint 3: Delete a Single File */}
+            <div style={{ background: 'var(--bg-input)', padding: '16px 20px', borderRadius: '10px', border: '1px solid var(--border-subtle)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px', marginBottom: '10px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <span style={{ background: 'rgba(239, 68, 68, 0.2)', color: '#ef4444', padding: '4px 8px', borderRadius: '6px', fontWeight: '700', fontSize: '0.78rem' }}>DELETE</span>
+                  <code style={{ fontSize: '0.90rem', fontWeight: '600', color: 'var(--text-main)' }}>/api/v1/files/{'{file_id}'}</code>
+                </div>
+                <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>Single file permanent deletion</span>
+              </div>
+              <p style={{ fontSize: '0.82rem', color: 'var(--text-sub)', lineHeight: '1.5', marginBottom: '10px' }}>
+                Permanently deletes an individual file from cloud storage and DB by its unique ID.
+              </p>
+              <pre style={{ margin: 0, fontSize: '0.74rem', background: 'var(--bg-dark)', padding: '12px', borderRadius: '6px', color: 'var(--text-main)', fontFamily: 'var(--font-mono)', lineHeight: '1.4' }}>
+{`curl -X DELETE "http://localhost:8000/api/v1/files/7fa3b210-9c1a-45d2-b34e-01a2b3c4d5e6" \\
+  -H "Authorization: Bearer sk_mgr_YOUR_TENANT_API_KEY"
+
+# Response:
+{
+  "status": "success",
+  "deleted_file": "f8a9c2_financial_report.xlsx",
+  "id": "7fa3b210-9c1a-45d2-b34e-01a2b3c4d5e6"
+}`}
+              </pre>
+            </div>
+
+            {/* Automatic Session Thread Purge Integration */}
+            <div style={{ padding: '14px 18px', borderRadius: '8px', background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.25)' }}>
+              <div style={{ fontWeight: '700', fontSize: '0.86rem', color: 'var(--primary-emerald)', marginBottom: '4px' }}>
+                💡 Automated Cascading Deletion with Session API:
+              </div>
+              <p style={{ fontSize: '0.80rem', color: 'var(--text-sub)', margin: 0, lineHeight: '1.5' }}>
+                If you already call <code>DELETE /api/v1/sessions/{'{session_id}'}</code> to clear chat history threads, cloud storage files associated with that session are <strong>automatically purged simultaneously</strong> in the same transaction!
               </p>
             </div>
           </div>
@@ -2212,6 +2368,13 @@ curl -X POST http://localhost:8000/api/v1/files/upload \\
             </div>
           )}
         </div>
+      )}
+
+      {/* ═══════════════════════════════════════════════════════════════════════ */}
+      {/* SECTION 3: KNOWLEDGE BASE & DETAILED GUIDES BROWSER                     */}
+      {/* ═══════════════════════════════════════════════════════════════════════ */}
+      {activeSection === 'guides' && (
+        <DocumentationBrowser />
       )}
     </div>
   );

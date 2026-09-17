@@ -667,6 +667,15 @@ def delete_session(
     for art in artifacts:
         db.delete(art)
 
+    # Purge all cloud storage files (Azure Blob / S3 / Local) and sandbox caches
+    try:
+        from routers.files import purge_session_files_internal
+        purge_session_files_internal(db, tenant.id, tenant.name, s.session_id)
+        if s.id != s.session_id:
+            purge_session_files_internal(db, tenant.id, tenant.name, s.id)
+    except Exception as purge_err:
+        print(f"Notice: Failed to purge storage files on session delete: {purge_err}")
+
     # Delete session
     db.delete(s)
     db.commit()

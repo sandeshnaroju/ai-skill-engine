@@ -77,6 +77,7 @@ class Tenant(Base):
     storage_configs = relationship("StorageConfig", back_populates="tenant", cascade="all, delete-orphan")
     sandbox_configs = relationship("SandboxConfig", back_populates="tenant", cascade="all, delete-orphan")
     artifacts = relationship("SessionArtifact", back_populates="tenant", cascade="all, delete-orphan")
+    session_files = relationship("SessionFile", back_populates="tenant", cascade="all, delete-orphan")
 
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -397,3 +398,23 @@ class ArtifactCommit(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     artifact = relationship("SessionArtifact", back_populates="commits")
+
+
+class SessionFile(Base):
+    """Tracks files uploaded or generated within chat/API sessions across all storage backends."""
+    __tablename__ = "session_files"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    tenant_id = Column(String, ForeignKey("tenants.id"), nullable=False, index=True)
+    session_id = Column(String, nullable=True, index=True)
+    filename = Column(String, nullable=False, index=True)
+    original_name = Column(String, nullable=False)
+    storage_provider = Column(String, nullable=False, default="azure")  # azure, s3, local
+    storage_url = Column(Text, nullable=True)
+    file_size = Column(Integer, default=0)
+    file_type = Column(String, nullable=True)
+    source = Column(String, default="upload", nullable=False)  # upload, tool_generated, artifact_export
+    origin = Column(String, default="external_api", nullable=False, index=True)  # external_api, chat_playground
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    tenant = relationship("Tenant", back_populates="session_files")

@@ -9,4 +9,5 @@ export { userDataApi } from './userData';
 export { logsApi } from './logs';
 export { chatApi } from './chat';
 export { artifactsApi } from './artifacts';
+export { filesApi } from './files';
 
