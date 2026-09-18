@@ -55,8 +55,14 @@ export const artifactsApi = {
     return res?.data !== undefined ? res.data : res;
   },
 
-  mintEmbedToken: async (artifactId, expiresInMinutes = 30) => {
-    const res = await apiClient.post(`/api/v1/artifacts/${artifactId}/embed-token?expires_in_minutes=${expiresInMinutes}`);
+  mintEmbedToken: async (artifactId, expiresInMinutes = 30, tenantId = null) => {
+    const headers = {};
+    if (tenantId) headers['X-Tenant-ID'] = tenantId;
+    const res = await apiClient.post(
+      `/api/v1/artifacts/${artifactId}/embed-token?expires_in_minutes=${expiresInMinutes}`,
+      null,
+      { headers }
+    );
     return res?.data !== undefined ? res.data : res;
   },
 

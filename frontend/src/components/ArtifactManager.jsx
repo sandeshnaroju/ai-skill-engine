@@ -116,11 +116,11 @@ export default function ArtifactManager() {
   // Open Canvas handler: Ensure fresh signed embed token exists so canvas loads immediately with 100% authorization
   const handleOpenCanvas = async (art) => {
     try {
-      let token = art.token;
-      if (!token) {
-        const res = await artifactsApi.mintEmbedToken(art.id, 120);
-        token = res.token;
-      }
+      // Always mint a fresh token so it's never stale, passing the artifact's actual
+      // tenant ID so the backend resolves the right owner even when an admin is
+      // browsing another tenant's artifacts.
+      const res = await artifactsApi.mintEmbedToken(art.id, 120, art.tenant_id);
+      const token = res.token;
       setPreviewArtifact({
         ...art,
         token: token
@@ -139,13 +139,11 @@ export default function ArtifactManager() {
     e?.stopPropagation?.();
     try {
       let token = art.token;
-      if (!token) {
-        try {
-          const res = await artifactsApi.mintEmbedToken(art.id, 60);
-          token = res?.token;
-        } catch (tokErr) {
-          console.warn('Failed to mint download token:', tokErr);
-        }
+      try {
+        const res = await artifactsApi.mintEmbedToken(art.id, 60, art.tenant_id);
+        token = res?.token;
+      } catch (tokErr) {
+        console.warn('Failed to mint download token:', tokErr);
       }
       const exportUrl = artifactsApi.getExportUrl(art.id, token);
       const link = document.createElement('a');
@@ -181,11 +179,8 @@ export default function ArtifactManager() {
   // Copy Embed URL
   const handleCopyEmbedUrl = async (art) => {
     try {
-      let token = art.token;
-      if (!token) {
-        const tokenRes = await artifactsApi.mintEmbedToken(art.id, 120);
-        token = tokenRes.token;
-      }
+      const tokenRes = await artifactsApi.mintEmbedToken(art.id, 120, art.tenant_id);
+      const token = tokenRes.token;
       const fullUrl = `${window.location.origin}/embed/canvas?token=${token}`;
       await navigator.clipboard.writeText(fullUrl);
       setCopiedId(art.id);
