@@ -16,7 +16,7 @@ from fastapi.responses import StreamingResponse, Response
 from sqlalchemy.orm import Session
 
 from database import get_db
-from models import SessionArtifact, ArtifactBlock, ArtifactCommit, Tenant
+from models import SessionArtifact, ArtifactBlock, ArtifactCommit, Tenant, User
 from auth import get_current_tenant
 from .manager import (
     broadcaster,
