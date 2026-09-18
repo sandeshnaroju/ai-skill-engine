@@ -573,10 +573,7 @@ def run_video_generation_subagent(
 
     clean_prompt = (prompt or "").strip()
     if not clean_prompt:
-        if source_image_path:
-            clean_prompt = f"Cinematic video animation and motion based on the starting frame image {os.path.basename(source_image_path)}"
-        else:
-            clean_prompt = "A breathtaking cinematic video scene with dynamic camera motion"
+        raise ValueError("A video prompt is required. Please describe the scene, motion, or content you want to generate.")
 
     duration = 10 if duration_seconds in (10, "10") else 5
     ratio = aspect_ratio if aspect_ratio in ("16:9", "9:16", "1:1") else "16:9"
