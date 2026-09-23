@@ -162,18 +162,25 @@ curl -N -X POST http://localhost:2704/api/v1/chat/completions \
 
 All guides are packaged directly into the web application and can be interactively browsed with live search, syntax highlighting, and one-click copy from the dashboard at **`/api-docs`** (Tab 3: *Complete Knowledge Base & Guides*), or viewed directly in [`frontend/src/docs/`](frontend/src/docs/):
 
-| Guide | Description |
-|---|---|
-| [📖 **Introduction & Architecture**](frontend/src/docs/introduction.md) | Platform overview, request lifecycle, multi-tenancy model, and core concepts. |
-| [⚡ **Quickstart Walkthrough**](frontend/src/docs/quickstart.md) | 5-minute step-by-step from initial boot to first tool call and API request. |
-| [📦 **Installation & Deployment**](frontend/src/docs/installation.md) | Docker Hub zero-clone, Docker Compose (with PostgreSQL), Bare-Metal, and Nginx SSL proxy. |
-| [💡 **Usage & Dashboard Workflows**](frontend/src/docs/usage-guide.md) | Chat Playground, Universal Canvas, Apps & Groups, ProChat Generative UI, and Audit Logs. |
-| [📡 **API Reference & SDKs**](frontend/src/docs/api-reference.md) | OpenAI-compatible chat specs, streaming SSE delta schemas, multimodal routing, Python & JS examples. |
-| [🎨 **Universal Canvas Artifacts**](frontend/src/docs/artifacts-canvas.md) | Drop-in iframe embed specs, postMessage protocol, headless REST/SSE, and HMAC security tokens. |
-| [💾 **Session Storage & Cloud Files**](frontend/src/docs/session-storage.md) | Azure Blob, S3, and Local Disk file lifecycles, session uploads, listing, and cascade purge APIs. |
-| [🛡️ **Execution Sandboxes**](frontend/src/docs/sandboxes.md) | Docker containers, Azure Container Apps (Hyper-V), E2B micro-VMs, Fly.io, and AWS Lambda. |
-| [⚙️ **Configuration & Settings**](frontend/src/docs/configuration.md) | Environment variables, Fernet encryption, custom token pricing rates, and SMTP email setup. |
-| [🧩 **Skills & MCP Servers**](frontend/src/docs/skills-and-mcp.md) | Anatomy of `SKILL.md`, tool schemas, AI Skill Generator, and Model Context Protocol integrations. |
+| # | Guide | Description |
+|---|---|---|
+| 01 | [📖 **Introduction & Architecture**](frontend/src/docs/01-introduction.md) | Platform overview, request lifecycle, multi-tenancy model, and core concepts. |
+| 02 | [⚡ **Quickstart Walkthrough**](frontend/src/docs/02-quickstart.md) | 5-minute step-by-step from initial boot to first tool call and API request. |
+| 03 | [📦 **Installation & Deployment**](frontend/src/docs/03-installation.md) | Docker Hub zero-clone, Docker Compose (with PostgreSQL), Bare-Metal, and Nginx SSL proxy. |
+| 04 | [💡 **Usage & Dashboard Workflows**](frontend/src/docs/04-usage-guide.md) | Chat Playground, Universal Canvas, Apps & Groups, ProChat Generative UI, and Audit Logs. |
+| 05 | [🔌 **Chat Completions & Streaming API**](frontend/src/docs/05-backend-api.md) | OpenAI wire-compatible endpoint, streaming SSE deltas, tool schemas, and custom tools. |
+| 06 | [🎨 **Multimodal & Sub-Agents**](frontend/src/docs/06-backend-multimodal.md) | Image generation (DALL-E 3/Imagen/Flux), video generation (Veo/Runway), vision and audio analysis. |
+| 07 | [📁 **Session Files & Lifecycle**](frontend/src/docs/07-backend-files.md) | File uploads, session attachment, listing, single file deletion, and cascade session purges. |
+| 08 | [⚙️ **Artifacts & Management APIs**](frontend/src/docs/08-backend-management.md) | Artifacts REST/SSE endpoints, MCP servers, tenant management, and audit logs. |
+| 09 | [📡 **Complete API Reference**](frontend/src/docs/09-api-reference.md) | Request parameters, response bodies, error codes, and end-to-end Python/JS SDK snippets. |
+| 10 | [🖼️ **Universal Canvas Iframe Embedding**](frontend/src/docs/10-frontend-canvas.md) | Embedding interactive Canvas in your web apps via iframe and postMessage bi-directional events. |
+| 11 | [⚡ **Headless Canvas REST & SSE**](frontend/src/docs/11-frontend-headless.md) | Building custom canvas viewers with direct REST and real-time Server-Sent Events. |
+| 12 | [🔒 **Canvas Security & Uploaded Files**](frontend/src/docs/12-frontend-security.md) | HMAC security tokens, proxy patterns, and opening user files directly in Canvas editors. |
+| 13 | [📄 **Universal Canvas Artifacts**](frontend/src/docs/13-artifacts-canvas.md) | Architecture of live co-editing documents, spreadsheets, slides, and 3D CAD models. |
+| 14 | [💾 **Session Storage & Cloud Files**](frontend/src/docs/14-session-storage.md) | Azure Blob, S3, and Local Disk file lifecycles, session uploads, listing, and cascade purge APIs. |
+| 15 | [🛡️ **Execution Sandboxes**](frontend/src/docs/15-sandboxes.md) | Docker containers, Azure Container Apps (Hyper-V), E2B micro-VMs, Fly.io, and AWS Lambda. |
+| 16 | [⚙️ **Configuration & Settings**](frontend/src/docs/16-configuration.md) | Environment variables, Fernet encryption, custom token pricing rates, and SMTP email setup. |
+| 17 | [🧩 **Skills & MCP Servers**](frontend/src/docs/17-skills-and-mcp.md) | Anatomy of `SKILL.md`, tool schemas, AI Skill Generator, and Model Context Protocol integrations. |
 
 ---
 

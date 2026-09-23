@@ -175,5 +175,5 @@ AI Skill Engine **automatically cascade-purges** all tracked cloud storage files
 
 ## 🧭 Next Steps
 
-- **[Execution Sandboxes Guide](sandboxes.md)**: Explore Docker, Azure ACA, and E2B runtime sandboxes.
-- **[Configuration Reference](configuration.md)**: Configure S3 and Azure Blob connection credentials.
+- **[Execution Sandboxes Guide](15-sandboxes.md)**: Explore Docker, Azure ACA, and E2B runtime sandboxes.
+- **[Configuration Reference](16-configuration.md)**: Configure S3 and Azure Blob connection credentials.

@@ -109,6 +109,6 @@ Users can view, edit, version, and export these directly inside an interactive i
 
 ## 🧭 Next Steps
 
-- **[Installation Guide](installation.md)**: Deploy with Docker Hub, Docker Compose, or Bare-Metal.
-- **[Quickstart Guide](quickstart.md)**: Spin up and execute your first tool in under 5 minutes.
-- **[API Reference](api-reference.md)**: Explore the OpenAI-compatible gateway specifications.
+- **[Installation Guide](03-installation.md)**: Deploy with Docker Hub, Docker Compose, or Bare-Metal.
+- **[Quickstart Guide](02-quickstart.md)**: Spin up and execute your first tool in under 5 minutes.
+- **[API Reference](09-api-reference.md)**: Explore the OpenAI-compatible gateway specifications.

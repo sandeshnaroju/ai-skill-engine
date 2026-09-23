@@ -107,5 +107,5 @@ The engine connects to the MCP process, queries its tool definitions, and automa
 
 ## 🧭 Next Steps
 
-- **[API Reference](api-reference.md)**: Pass skill names in chat completions requests.
-- **[Usage Guide](usage-guide.md)**: Explore the Chat Playground and App groupings.
+- **[API Reference](09-api-reference.md)**: Pass skill names in chat completions requests.
+- **[Usage Guide](04-usage-guide.md)**: Explore the Chat Playground and App groupings.

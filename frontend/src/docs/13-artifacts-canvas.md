@@ -176,5 +176,5 @@ Never expose your master tenant API key (`sk_mgr_...`) to client browsers:
 
 ## 🧭 Next Steps
 
-- **[Session Storage & Cloud Files](session-storage.md)**: Purge session files and assets when conversations end.
-- **[API Reference](api-reference.md)**: Explore the completions endpoint parameters.
+- **[Session Storage & Cloud Files](14-session-storage.md)**: Purge session files and assets when conversations end.
+- **[API Reference](09-api-reference.md)**: Explore the completions endpoint parameters.

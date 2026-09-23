@@ -60,6 +60,6 @@ Manage real-time documents, section blocks, rollback commits, live typing stream
 
 ## 🧭 Related Guides
 
-- **[Canvas Headless REST & SSE](frontend-headless.md)** — Step-by-step cURL examples for building custom canvas viewers
-- **[Skills & MCP Servers](skills-and-mcp.md)** — Configuring Model Context Protocol tools and custom skills
-- **[Configuration & Settings](configuration.md)** — Environment variables and encryption settings
+- **[Canvas Headless REST & SSE](11-frontend-headless.md)** — Step-by-step cURL examples for building custom canvas viewers
+- **[Skills & MCP Servers](17-skills-and-mcp.md)** — Configuring Model Context Protocol tools and custom skills
+- **[Configuration & Settings](16-configuration.md)** — Environment variables and encryption settings

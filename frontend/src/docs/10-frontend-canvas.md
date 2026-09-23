@@ -115,6 +115,6 @@ Mount the interactive Canvas in a side panel, slide-over drawer, or modal dialog
 
 ## 🧭 Related Guides
 
-- **[Headless Canvas REST & SSE](frontend-headless.md)** — Build custom editor UIs using low-level REST and SSE streams
-- **[Security, Tokens & Uploaded Files](frontend-security.md)** — HMAC token proxy patterns and opening uploaded files in Canvas
-- **[Chat Completions & Streaming](backend-api.md)** — Invoking the chat completion endpoint with artifact capabilities
+- **[Headless Canvas REST & SSE](11-frontend-headless.md)** — Build custom editor UIs using low-level REST and SSE streams
+- **[Security, Tokens & Uploaded Files](12-frontend-security.md)** — HMAC token proxy patterns and opening uploaded files in Canvas
+- **[Chat Completions & Streaming](05-backend-api.md)** — Invoking the chat completion endpoint with artifact capabilities

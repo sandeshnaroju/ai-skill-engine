@@ -109,6 +109,6 @@ curl -X DELETE "http://localhost:8000/api/v1/artifacts/session/{session_id}" \
 
 ## 🧭 Related Guides
 
-- **[Canvas Iframe & Embedding](frontend-canvas.md)** — Pre-built drop-in iframe component
-- **[Security, Tokens & Uploaded Files](frontend-security.md)** — HMAC token lifecycle and client-side expiration checks
-- **[Artifacts & Management APIs](backend-management.md)** — Complete REST endpoint matrix
+- **[Canvas Iframe & Embedding](10-frontend-canvas.md)** — Pre-built drop-in iframe component
+- **[Security, Tokens & Uploaded Files](12-frontend-security.md)** — HMAC token lifecycle and client-side expiration checks
+- **[Artifacts & Management APIs](08-backend-management.md)** — Complete REST endpoint matrix

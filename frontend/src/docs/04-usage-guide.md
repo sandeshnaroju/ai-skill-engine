@@ -117,6 +117,6 @@ Located at **Sandbox Audit Logs** (`/logs`) and **API Execution Logs** (`/apilog
 
 ## 🧭 Next Steps
 
-- **[API Reference](api-reference.md)**: Explore API request parameters, streaming SSE, and multimodal routing.
-- **[Session Storage Guide](session-storage.md)**: Business backend file lifecycle management.
-- **[Skills & MCP Guide](skills-and-mcp.md)**: Build custom tools and connect external MCP servers.
+- **[API Reference](09-api-reference.md)**: Explore API request parameters, streaming SSE, and multimodal routing.
+- **[Session Storage Guide](14-session-storage.md)**: Business backend file lifecycle management.
+- **[Skills & MCP Guide](17-skills-and-mcp.md)**: Build custom tools and connect external MCP servers.

@@ -110,6 +110,6 @@ data: [DONE]
 
 ## 🧭 Next Steps
 
-- **[Usage Guide & Workflows](usage-guide.md)**: Master the admin dashboard, skill grouping, and audit tools.
-- **[API Reference](api-reference.md)**: Explore streaming parameters, multimodal routing, and SDK examples.
-- **[Canvas Artifacts Integration](artifacts-canvas.md)**: Embed the interactive Canvas in your own web app.
+- **[Usage Guide & Workflows](04-usage-guide.md)**: Master the admin dashboard, skill grouping, and audit tools.
+- **[API Reference](09-api-reference.md)**: Explore streaming parameters, multimodal routing, and SDK examples.
+- **[Canvas Artifacts Integration](13-artifacts-canvas.md)**: Embed the interactive Canvas in your own web app.

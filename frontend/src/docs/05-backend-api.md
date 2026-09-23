@@ -220,6 +220,6 @@ print("Executed Tools:", response.get("executed_tools", []))
 
 ## 🧭 Related Backend Guides
 
-- **[Multimodal & Sub-Agent Routing](backend-multimodal.md)** — Image generation, video generation, vision analysis, and ProChat routing
-- **[Files & Session Lifecycle](backend-files.md)** — File uploads, session files listing, single file deletion, and cascade purge
-- **[Artifacts & Management APIs](backend-management.md)** — Artifacts REST/SSE endpoints, MCP servers, and audit logs
+- **[Multimodal & Sub-Agent Routing](06-backend-multimodal.md)** — Image generation, video generation, vision analysis, and ProChat routing
+- **[Files & Session Lifecycle](07-backend-files.md)** — File uploads, session files listing, single file deletion, and cascade purge
+- **[Artifacts & Management APIs](08-backend-management.md)** — Artifacts REST/SSE endpoints, MCP servers, and audit logs

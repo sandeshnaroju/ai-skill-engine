@@ -61,5 +61,5 @@ In **Email Configuration** (`/email-config`), set tenant-specific SMTP servers s
 
 ## 🧭 Next Steps
 
-- **[Skills & MCP Servers](skills-and-mcp.md)**: Explore the SKILL.md format and AI skill generation.
-- **[Installation Guide](installation.md)**: Production deployment options.
+- **[Skills & MCP Servers](17-skills-and-mcp.md)**: Explore the SKILL.md format and AI skill generation.
+- **[Installation Guide](03-installation.md)**: Production deployment options.

@@ -82,5 +82,5 @@ Azure Dynamic Sessions provides fast, Hyper-V isolated container execution pools
 
 ## 🧭 Next Steps
 
-- **[Configuration Reference](configuration.md)**: Environment variables and encryption settings.
-- **[Skills & MCP Servers](skills-and-mcp.md)**: Explore how skills interact with sandboxes.
+- **[Configuration Reference](16-configuration.md)**: Environment variables and encryption settings.
+- **[Skills & MCP Servers](17-skills-and-mcp.md)**: Explore how skills interact with sandboxes.

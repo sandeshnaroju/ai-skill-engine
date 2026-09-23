@@ -7,28 +7,29 @@ import {
 import MarkdownViewer from './MarkdownViewer';
 
 // Import raw markdown files using Vite's '?raw' query
-import introDoc from '../docs/introduction.md?raw';
-import quickstartDoc from '../docs/quickstart.md?raw';
-import installDoc from '../docs/installation.md?raw';
-import usageDoc from '../docs/usage-guide.md?raw';
+import introDoc from '../docs/01-introduction.md?raw';
+import quickstartDoc from '../docs/02-quickstart.md?raw';
+import installDoc from '../docs/03-installation.md?raw';
+import usageDoc from '../docs/04-usage-guide.md?raw';
 
 // Backend Docs
-import backendApiDoc from '../docs/backend-api.md?raw';
-import backendMultimodalDoc from '../docs/backend-multimodal.md?raw';
-import backendFilesDoc from '../docs/backend-files.md?raw';
-import backendMgmtDoc from '../docs/backend-management.md?raw';
+import backendApiDoc from '../docs/05-backend-api.md?raw';
+import backendMultimodalDoc from '../docs/06-backend-multimodal.md?raw';
+import backendFilesDoc from '../docs/07-backend-files.md?raw';
+import backendMgmtDoc from '../docs/08-backend-management.md?raw';
+import apiRefDoc from '../docs/09-api-reference.md?raw';
 
 // Frontend & Canvas Docs
-import frontendCanvasDoc from '../docs/frontend-canvas.md?raw';
-import frontendHeadlessDoc from '../docs/frontend-headless.md?raw';
-import frontendSecurityDoc from '../docs/frontend-security.md?raw';
-import canvasDoc from '../docs/artifacts-canvas.md?raw';
+import frontendCanvasDoc from '../docs/10-frontend-canvas.md?raw';
+import frontendHeadlessDoc from '../docs/11-frontend-headless.md?raw';
+import frontendSecurityDoc from '../docs/12-frontend-security.md?raw';
+import canvasDoc from '../docs/13-artifacts-canvas.md?raw';
 
 // Storage & Infrastructure Docs
-import storageDoc from '../docs/session-storage.md?raw';
-import sandboxDoc from '../docs/sandboxes.md?raw';
-import configDoc from '../docs/configuration.md?raw';
-import skillsDoc from '../docs/skills-and-mcp.md?raw';
+import storageDoc from '../docs/14-session-storage.md?raw';
+import sandboxDoc from '../docs/15-sandboxes.md?raw';
+import configDoc from '../docs/16-configuration.md?raw';
+import skillsDoc from '../docs/17-skills-and-mcp.md?raw';
 
 const DOC_ITEMS = [
   // Getting Started

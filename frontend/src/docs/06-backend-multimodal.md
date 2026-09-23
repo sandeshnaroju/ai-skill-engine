@@ -108,6 +108,6 @@ for chunk in stream:
 
 ## 🧭 Related Guides
 
-- **[Chat Completions & Streaming](backend-api.md)** — Gateway endpoint parameters and standard streaming SDKs
-- **[Skills & MCP Servers](skills-and-mcp.md)** — Understand tool definitions, schemas, and custom tools
-- **[Canvas Artifacts & Iframe Integration](frontend-canvas.md)** — Render rich documents and code blocks in Canvas
+- **[Chat Completions & Streaming](05-backend-api.md)** — Gateway endpoint parameters and standard streaming SDKs
+- **[Skills & MCP Servers](17-skills-and-mcp.md)** — Understand tool definitions, schemas, and custom tools
+- **[Canvas Artifacts & Iframe Integration](10-frontend-canvas.md)** — Render rich documents and code blocks in Canvas

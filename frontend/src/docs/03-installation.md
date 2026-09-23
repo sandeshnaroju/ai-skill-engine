@@ -243,5 +243,5 @@ cd backend && pip install -r requirements.txt && cd ..
 
 ## 🧭 Next Steps
 
-- **[Quickstart Walkthrough](quickstart.md)**: Add your first API key and execute code in 5 minutes.
-- **[Configuration Reference](configuration.md)**: Detailed breakdown of all environment variables.
+- **[Quickstart Walkthrough](02-quickstart.md)**: Add your first API key and execute code in 5 minutes.
+- **[Configuration Reference](16-configuration.md)**: Detailed breakdown of all environment variables.

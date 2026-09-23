@@ -180,6 +180,6 @@ curl -X POST http://localhost:2704/api/v1/chat/completions \
 
 ## 🧭 Next Steps
 
-- **[Universal Canvas Artifacts Guide](artifacts-canvas.md)**: Drop-in iframe specs and headless endpoints.
-- **[Session Storage & Cloud Files](session-storage.md)**: File upload, listing, and session purge lifecycles.
-- **[Skills & MCP Servers](skills-and-mcp.md)**: Define custom tools and connect external MCP servers.
+- **[Universal Canvas Artifacts Guide](13-artifacts-canvas.md)**: Drop-in iframe specs and headless endpoints.
+- **[Session Storage & Cloud Files](14-session-storage.md)**: File upload, listing, and session purge lifecycles.
+- **[Skills & MCP Servers](17-skills-and-mcp.md)**: Define custom tools and connect external MCP servers.

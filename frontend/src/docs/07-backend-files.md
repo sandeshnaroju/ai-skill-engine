@@ -108,6 +108,6 @@ curl -X DELETE "http://localhost:8000/api/v1/sessions/user_chat_thread_101" \
 
 ## 🧭 Related Guides
 
-- **[Session Storage & Cloud Files](session-storage.md)** — Architectural overview of Azure Blob, AWS S3, and Local Disk providers
-- **[Chat Completions & Streaming](backend-api.md)** — Gateway completions endpoint
-- **[Security, Tokens & Uploaded Files](frontend-security.md)** — Open uploaded files directly into interactive Canvas
+- **[Session Storage & Cloud Files](14-session-storage.md)** — Architectural overview of Azure Blob, AWS S3, and Local Disk providers
+- **[Chat Completions & Streaming](05-backend-api.md)** — Gateway completions endpoint
+- **[Security, Tokens & Uploaded Files](12-frontend-security.md)** — Open uploaded files directly into interactive Canvas

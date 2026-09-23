@@ -143,6 +143,6 @@ The model automatically invokes `open_uploaded_file_as_artifact` and streams an 
 
 ## 🧭 Related Guides
 
-- **[Canvas Iframe & Embedding](frontend-canvas.md)** — Iframe integration and postMessage event handlers
-- **[Headless Canvas REST & SSE](frontend-headless.md)** — Direct REST and SSE endpoints for custom editors
-- **[Files & Session Lifecycle](backend-files.md)** — File upload, download, and cascade purge APIs
+- **[Canvas Iframe & Embedding](10-frontend-canvas.md)** — Iframe integration and postMessage event handlers
+- **[Headless Canvas REST & SSE](11-frontend-headless.md)** — Direct REST and SSE endpoints for custom editors
+- **[Files & Session Lifecycle](07-backend-files.md)** — File upload, download, and cascade purge APIs
