@@ -56,7 +56,58 @@ def update_request_usage(chat_req, usage_obj, input_rate: float, output_rate: fl
     chat_req.completion_tokens = (chat_req.completion_tokens or 0) + completion_tokens
     chat_req.cost_usd = round((chat_req.cost_usd or 0.0) + cost, 6)
 
+def update_request_subagent_cost(chat_req, cost: float, prompt_tokens: int = 0, completion_tokens: int = 0):
+    """Accumulates sub-agent (image/video generation, multimodal analyst) usage and USD cost into ChatRequest."""
+    if not chat_req:
+        return
+    c = float(cost or 0.0)
+    chat_req.subagent_cost_usd = round((getattr(chat_req, "subagent_cost_usd", 0.0) or 0.0) + c, 6)
+    chat_req.prompt_tokens = (chat_req.prompt_tokens or 0) + int(prompt_tokens or 0)
+    chat_req.completion_tokens = (chat_req.completion_tokens or 0) + int(completion_tokens or 0)
+    chat_req.cost_usd = round((chat_req.cost_usd or 0.0) + c, 6)
+
+def calculate_media_cost(
+    media_type: str,
+    model_name: str,
+    aspect_ratio: str = "1:1",
+    size: str = None,
+    duration_seconds: int = 5,
+    direct_cost: float = None,
+    tenant_llm = None
+) -> float:
+    """Calculates USD cost for sub-agent media generation strictly based on what the user
+
+    configured in Tenant models (cost_per_unit or cost_per_second), or direct provider API billed cost.
+    No hardcoded pricings or fallback rate cards are used.
+    """
+    # 1. Custom Tenant-configured rates for the model
+    if tenant_llm:
+        if media_type == "video_gen":
+            sec_rate = getattr(tenant_llm, "cost_per_second", None)
+            if sec_rate is not None and sec_rate > 0.0:
+                duration = int(duration_seconds or 5)
+                return round(sec_rate * duration, 6)
+            unit_rate = getattr(tenant_llm, "cost_per_unit", None)
+            if unit_rate is not None and unit_rate > 0.0:
+                return round(unit_rate, 6)
+        else:
+            unit_rate = getattr(tenant_llm, "cost_per_unit", None)
+            if unit_rate is not None and unit_rate > 0.0:
+                return round(unit_rate, 6)
+
+    # 2. Direct API billed cost from provider (e.g. OpenRouter usage.cost)
+    if direct_cost is not None and direct_cost > 0.0:
+        return round(float(direct_cost), 6)
+
+    return 0.0
+
+
 def get_model_rates(db, tenant_id: str, model_name: str):
+    """Retrieves token rates strictly configured by the user in Tenant models for this tenant and model.
+
+    Returns (input_rate, output_rate, audio_input_rate, audio_output_rate).
+    No hardcoded pricing fallbacks are used.
+    """
     from models import TenantLLM
     active_model_config = db.query(TenantLLM).filter(
         TenantLLM.tenant_id == tenant_id,
@@ -64,35 +115,6 @@ def get_model_rates(db, tenant_id: str, model_name: str):
         TenantLLM.is_active == True
     ).first()
     
-    if active_model_config:
-        in_r = getattr(active_model_config, "input_rate", None)
-        out_r = getattr(active_model_config, "output_rate", None)
-        # If rates are explicitly defined and > 0, return them
-        if (in_r is not None and in_r > 0.0) or (out_r is not None and out_r > 0.0):
-            return (
-                in_r or 0.0,
-                out_r or 0.0,
-                getattr(active_model_config, "audio_input_rate", 0.0) or 0.0,
-                getattr(active_model_config, "audio_output_rate", 0.0) or 0.0,
-            )
-
-    # ProChat models are fine-tuned from Google Gemini models.
-    # If custom rates are not set on ProChat, inherit from the tenant's Gemini model rates.
-    is_prochat = any(k in (model_name or "").lower() for k in ["prochat", "genui", "mars"])
-    if is_prochat:
-        gemini_config = db.query(TenantLLM).filter(
-            TenantLLM.tenant_id == tenant_id,
-            (TenantLLM.provider == "gemini") | (TenantLLM.model_name.ilike("%gemini%")),
-            TenantLLM.is_active == True
-        ).first()
-        if gemini_config and (gemini_config.input_rate or gemini_config.output_rate):
-            return (
-                getattr(gemini_config, "input_rate", 0.0) or 0.0,
-                getattr(gemini_config, "output_rate", 0.0) or 0.0,
-                getattr(gemini_config, "audio_input_rate", 0.0) or 0.0,
-                getattr(gemini_config, "audio_output_rate", 0.0) or 0.0,
-            )
-
     if active_model_config:
         return (
             getattr(active_model_config, "input_rate", 0.0) or 0.0,

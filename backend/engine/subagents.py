@@ -334,13 +334,23 @@ def run_multimodal_subagent(
         response_text = completion.choices[0].message.content or ""
         elapsed_ms = int((time.time() - start_time) * 1000)
 
+        # Calculate token cost for multimodal subagent
+        usage_obj = getattr(completion, "usage", None)
+        from engine.usage import get_model_rates, calculate_usage_cost
+        in_r, out_r, au_in_r, au_out_r = get_model_rates(db, tenant_id, resolved_model)
+        p_tokens, c_tokens, sub_cost = calculate_usage_cost(usage_obj, in_r, out_r, au_in_r, au_out_r)
+
         return {
             "stdout": response_text,
             "stderr": "",
             "exit_code": 0,
             "execution_time_ms": elapsed_ms,
             "sandbox_type": "subagent",
-            "model_name": resolved_model
+            "model_name": resolved_model,
+            "cost_usd": sub_cost,
+            "prompt_tokens": p_tokens,
+            "completion_tokens": c_tokens,
+            "usage": usage_obj
         }
     except Exception as e:
         elapsed_ms = int((time.time() - start_time) * 1000)
@@ -350,7 +360,10 @@ def run_multimodal_subagent(
             "exit_code": 1,
             "execution_time_ms": elapsed_ms,
             "sandbox_type": "subagent",
-            "model_name": resolved_model
+            "model_name": resolved_model,
+            "cost_usd": 0.0,
+            "prompt_tokens": 0,
+            "completion_tokens": 0
         }
 
 
@@ -375,6 +388,8 @@ def run_image_generation_subagent(
     import secrets
     from artifacts.manager import create_artifact, mint_embed_token
     from engine.media_providers import resolve_media_provider
+    from models import TenantLLM
+    from engine.usage import calculate_media_cost
 
     start_time = time.time()
     tenant_name = tenant.name if tenant else "default"
@@ -492,6 +507,28 @@ def run_image_generation_subagent(
             "embed_url": f"/embed/canvas?token={token}"
         }
 
+        # Calculate Image Generation Cost
+        tenant_llm = None
+        if db and tenant_id:
+            try:
+                tenant_llm = db.query(TenantLLM).filter(
+                    TenantLLM.tenant_id == tenant_id,
+                    TenantLLM.model_name == resolved_model,
+                    TenantLLM.is_active == True
+                ).first()
+            except Exception:
+                pass
+
+        direct_cost = getattr(gen_result, "direct_cost", None)
+        image_cost = calculate_media_cost(
+            media_type="image_gen",
+            model_name=resolved_model,
+            aspect_ratio=aspect_ratio or "1:1",
+            size=target_size,
+            direct_cost=direct_cost,
+            tenant_llm=tenant_llm
+        )
+
         elapsed_ms = int((time.time() - start_time) * 1000)
         stdout_msg = (
             f"Successfully generated image using **{provider_used}** ({resolved_model})!\n\n"
@@ -510,6 +547,9 @@ def run_image_generation_subagent(
             "execution_time_ms": elapsed_ms,
             "sandbox_type": "subagent",
             "model_name": resolved_model,
+            "cost_usd": image_cost,
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
             "generated_files": [{
                 "filename": unique_fn,
                 "original_name": unique_fn,
@@ -527,7 +567,10 @@ def run_image_generation_subagent(
             "exit_code": 1,
             "execution_time_ms": elapsed_ms,
             "sandbox_type": "subagent",
-            "model_name": resolved_model
+            "model_name": resolved_model,
+            "cost_usd": 0.0,
+            "prompt_tokens": 0,
+            "completion_tokens": 0
         }
 
 
@@ -551,6 +594,8 @@ def run_video_generation_subagent(
     import secrets
     from artifacts.manager import create_artifact, mint_embed_token
     from engine.media_providers import resolve_media_provider
+    from models import TenantLLM
+    from engine.usage import calculate_media_cost
 
     start_time = time.time()
     tenant_name = tenant.name if tenant else "default"
@@ -656,6 +701,28 @@ def run_video_generation_subagent(
             "embed_url": f"/embed/canvas?token={token}"
         }
 
+        # Calculate Video Generation Cost
+        tenant_llm = None
+        if db and tenant_id:
+            try:
+                tenant_llm = db.query(TenantLLM).filter(
+                    TenantLLM.tenant_id == tenant_id,
+                    TenantLLM.model_name == resolved_model,
+                    TenantLLM.is_active == True
+                ).first()
+            except Exception:
+                pass
+
+        direct_cost = getattr(gen_result, "direct_cost", None)
+        video_cost = calculate_media_cost(
+            media_type="video_gen",
+            model_name=resolved_model,
+            aspect_ratio=ratio,
+            duration_seconds=duration,
+            direct_cost=direct_cost,
+            tenant_llm=tenant_llm
+        )
+
         elapsed_ms = int((time.time() - start_time) * 1000)
         stdout_msg = (
             f"Successfully generated video using **{provider_used}** ({resolved_model})!\n\n"
@@ -675,6 +742,9 @@ def run_video_generation_subagent(
             "execution_time_ms": elapsed_ms,
             "sandbox_type": "subagent",
             "model_name": resolved_model,
+            "cost_usd": video_cost,
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
             "generated_files": [{
                 "filename": unique_fn,
                 "original_name": unique_fn,
@@ -692,5 +762,8 @@ def run_video_generation_subagent(
             "exit_code": 1,
             "execution_time_ms": elapsed_ms,
             "sandbox_type": "subagent",
-            "model_name": resolved_model
+            "model_name": resolved_model,
+            "cost_usd": 0.0,
+            "prompt_tokens": 0,
+            "completion_tokens": 0
         }

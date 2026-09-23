@@ -399,6 +399,100 @@ def run_upload_sandbox_file(db, session_id: str, args: dict, tenant=None, tenant
     return {"stdout": f"Uploaded {filename} to local sandbox workspace.", "stderr": "", "exit_code": 0, "sandbox_type": "process"}
 
 
+def _extract_media_prompt(args) -> str:
+    """Robustly extracts prompt string from standard JSON Schema tool arguments,
+
+    supporting all providers (OpenAI, OpenRouter, Anthropic, xAI Grok, Gemini, DeepSeek).
+    """
+    import json
+    import re
+
+    if args is None:
+        return ""
+
+    # 1. If args is a string (serialized JSON or raw text prompt)
+    if isinstance(args, str):
+        args_str = args.strip()
+        if not args_str:
+            return ""
+        if (args_str.startswith("{") and args_str.endswith("}")) or (args_str.startswith("[") and args_str.endswith("]")):
+            try:
+                parsed = json.loads(args_str)
+                if isinstance(parsed, (dict, list)):
+                    return _extract_media_prompt(parsed)
+            except Exception:
+                pass
+        return args_str
+
+    # 2. If args is a list
+    if isinstance(args, list):
+        for item in args:
+            res = _extract_media_prompt(item)
+            if res:
+                return res
+        return ""
+
+    # 3. If args is not a dict, convert to string
+    if not isinstance(args, dict):
+        return str(args).strip()
+
+    # 4. Standard JSON Schema property: 'prompt' (OpenAI, Anthropic, Gemini, Grok, DeepSeek)
+    val = args.get("prompt")
+    if val is not None:
+        if isinstance(val, str) and val.strip():
+            return val.strip()
+        if isinstance(val, (dict, list)):
+            nested_res = _extract_media_prompt(val)
+            if nested_res:
+                return nested_res
+
+    # 5. Common standardized/alias prompt keys across modalities (Image, Video, Audio)
+    for key in (
+        "video_prompt", "image_prompt", "audio_prompt", "scene_prompt", "prompt_text",
+        "description", "video_description", "audio_description", "scene_description", "visual_description",
+        "query", "instruction", "caption", "text", "content", "transcript_instruction"
+    ):
+        v = args.get(key)
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+        if isinstance(v, (dict, list)):
+            nested_res = _extract_media_prompt(v)
+            if nested_res:
+                return nested_res
+
+    # 6. Provider-specific container wrappers (Anthropic 'input', OpenAI 'arguments'/'parameters', etc.)
+    for wrapper in ("input", "parameters", "arguments", "kwargs", "payload", "body", "args", "data"):
+        if wrapper in args and args[wrapper] is not None:
+            nested_res = _extract_media_prompt(args[wrapper])
+            if nested_res:
+                return nested_res
+
+    # 7. Code block / Python command argument extraction fallback
+    code_val = args.get("code") or args.get("command")
+    if code_val and isinstance(code_val, str) and code_val.strip():
+        c_str = code_val.strip()
+        m = re.search(r'''(?:prompt|video_prompt|image_prompt|audio_prompt|description|query)\s*=\s*['"]([^'"]+)['"]''', c_str)
+        if m:
+            return m.group(1).strip()
+        m2 = re.search(r'''(?:generate_video|generate_image|analyze_image|analyze_audio|analyze_video)\s*\(\s*['"]([^'"]+)['"]''', c_str)
+        if m2:
+            return m2.group(1).strip()
+        if not c_str.startswith("import ") and not c_str.startswith("def ") and len(c_str.splitlines()) <= 4:
+            return c_str
+
+    # 8. Fallback to any string value in dict not matching reserved parameter keys
+    for k, v in args.items():
+        if isinstance(v, str) and v.strip() and len(v.strip()) > 3 and k not in (
+            "aspect_ratio", "ratio", "aspect", "duration", "duration_seconds", "seconds", "length",
+            "model", "size", "resolution", "style", "image_path", "source_image_path", "file_path",
+            "audio_path", "video_path", "path", "image_url"
+        ):
+            return v.strip()
+
+    return ""
+
+
+
 def run_multimodal_subagent_tool(
     db,
     args: dict,
@@ -414,29 +508,38 @@ def run_multimodal_subagent_tool(
     """Dispatches image, audio, video sub-agent analysis or image/video generation using engine.subagents."""
     from engine.subagents import run_multimodal_subagent, run_image_generation_subagent, run_video_generation_subagent
 
+    # Normalize args if string
+    if isinstance(args, str):
+        import json
+        try:
+            args = json.loads(args)
+        except Exception:
+            args = {"prompt": args}
+    if not isinstance(args, dict):
+        args = {"prompt": str(args or "")}
+
     if "generate_video" in tool_name or tool_name == "generate_video":
-        prompt = (
-            args.get("prompt")
-            or args.get("query")
-            or args.get("instruction")
-            or args.get("description")
-            or args.get("video_prompt")
-            or args.get("image_prompt")
-            or args.get("text")
-            or args.get("scene")
-            or args.get("scene_description")
-            or args.get("caption")
-            or args.get("content")
-            or ""
+        prompt = _extract_media_prompt(args)
+        duration_seconds = (
+            args.get("duration_seconds")
+            or args.get("duration")
+            or args.get("seconds")
+            or args.get("length")
+            or 5
         )
-        duration_seconds = args.get("duration_seconds") or args.get("duration") or 5
-        aspect_ratio = args.get("aspect_ratio") or args.get("ratio") or "16:9"
+        aspect_ratio = (
+            args.get("aspect_ratio")
+            or args.get("ratio")
+            or args.get("aspect")
+            or "16:9"
+        )
         source_image_path = (
             args.get("image_path")
             or args.get("source_image_path")
             or args.get("file_path")
             or args.get("image_url")
             or args.get("frame_image")
+            or args.get("start_frame")
         )
         tool_model_arg = args.get("model")
 
@@ -453,18 +556,13 @@ def run_multimodal_subagent_tool(
         )
 
     if "generate_image" in tool_name or tool_name == "generate_image":
-        prompt = (
-            args.get("prompt")
-            or args.get("query")
-            or args.get("instruction")
-            or args.get("description")
-            or args.get("image_prompt")
-            or args.get("text")
-            or args.get("caption")
-            or args.get("content")
-            or ""
+        prompt = _extract_media_prompt(args)
+        aspect_ratio = (
+            args.get("aspect_ratio")
+            or args.get("ratio")
+            or args.get("aspect")
+            or "1:1"
         )
-        aspect_ratio = args.get("aspect_ratio") or args.get("ratio") or "1:1"
         size = args.get("size") or args.get("resolution")
         style = args.get("style")
         source_image_path = (
@@ -502,10 +600,10 @@ def run_multimodal_subagent_tool(
         flat_model = video_model
     else:
         media_type = "image"
-        file_path = args.get("file_path")
+        file_path = args.get("file_path") or args.get("path")
         flat_model = image_model
 
-    query = args.get("query") or args.get("prompt") or args.get("instruction")
+    query = args.get("query") or _extract_media_prompt(args) or "Analyze the provided media in detail and extract all key insights."
     tool_model_arg = args.get("model")
 
     return run_multimodal_subagent(
@@ -518,3 +616,4 @@ def run_multimodal_subagent_tool(
         tool_model_arg=tool_model_arg,
         flat_request_model=flat_model
     )
+

@@ -194,6 +194,19 @@ def init_db():
             finally:
                 db.close()
 
+        if "cost_usd" not in columns:
+            db = SessionLocal()
+            try:
+                db.execute(text("ALTER TABLE execution_logs ADD COLUMN cost_usd FLOAT DEFAULT 0.0"))
+                db.execute(text("ALTER TABLE execution_logs ADD COLUMN prompt_tokens INTEGER DEFAULT 0"))
+                db.execute(text("ALTER TABLE execution_logs ADD COLUMN completion_tokens INTEGER DEFAULT 0"))
+                db.commit()
+                print("Migration: Added 'cost_usd', 'prompt_tokens', 'completion_tokens' columns to execution_logs table")
+            except Exception as e:
+                print(f"Migration warning: Could not add cost/token columns to execution_logs: {e}")
+            finally:
+                db.close()
+
     db_creation_status["progress"] = 60
 
     if inspector.has_table("chat_requests"):
@@ -217,6 +230,9 @@ def init_db():
                 db.execute(text("ALTER TABLE chat_requests ADD COLUMN secondary_completion_tokens INTEGER DEFAULT 0"))
                 db.execute(text("ALTER TABLE chat_requests ADD COLUMN secondary_cost_usd FLOAT DEFAULT 0.0"))
                 print("Migration: Added secondary LLM columns to chat_requests table")
+            if "subagent_cost_usd" not in columns:
+                db.execute(text("ALTER TABLE chat_requests ADD COLUMN subagent_cost_usd FLOAT DEFAULT 0.0"))
+                print("Migration: Added subagent_cost_usd column to chat_requests table")
             db.commit()
         except Exception as e:
             print(f"Migration warning: Could not update chat_requests columns: {e}")
@@ -253,6 +269,18 @@ def init_db():
                 print("Migration: Added rate columns to tenant_llms table")
             except Exception as e:
                 print(f"Migration warning: Could not add rate columns to tenant_llms: {e}")
+            finally:
+                db.close()
+
+        if "cost_per_unit" not in columns:
+            db = SessionLocal()
+            try:
+                db.execute(text("ALTER TABLE tenant_llms ADD COLUMN cost_per_unit FLOAT DEFAULT 0.0"))
+                db.execute(text("ALTER TABLE tenant_llms ADD COLUMN cost_per_second FLOAT DEFAULT 0.0"))
+                db.commit()
+                print("Migration: Added cost_per_unit and cost_per_second columns to tenant_llms table")
+            except Exception as e:
+                print(f"Migration warning: Could not add cost_per_unit/cost_per_second to tenant_llms: {e}")
             finally:
                 db.close()
 
@@ -348,6 +376,35 @@ def init_db():
                     print(f"Migration warning: Could not add 'tenant_id' to {table_name}: {e}")
                 finally:
                     db.close()
+
+    # Migrate user_data_templates table: drop legacy global unique index on name alone
+    if inspector.has_table("user_data_templates"):
+        db = SessionLocal()
+        try:
+            if DB_PATH.startswith("sqlite"):
+                indexes = inspector.get_indexes("user_data_templates")
+                for idx in indexes:
+                    if idx.get("name") == "ix_user_data_templates_name" and idx.get("unique") and idx.get("column_names") == ["name"]:
+                        with engine.begin() as conn:
+                            conn.execute(text("DROP INDEX IF EXISTS ix_user_data_templates_name"))
+                            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_user_data_templates_name ON user_data_templates (name)"))
+                            conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uix_user_data_template_tenant_name ON user_data_templates (tenant_id, name)"))
+                        print("Migration: Replaced global unique index on user_data_templates.name with per-tenant unique index")
+                        break
+            else:
+                try:
+                    db.execute(text("ALTER TABLE user_data_templates DROP CONSTRAINT IF EXISTS user_data_templates_name_key"))
+                    db.execute(text("DROP INDEX IF EXISTS ix_user_data_templates_name"))
+                    db.execute(text("CREATE INDEX IF NOT EXISTS ix_user_data_templates_name ON user_data_templates (name)"))
+                    db.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uix_user_data_template_tenant_name ON user_data_templates (tenant_id, name)"))
+                    db.commit()
+                    print("Migration: Updated PostgreSQL user_data_templates constraints for per-tenant scoping")
+                except Exception as ex:
+                    print(f"Migration notice for user_data_templates constraints: {ex}")
+        except Exception as e:
+            print(f"Migration warning for user_data_templates: {e}")
+        finally:
+            db.close()
 
     # Migrate session_artifacts table: drop any legacy foreign key constraint on conversation_sessions
     if inspector.has_table("session_artifacts"):

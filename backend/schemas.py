@@ -132,6 +132,8 @@ class TenantLlmCreate(BaseModel):
     output_rate: Optional[float] = 2.0
     audio_input_rate: Optional[float] = 10.0
     audio_output_rate: Optional[float] = 20.0
+    cost_per_unit: Optional[float] = 0.0
+    cost_per_second: Optional[float] = 0.0
 
 class UserRegister(BaseModel):
     email: str

@@ -2,6 +2,7 @@ import json
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
 from database import get_db
 from models import Tenant
@@ -37,7 +38,7 @@ def list_user_data_templates(
 
     def serialize(t):
         try:
-            parsed_data = json.loads(t.data)
+            parsed_data = json.loads(t.data) if isinstance(t.data, str) else (t.data or {})
         except Exception:
             parsed_data = {}
         return {
@@ -64,7 +65,7 @@ def get_user_data_template(
     if not tpl:
         raise HTTPException(status_code=404, detail="User Data profile not found")
     try:
-        parsed_data = json.loads(tpl.data)
+        parsed_data = json.loads(tpl.data) if isinstance(tpl.data, str) else (tpl.data or {})
     except Exception:
         parsed_data = {}
     return {
@@ -88,14 +89,20 @@ def create_or_update_user_data_template(
     from models import UserDataTemplate
     clean_name = payload.name.strip()
     if not clean_name:
-        raise HTTPException(status_code=400, detail="Name cannot be empty")
+        raise HTTPException(status_code=400, detail="Profile name cannot be empty")
 
-    data_str = json.dumps(payload.data)
+    try:
+        data_str = json.dumps(payload.data) if isinstance(payload.data, dict) else str(payload.data)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid data payload: {str(e)}")
 
     target_tenant_id = current_tenant.id
     if payload.tenant_id:
         from models import Tenant as DBTenant
-        tenant_check = db.query(DBTenant).filter(DBTenant.id == payload.tenant_id, DBTenant.user_id == current_tenant.user_id).first()
+        if current_tenant.user_id:
+            tenant_check = db.query(DBTenant).filter(DBTenant.id == payload.tenant_id, DBTenant.user_id == current_tenant.user_id).first()
+        else:
+            tenant_check = db.query(DBTenant).filter(DBTenant.id == payload.tenant_id).first()
         if tenant_check:
             target_tenant_id = tenant_check.id
 
@@ -106,7 +113,7 @@ def create_or_update_user_data_template(
     if existing:
         raise HTTPException(
             status_code=400,
-            detail=f"A User Data context profile named '{clean_name}' already exists for this tenant workspace. Duplicate profile names are not allowed."
+            detail=f"A User Data profile named '{clean_name}' already exists in this tenant workspace. Please choose a different name."
         )
 
     tpl = UserDataTemplate(
@@ -115,9 +122,23 @@ def create_or_update_user_data_template(
         description=payload.description,
         data=data_str
     )
-    db.add(tpl)
-    db.commit()
-    db.refresh(tpl)
+    try:
+        db.add(tpl)
+        db.commit()
+        db.refresh(tpl)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=400,
+            detail=f"A User Data profile named '{clean_name}' already exists in this workspace."
+        )
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to create User Data profile: {str(e)}"
+        )
+
     return {
         "status": "success",
         "template_id": tpl.id,
@@ -135,7 +156,13 @@ def update_user_data_template(
 ):
     from models import UserDataTemplate, Tenant as DBTenant
     clean_name = payload.name.strip()
-    data_str = json.dumps(payload.data)
+    if not clean_name:
+        raise HTTPException(status_code=400, detail="Profile name cannot be empty")
+
+    try:
+        data_str = json.dumps(payload.data) if isinstance(payload.data, dict) else str(payload.data)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid data payload: {str(e)}")
 
     tpl = db.query(UserDataTemplate).filter(UserDataTemplate.id == template_id).first()
     if not tpl:
@@ -143,14 +170,41 @@ def update_user_data_template(
 
     if tpl.tenant_id and tpl.tenant_id != current_tenant.id:
         target_tenant = db.query(DBTenant).filter(DBTenant.id == tpl.tenant_id).first()
-        if target_tenant and target_tenant.user_id != current_tenant.user_id:
+        if target_tenant and current_tenant.user_id and target_tenant.user_id != current_tenant.user_id:
             raise HTTPException(status_code=403, detail="Permission denied to update profile from this tenant workspace.")
+
+    # Check for name collision with another template in same tenant
+    target_tenant_id = tpl.tenant_id or current_tenant.id
+    existing = db.query(UserDataTemplate).filter(
+        UserDataTemplate.name == clean_name,
+        UserDataTemplate.tenant_id == target_tenant_id,
+        UserDataTemplate.id != template_id
+    ).first()
+    if existing:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Another User Data profile named '{clean_name}' already exists in this tenant workspace."
+        )
 
     tpl.name = clean_name
     tpl.description = payload.description
     tpl.data = data_str
-    db.commit()
-    db.refresh(tpl)
+    try:
+        db.commit()
+        db.refresh(tpl)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=400,
+            detail=f"Another User Data profile named '{clean_name}' already exists."
+        )
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to update User Data profile: {str(e)}"
+        )
+
     return {
         "status": "success",
         "template_id": tpl.id,
@@ -172,9 +226,15 @@ def delete_user_data_template(
         
     if tpl.tenant_id and tpl.tenant_id != current_tenant.id:
         target_tenant = db.query(DBTenant).filter(DBTenant.id == tpl.tenant_id).first()
-        if target_tenant and target_tenant.user_id != current_tenant.user_id:
+        if target_tenant and current_tenant.user_id and target_tenant.user_id != current_tenant.user_id:
             raise HTTPException(status_code=403, detail="Permission denied to delete profile from this tenant workspace.")
 
-    db.delete(tpl)
-    db.commit()
+    try:
+        db.delete(tpl)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to delete profile: {str(e)}")
+
     return {"status": "deleted", "template_id": template_id}
+

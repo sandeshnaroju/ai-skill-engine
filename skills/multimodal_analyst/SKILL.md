@@ -4,7 +4,7 @@ description: Specialized multimodal sub-agent for analyzing images, audio record
 tools:
   - name: analyze_image
     description: "Inspect an image, diagram, screenshot, chart, or document scan. Extracts text (OCR), detects objects, explains diagrams/blueprints, or answers visual queries."
-    type: code
+    type: subagent
     parameters:
       type: object
       properties:
@@ -19,7 +19,7 @@ tools:
 
   - name: analyze_audio
     description: "Transcribe, summarize, or extract insights from audio files (.mp3, .wav, .m4a, .aac, .ogg, .flac). Supports speaker dialogue, meetings, lectures, voice memos, and audio logs."
-    type: code
+    type: subagent
     parameters:
       type: object
       properties:
@@ -34,7 +34,7 @@ tools:
 
   - name: analyze_video
     description: "Analyze video recordings (.mp4, .mov, .webm, .mkv). Understands actions, visual timeline, scene changes, spoken dialogue, and on-screen text."
-    type: code
+    type: subagent
     parameters:
       type: object
       properties:

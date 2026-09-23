@@ -139,11 +139,14 @@ class ExecutionLog(Base):
     skill_name = Column(String, nullable=False)
     tool_name = Column(String, nullable=False)
     command = Column(Text, nullable=False)
-    sandbox_type = Column(String, nullable=False)  # docker, process
+    sandbox_type = Column(String, nullable=False)  # docker, process, subagent, azure_aca
     stdout = Column(Text, nullable=True)
     stderr = Column(Text, nullable=True)
     exit_code = Column(Integer, nullable=False, default=0)
     execution_time_ms = Column(Integer, nullable=False, default=0)
+    cost_usd = Column(Float, default=0.0)
+    prompt_tokens = Column(Integer, default=0)
+    completion_tokens = Column(Integer, default=0)
     model_name = Column(String, nullable=True)
     request_source = Column(String, nullable=True, default="api")
     request_id = Column(String, ForeignKey("chat_requests.id", use_alter=True), nullable=True, index=True)
@@ -177,6 +180,7 @@ class ChatRequest(Base):
     secondary_prompt_tokens = Column(Integer, default=0)
     secondary_completion_tokens = Column(Integer, default=0)
     secondary_cost_usd = Column(Float, default=0.0)
+    subagent_cost_usd = Column(Float, default=0.0)             # USD cost of media generators & subagents
     status = Column(String, nullable=False, default="pending")  # pending | completed | error
     error_detail = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
@@ -257,6 +261,8 @@ class TenantLLM(Base):
     output_rate = Column(Float, default=2.0)
     audio_input_rate = Column(Float, default=10.0)
     audio_output_rate = Column(Float, default=20.0)
+    cost_per_unit = Column(Float, default=0.0)        # Fixed price per generated image or API call unit
+    cost_per_second = Column(Float, default=0.0)      # Price per video generation second
     model_type = Column(String, default="text", nullable=False)  # text, image_gen, video_gen, multimodal
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -331,10 +337,11 @@ class SandboxConfig(Base):
 
 class UserDataTemplate(Base):
     __tablename__ = "user_data_templates"
+    __table_args__ = (UniqueConstraint("tenant_id", "name", name="uix_user_data_template_tenant_name"),)
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     tenant_id = Column(String, ForeignKey("tenants.id"), nullable=True)
-    name = Column(String, unique=True, nullable=False, index=True)
+    name = Column(String, nullable=False, index=True)
     description = Column(Text, nullable=True)
     data = Column(Text, nullable=False)  # JSON-encoded dictionary of key-value pairs
     created_at = Column(DateTime, default=datetime.utcnow)

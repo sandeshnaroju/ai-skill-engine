@@ -23,6 +23,8 @@ export default function LlmConfigManager({
   const [outputRate, setOutputRate] = useState(0.0);
   const [audioInputRate, setAudioInputRate] = useState(0.0);
   const [audioOutputRate, setAudioOutputRate] = useState(0.0);
+  const [costPerUnit, setCostPerUnit] = useState(0.0);
+  const [costPerSecond, setCostPerSecond] = useState(0.0);
   const [showAdvancedRates, setShowAdvancedRates] = useState(false);
   const [editingLlmId, setEditingLlmId] = useState(null);
   const [registryLoading, setRegistryLoading] = useState(false);
@@ -38,10 +40,12 @@ export default function LlmConfigManager({
         api_key: modelApiKey.trim(),
         model_type: modelType,
         base_url: baseUrl.trim() || null,
-        input_rate: parseFloat(inputRate),
-        output_rate: parseFloat(outputRate),
-        audio_input_rate: parseFloat(audioInputRate),
-        audio_output_rate: parseFloat(audioOutputRate)
+        input_rate: parseFloat(inputRate) || 0.0,
+        output_rate: parseFloat(outputRate) || 0.0,
+        audio_input_rate: parseFloat(audioInputRate) || 0.0,
+        audio_output_rate: parseFloat(audioOutputRate) || 0.0,
+        cost_per_unit: parseFloat(costPerUnit) || 0.0,
+        cost_per_second: parseFloat(costPerSecond) || 0.0
       };
 
       if (editingLlmId) {
@@ -73,6 +77,8 @@ export default function LlmConfigManager({
     setOutputRate(l.output_rate != null ? l.output_rate : 0.0);
     setAudioInputRate(l.audio_input_rate != null ? l.audio_input_rate : 0.0);
     setAudioOutputRate(l.audio_output_rate != null ? l.audio_output_rate : 0.0);
+    setCostPerUnit(l.cost_per_unit != null ? l.cost_per_unit : 0.0);
+    setCostPerSecond(l.cost_per_second != null ? l.cost_per_second : 0.0);
   };
 
   const cancelEdit = () => {
@@ -86,6 +92,8 @@ export default function LlmConfigManager({
     setOutputRate(0.0);
     setAudioInputRate(0.0);
     setAudioOutputRate(0.0);
+    setCostPerUnit(0.0);
+    setCostPerSecond(0.0);
   };
 
   const handleDeleteLlm = (llmId) => {
@@ -213,62 +221,119 @@ export default function LlmConfigManager({
 
         <div style={{ background: 'var(--bg-card)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <label style={{ fontSize: '0.8rem', color: 'var(--text-main)', fontWeight: '600' }}>Pricing Configuration (USD per 1M Tokens)</label>
-            <button 
-              type="button" 
-              onClick={() => setShowAdvancedRates(!showAdvancedRates)}
-              style={{ background: 'none', border: 'none', color: 'var(--primary-cyan)', fontSize: '0.74rem', cursor: 'pointer', fontWeight: '600' }}
-            >
-              {showAdvancedRates ? 'Hide Advanced' : 'Show Advanced'}
-            </button>
-          </div>
-          
-          <div style={{ display: 'flex', gap: '10px' }}>
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <label style={{ fontSize: '0.7rem', color: 'var(--text-sub)' }}>Input Rate</label>
-              <input
-                type="number"
-                step="0.01"
-                value={inputRate}
-                onChange={(e) => setInputRate(e.target.value)}
-                style={{ padding: '6px', fontSize: '0.8rem' }}
-              />
-            </div>
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <label style={{ fontSize: '0.7rem', color: 'var(--text-sub)' }}>Output Rate</label>
-              <input
-                type="number"
-                step="0.01"
-                value={outputRate}
-                onChange={(e) => setOutputRate(e.target.value)}
-                style={{ padding: '6px', fontSize: '0.8rem' }}
-              />
-            </div>
+            <label style={{ fontSize: '0.8rem', color: 'var(--text-main)', fontWeight: '600' }}>
+              {modelType === 'image_gen' ? 'Image Generation Pricing' : (modelType === 'video_gen' ? 'Video Generation Pricing' : 'Pricing Configuration (USD per 1M Tokens)')}
+            </label>
+            {modelType !== 'image_gen' && modelType !== 'video_gen' && (
+              <button 
+                type="button" 
+                onClick={() => setShowAdvancedRates(!showAdvancedRates)}
+                style={{ background: 'none', border: 'none', color: 'var(--primary-cyan)', fontSize: '0.74rem', cursor: 'pointer', fontWeight: '600' }}
+              >
+                {showAdvancedRates ? 'Hide Advanced' : 'Show Advanced'}
+              </button>
+            )}
           </div>
 
-          {showAdvancedRates && (
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                <label style={{ fontSize: '0.7rem', color: 'var(--text-sub)' }}>Audio Input Rate</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={audioInputRate}
-                  onChange={(e) => setAudioInputRate(e.target.value)}
-                  style={{ padding: '6px', fontSize: '0.8rem' }}
-                />
+          {modelType === 'image_gen' ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <label style={{ fontSize: '0.7rem', color: 'var(--text-sub)' }}>Cost per Image ($ USD)</label>
+                  <input
+                    type="number"
+                    step="0.001"
+                    placeholder="0.040"
+                    value={costPerUnit}
+                    onChange={(e) => setCostPerUnit(e.target.value)}
+                    style={{ padding: '6px', fontSize: '0.8rem' }}
+                  />
+                </div>
               </div>
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                <label style={{ fontSize: '0.7rem', color: 'var(--text-sub)' }}>Audio Output Rate</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={audioOutputRate}
-                  onChange={(e) => setAudioOutputRate(e.target.value)}
-                  style={{ padding: '6px', fontSize: '0.8rem' }}
-                />
-              </div>
+              <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                💡 Leave as 0.0 to automatically use official rate cards (e.g. DALL-E 3 $0.040-$0.080, Imagen 3 $0.040, Flux $0.025-$0.050).
+              </span>
             </div>
+          ) : modelType === 'video_gen' ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <label style={{ fontSize: '0.7rem', color: 'var(--text-sub)' }}>Cost per Video Second ($ USD)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    placeholder="0.20"
+                    value={costPerSecond}
+                    onChange={(e) => setCostPerSecond(e.target.value)}
+                    style={{ padding: '6px', fontSize: '0.8rem' }}
+                  />
+                </div>
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <label style={{ fontSize: '0.7rem', color: 'var(--text-sub)' }}>Flat Price per Clip ($ Optional)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    placeholder="0.00"
+                    value={costPerUnit}
+                    onChange={(e) => setCostPerUnit(e.target.value)}
+                    style={{ padding: '6px', fontSize: '0.8rem' }}
+                  />
+                </div>
+              </div>
+              <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                💡 Leave as 0.0 to automatically use official rate cards (e.g. Veo $0.50/s, Runway $0.12/s, Sora $0.15/s).
+              </span>
+            </div>
+          ) : (
+            <>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <label style={{ fontSize: '0.7rem', color: 'var(--text-sub)' }}>Input Rate ($ / 1M tokens)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={inputRate}
+                    onChange={(e) => setInputRate(e.target.value)}
+                    style={{ padding: '6px', fontSize: '0.8rem' }}
+                  />
+                </div>
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <label style={{ fontSize: '0.7rem', color: 'var(--text-sub)' }}>Output Rate ($ / 1M tokens)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={outputRate}
+                    onChange={(e) => setOutputRate(e.target.value)}
+                    style={{ padding: '6px', fontSize: '0.8rem' }}
+                  />
+                </div>
+              </div>
+
+              {showAdvancedRates && (
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <label style={{ fontSize: '0.7rem', color: 'var(--text-sub)' }}>Audio Input Rate</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={audioInputRate}
+                      onChange={(e) => setAudioInputRate(e.target.value)}
+                      style={{ padding: '6px', fontSize: '0.8rem' }}
+                    />
+                  </div>
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <label style={{ fontSize: '0.7rem', color: 'var(--text-sub)' }}>Audio Output Rate</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={audioOutputRate}
+                      onChange={(e) => setAudioOutputRate(e.target.value)}
+                      style={{ padding: '6px', fontSize: '0.8rem' }}
+                    />
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
 
@@ -300,7 +365,7 @@ export default function LlmConfigManager({
                 <div key={l.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', background: 'var(--bg-input)', borderRadius: '8px', border: '1px solid var(--border-subtle)' }}>
                   <div>
                     <div style={{ fontSize: '0.86rem', fontWeight: '600', color: 'var(--text-main)' }}>{l.model_name}</div>
-                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px', flexWrap: 'wrap' }}>
                       <span className="badge-tag tag-docker" style={{ padding: '1px 4px', fontSize: '0.62rem' }}>{l.provider}</span>
                       <span style={{
                         padding: '1px 6px',
@@ -314,7 +379,14 @@ export default function LlmConfigManager({
                       }}>
                         {l.model_type === 'image_gen' ? '🎨 Image Gen' : (l.model_type === 'video_gen' ? '🎬 Video Gen' : (l.model_type === 'multimodal' ? '🌐 Multimodal' : '💬 Text'))}
                       </span>
-                      {l.base_url && <span style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', maxWidth: '160px' }}>{l.base_url}</span>}
+                      <span style={{ fontSize: '0.68rem', color: 'var(--primary-cyan)', background: 'rgba(6, 182, 212, 0.08)', padding: '1px 6px', borderRadius: '4px' }}>
+                        {l.model_type === 'image_gen' 
+                          ? (l.cost_per_unit > 0 ? `$${l.cost_per_unit}/img` : 'Auto Rate Card')
+                          : l.model_type === 'video_gen'
+                          ? (l.cost_per_second > 0 ? `$${l.cost_per_second}/s` : (l.cost_per_unit > 0 ? `$${l.cost_per_unit}/clip` : 'Auto Rate Card'))
+                          : `$${l.input_rate || 0} / $${l.output_rate || 0}`}
+                      </span>
+                      {l.base_url && <span style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', maxWidth: '140px' }}>{l.base_url}</span>}
                     </div>
                   </div>
 

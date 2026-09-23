@@ -131,6 +131,8 @@ def list_tenant_llms(
             "output_rate": l.output_rate,
             "audio_input_rate": l.audio_input_rate,
             "audio_output_rate": l.audio_output_rate,
+            "cost_per_unit": getattr(l, "cost_per_unit", 0.0) or 0.0,
+            "cost_per_second": getattr(l, "cost_per_second", 0.0) or 0.0,
             "model_type": getattr(l, "model_type", "text") or "text",
             "is_active": l.is_active,
             "created_at": l.created_at.isoformat() if l.created_at else None
@@ -171,6 +173,8 @@ def create_tenant_llm(
         output_rate=payload.output_rate,
         audio_input_rate=payload.audio_input_rate,
         audio_output_rate=payload.audio_output_rate,
+        cost_per_unit=payload.cost_per_unit or 0.0,
+        cost_per_second=payload.cost_per_second or 0.0,
         model_type=payload.model_type or "text",
         is_active=True
     )
@@ -209,6 +213,10 @@ def update_tenant_llm(
     existing.output_rate = payload.output_rate
     existing.audio_input_rate = payload.audio_input_rate
     existing.audio_output_rate = payload.audio_output_rate
+    if payload.cost_per_unit is not None:
+        existing.cost_per_unit = payload.cost_per_unit
+    if payload.cost_per_second is not None:
+        existing.cost_per_second = payload.cost_per_second
     if payload.model_type:
         existing.model_type = payload.model_type
     

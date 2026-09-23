@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { 
   FileText, Trash2, Download, RefreshCw, Filter, Search, 
   ChevronLeft, ChevronRight, AlertCircle, Check, HardDrive, 
-  Server, UploadCloud, Layers, ExternalLink, Calendar, Hash, ArrowLeft
+  Server, UploadCloud, Layers, ExternalLink, Calendar, Hash
 } from 'lucide-react';
 import AsyncSearchableDropdown from './AsyncSearchableDropdown';
 import { tenantsApi, filesApi } from '../api';
@@ -16,7 +15,6 @@ const PROVIDERS = [
 ];
 
 export default function SessionFileManager() {
-  const navigate = useNavigate();
   const [tenants, setTenants] = useState([]);
   const [selectedTenantId, setSelectedTenantId] = useState('');
   const [activeProvider, setActiveProvider] = useState('all');
@@ -151,35 +149,14 @@ export default function SessionFileManager() {
       {/* Top Header Card */}
       <div className="glass-box" style={{ padding: '20px 24px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '16px' }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '14px' }}>
-            <button
-              className="btn-outline"
-              onClick={() => navigate('/storage')}
-              title="Back to Storage Settings"
-              style={{
-                padding: '8px 12px',
-                borderRadius: '8px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                fontSize: '0.82rem',
-                fontWeight: '600',
-                color: 'var(--text-main)',
-                flexShrink: 0
-              }}
-            >
-              <ArrowLeft size={15} />
-              Back to Storage Settings
-            </button>
-            <div>
-              <h2 style={{ fontSize: '1.25rem', fontWeight: '700', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '10px', margin: 0 }}>
-                <FileText size={22} color="var(--primary-violet)" />
-                Session & Storage Files
-              </h2>
-              <p style={{ fontSize: '0.84rem', color: 'var(--text-muted)', margin: '6px 0 0 0' }}>
-                Inspect, manage, and clean up files stored across Azure Blob, AWS S3, and Local Disk tied to user sessions.
-              </p>
-            </div>
+          <div>
+            <h2 style={{ fontSize: '1.25rem', fontWeight: '700', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '10px', margin: 0 }}>
+              <FileText size={22} color="var(--primary-violet)" />
+              Session & Storage Files
+            </h2>
+            <p style={{ fontSize: '0.84rem', color: 'var(--text-muted)', margin: '6px 0 0 0' }}>
+              Inspect, manage, and clean up files stored across Azure Blob, AWS S3, and Local Disk tied to user sessions.
+            </p>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>

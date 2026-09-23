@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { 
   BookOpen, Rocket, Terminal, Layers, HardDrive, ShieldCheck, 
   Settings, Cpu, Search, Copy, Check, ChevronRight, ExternalLink,
-  FileText, Download, Upload, Server
+  FileText, Download, Upload, Server, Layout, Code, Sparkles, KeyRound, FolderTree
 } from 'lucide-react';
 import MarkdownViewer from './MarkdownViewer';
 
@@ -11,14 +11,27 @@ import introDoc from '../docs/introduction.md?raw';
 import quickstartDoc from '../docs/quickstart.md?raw';
 import installDoc from '../docs/installation.md?raw';
 import usageDoc from '../docs/usage-guide.md?raw';
-import apiDoc from '../docs/api-reference.md?raw';
+
+// Backend Docs
+import backendApiDoc from '../docs/backend-api.md?raw';
+import backendMultimodalDoc from '../docs/backend-multimodal.md?raw';
+import backendFilesDoc from '../docs/backend-files.md?raw';
+import backendMgmtDoc from '../docs/backend-management.md?raw';
+
+// Frontend & Canvas Docs
+import frontendCanvasDoc from '../docs/frontend-canvas.md?raw';
+import frontendHeadlessDoc from '../docs/frontend-headless.md?raw';
+import frontendSecurityDoc from '../docs/frontend-security.md?raw';
 import canvasDoc from '../docs/artifacts-canvas.md?raw';
+
+// Storage & Infrastructure Docs
 import storageDoc from '../docs/session-storage.md?raw';
 import sandboxDoc from '../docs/sandboxes.md?raw';
 import configDoc from '../docs/configuration.md?raw';
 import skillsDoc from '../docs/skills-and-mcp.md?raw';
 
 const DOC_ITEMS = [
+  // Getting Started
   {
     id: 'introduction',
     title: 'Introduction & Architecture',
@@ -43,6 +56,76 @@ const DOC_ITEMS = [
     description: 'Docker Hub zero-clone, Docker Compose with Postgres, Bare-Metal, and Nginx SSL.',
     content: installDoc
   },
+
+  // Backend API Reference
+  {
+    id: 'backend-api',
+    title: 'Chat Completions & Streaming',
+    icon: Server,
+    category: 'Backend API Reference',
+    description: 'OpenAI-compatible gateway endpoint, authentication, and streaming SDKs (cURL, Python, JS).',
+    content: backendApiDoc
+  },
+  {
+    id: 'backend-multimodal',
+    title: 'Multimodal & Sub-Agents',
+    icon: Sparkles,
+    category: 'Backend API Reference',
+    description: 'Routing parameters for image/video synthesis, vision analysis, audio transcription, and ProChat UI.',
+    content: backendMultimodalDoc
+  },
+  {
+    id: 'backend-files',
+    title: 'Files & Session Lifecycle',
+    icon: FolderTree,
+    category: 'Backend API Reference',
+    description: 'File uploads, generated asset downloads, session file listing, and cascade purge APIs.',
+    content: backendFilesDoc
+  },
+  {
+    id: 'backend-management',
+    title: 'Artifacts & Management APIs',
+    icon: FileText,
+    category: 'Backend API Reference',
+    description: 'Canvas REST/SSE matrix, MCP server synchronization, execution logs, and audit trails.',
+    content: backendMgmtDoc
+  },
+
+  // Frontend & Universal Canvas
+  {
+    id: 'frontend-canvas',
+    title: 'Canvas Iframe & Embedding',
+    icon: Layout,
+    category: 'Frontend & Universal Canvas',
+    description: 'Embed interactive Canvas in your website: payload parsing, iframe params, and postMessage event handlers.',
+    content: frontendCanvasDoc
+  },
+  {
+    id: 'frontend-headless',
+    title: 'Headless Canvas REST & SSE',
+    icon: Code,
+    category: 'Frontend & Universal Canvas',
+    description: 'Build custom editors without iframe: section block commits, live typing stream, and binary exports.',
+    content: frontendHeadlessDoc
+  },
+  {
+    id: 'frontend-security',
+    title: 'Security, Tokens & Uploaded Files',
+    icon: KeyRound,
+    category: 'Frontend & Universal Canvas',
+    description: 'HMAC token proxy pattern, client-side expiration checks, and opening uploaded files in Canvas.',
+    content: frontendSecurityDoc
+  },
+  {
+    id: 'artifacts-canvas',
+    title: 'Universal Canvas Architecture',
+    icon: Layers,
+    category: 'Frontend & Universal Canvas',
+    description: 'Deep dive into artifact types, section block diffing engine, and WebGL/Three.js viewports.',
+    content: canvasDoc
+  },
+
+  // Workflows & Features
   {
     id: 'usage-guide',
     title: 'Usage & Workflows',
@@ -52,21 +135,15 @@ const DOC_ITEMS = [
     content: usageDoc
   },
   {
-    id: 'api-reference',
-    title: 'API Reference & SDKs',
-    icon: Server,
-    category: 'API & Integration',
-    description: 'OpenAI-compatible chat completions specs, streaming SSE, multimodal sub-agents.',
-    content: apiDoc
+    id: 'skills-and-mcp',
+    title: 'Skills & MCP Servers',
+    icon: Cpu,
+    category: 'Workflows & Features',
+    description: 'Anatomy of SKILL.md, tool schemas, AI Skill Generator, and Model Context Protocol.',
+    content: skillsDoc
   },
-  {
-    id: 'artifacts-canvas',
-    title: 'Universal Canvas Artifacts',
-    icon: Layers,
-    category: 'API & Integration',
-    description: 'Drop-in iframe embed specs, postMessage protocol, headless REST/SSE, and HMAC tokens.',
-    content: canvasDoc
-  },
+
+  // Storage & Infrastructure
   {
     id: 'session-storage',
     title: 'Session Storage & Cloud Files',
@@ -90,14 +167,6 @@ const DOC_ITEMS = [
     category: 'Storage & Infrastructure',
     description: 'System environment variables, Fernet encryption, custom token pricing rates, and SMTP.',
     content: configDoc
-  },
-  {
-    id: 'skills-and-mcp',
-    title: 'Skills & MCP Servers',
-    icon: Cpu,
-    category: 'Workflows & Features',
-    description: 'Anatomy of SKILL.md, tool schemas, AI Skill Generator, and Model Context Protocol.',
-    content: skillsDoc
   }
 ];
 

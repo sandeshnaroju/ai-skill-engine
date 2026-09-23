@@ -4,7 +4,7 @@ description: Specialized generative AI sub-agent for creating photorealistic/art
 tools:
   - name: generate_image
     description: "Generate a photorealistic, conceptual, or artistic image using specialized image generation models (Gemini Nano Banana / Flash Image, DALL-E 3, Flux). Saves the output file into the sandbox workspace. After calling this tool, immediately call `artifact_editor__open_uploaded_file_as_artifact` with the returned sandbox path to open and present the image in the interactive Canvas Artifact Editor. Call this whenever the user asks to generate, create, draw, design, or render a picture, photo, scene, poster, logo, or illustration."
-    type: code
+    type: subagent
     parameters:
       type: object
       properties:
@@ -29,7 +29,7 @@ tools:
 
   - name: generate_video
     description: "Generate a short video clip (.mp4) using specialized video generation models (Google Veo 2, Luma Dream Machine, Runway Gen-3, Fal.ai HunyuanVideo). Saves the output file into the sandbox workspace. After calling this tool, immediately call `artifact_editor__open_uploaded_file_as_artifact` with the returned sandbox path to open and play the video in the interactive Canvas Artifact Editor. Call this whenever the user asks to generate, create, animate, render, or produce a video clip or scene."
-    type: code
+    type: subagent
     parameters:
       type: object
       properties:

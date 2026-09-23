@@ -1,6 +1,6 @@
 # 🎨 Universal Canvas & Artifacts Guide
 
-The **Universal Canvas** gives your end users a **Claude Artifacts** and **ChatGPT Canvas** experience inside your own web applications, client portals, and SaaS products.
+The **Universal Canvas** provides an interactive, live co-editing and artifact creation experience inside your own web applications, client portals, and SaaS products.
 
 When an AI agent writes contracts, Python scripts, Excel sheets, presentations, or CAD drawings, users can view, co-edit, and export them directly in real-time.
 

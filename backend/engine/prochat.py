@@ -24,13 +24,15 @@ def get_prochat_ui(db: Session, tenant, messages: list, final_text: str, prochat
         TenantLLM.is_active == True
     ).first()
 
-    if not config:
+    if not config and not prochat_model:
         return None, None, None, None
 
     try:
-        api_key = decrypt_key(config.api_key_encrypted)
-        base_url = config.base_url or "https://www.prochat.dev/apps/api/v1"
-        resolved_model = prochat_model or config.model_name or "genui-mars-0.1"
+        api_key = decrypt_key(config.api_key_encrypted) if config else ""
+        base_url = (config.base_url if config else None) or "https://www.prochat.dev/apps/api/v1"
+        resolved_model = prochat_model or (config.model_name if config else None)
+        if not resolved_model:
+            return None, None, None, None
 
         rates = get_model_rates(db, tenant.id, resolved_model)
         if rates == (0.0, 0.0, 0.0, 0.0) and config:
@@ -84,7 +86,7 @@ def stream_prochat_ui(db: Session, tenant, full_text: str, prochat_model: str,
     last_usage_data = None
     rates = (0.0, 0.0, 0.0, 0.0)
 
-    if not config:
+    if not config and not prochat_model:
         warning = {
             "id": f"chatcmpl-{session_id}", "object": "chat.completion.chunk",
             "created": 1700000000, "model": model_name,
@@ -96,9 +98,12 @@ def stream_prochat_ui(db: Session, tenant, full_text: str, prochat_model: str,
         return last_extracted_json, last_extracted_code, last_usage_data, rates
 
     try:
-        api_key = decrypt_key(config.api_key_encrypted)
-        base_url = config.base_url or "https://www.prochat.dev/apps/api/v1"
-        resolved_model = prochat_model or config.model_name or "genui-mars-0.1"
+        api_key = decrypt_key(config.api_key_encrypted) if config else ""
+        base_url = (config.base_url if config else None) or "https://www.prochat.dev/apps/api/v1"
+        resolved_model = prochat_model or (config.model_name if config else None)
+        if not resolved_model:
+            return last_extracted_json, last_extracted_code, last_usage_data, rates
+
         rates = get_model_rates(db, tenant.id, resolved_model)
         if rates == (0.0, 0.0, 0.0, 0.0) and config:
             rates = (
