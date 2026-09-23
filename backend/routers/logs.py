@@ -262,10 +262,38 @@ def get_usage_summary(
         ChatRequest.request_source
     ).all()
 
-    tenant_cache = {}
-    summary = []
+    # Sub-agent and media model executions aggregation from ExecutionLog
+    subagent_query = db.query(
+        ExecutionLog.tenant_id,
+        ExecutionLog.model_name.label("model_name"),
+        ExecutionLog.request_source,
+        func.count(ExecutionLog.id).label("request_count"),
+        func.sum(ExecutionLog.prompt_tokens).label("total_prompt_tokens"),
+        func.sum(ExecutionLog.completion_tokens).label("total_completion_tokens"),
+        func.sum(ExecutionLog.cost_usd).label("total_cost_usd")
+    ).filter(
+        ExecutionLog.tenant_id.in_(user_tenant_ids),
+        ExecutionLog.model_name != None,
+        (ExecutionLog.sandbox_type == "subagent") | (ExecutionLog.cost_usd > 0.0) | (ExecutionLog.prompt_tokens > 0) | (ExecutionLog.completion_tokens > 0)
+    )
 
-    for r in list(primary_results) + list(secondary_results):
+    if model_name:
+        subagent_query = subagent_query.filter(ExecutionLog.model_name.ilike(f"%{model_name}%"))
+    if tenant_name and tenant_name != "ALL":
+        subagent_query = subagent_query.join(Tenant).filter(Tenant.name == tenant_name)
+    if request_source and request_source != "ALL":
+        subagent_query = subagent_query.filter(ExecutionLog.request_source == request_source)
+
+    subagent_results = subagent_query.group_by(
+        ExecutionLog.tenant_id,
+        ExecutionLog.model_name,
+        ExecutionLog.request_source
+    ).all()
+
+    tenant_cache = {}
+    grouped_map = {}
+
+    for r in list(primary_results) + list(secondary_results) + list(subagent_results):
         if not r.model_name:
             continue
         tenant_id = r.tenant_id
@@ -273,45 +301,46 @@ def get_usage_summary(
             t = db.query(Tenant).filter(Tenant.id == tenant_id).first() if tenant_id else None
             tenant_cache[tenant_id] = t.name if t else "Default Workspace"
 
-        summary.append({
-            "tenant_name": tenant_cache[tenant_id],
-            "model_name": r.model_name,
-            "request_source": r.request_source or "api",
-            "request_count": r.request_count,
-            "prompt_tokens": r.total_prompt_tokens or 0,
-            "completion_tokens": r.total_completion_tokens or 0,
-            "cost_usd": round(r.total_cost_usd or 0.0, 6)
-        })
+        source_key = r.request_source or "api"
+        key = (tenant_id, r.model_name, source_key)
+        if key not in grouped_map:
+            grouped_map[key] = {
+                "tenant_name": tenant_cache[tenant_id],
+                "model_name": r.model_name,
+                "request_source": source_key,
+                "request_count": 0,
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "cost_usd": 0.0
+            }
 
-    totals_query = db.query(
-        func.sum(ChatRequest.cost_usd).label("cost_usd"),
-        func.count(ChatRequest.id).label("request_count"),
-        func.sum(ChatRequest.prompt_tokens).label("prompt_tokens"),
-        func.sum(ChatRequest.completion_tokens).label("completion_tokens")
-    ).filter(ChatRequest.status == "completed", ChatRequest.tenant_id.in_(user_tenant_ids))
+        grouped_map[key]["request_count"] += (r.request_count or 0)
+        grouped_map[key]["prompt_tokens"] += (r.total_prompt_tokens or 0)
+        grouped_map[key]["completion_tokens"] += (r.total_completion_tokens or 0)
+        grouped_map[key]["cost_usd"] += (r.total_cost_usd or 0.0)
 
-    if model_name:
-        totals_query = totals_query.filter(
-            (ChatRequest.model_name.ilike(f"%{model_name}%")) |
-            (ChatRequest.primary_model_name.ilike(f"%{model_name}%")) |
-            (ChatRequest.secondary_model_name.ilike(f"%{model_name}%"))
-        )
-    if tenant_name and tenant_name != "ALL":
-        totals_query = totals_query.join(Tenant).filter(Tenant.name == tenant_name)
-    if request_source and request_source != "ALL":
-        totals_query = totals_query.filter(ChatRequest.request_source == request_source)
+    summary = []
+    total_cost_calc = 0.0
+    total_req_calc = 0
+    total_prompt_calc = 0
+    total_completion_calc = 0
 
-    totals_res = totals_query.first()
-    sum_cost = round(totals_res.cost_usd or 0.0, 6) if totals_res else 0.0
-    sum_req = totals_res.request_count if totals_res else 0
-    sum_prompt = totals_res.prompt_tokens if totals_res else 0
-    sum_completion = totals_res.completion_tokens if totals_res else 0
+    for item in grouped_map.values():
+        item["cost_usd"] = round(item["cost_usd"], 6)
+        total_cost_calc += item["cost_usd"]
+        total_req_calc += item["request_count"]
+        total_prompt_calc += item["prompt_tokens"]
+        total_completion_calc += item["completion_tokens"]
+        summary.append(item)
+
+    # Sort summary by cost_usd descending, then request_count descending
+    summary.sort(key=lambda x: (x["cost_usd"], x["request_count"]), reverse=True)
 
     paginated_res = get_paginated_response(summary, target_page, page_size, lambda x: x, is_query=False)
     paginated_res["totals"] = {
-        "request_count": sum_req,
-        "prompt_tokens": sum_prompt,
-        "completion_tokens": sum_completion,
-        "cost_usd": sum_cost
+        "request_count": total_req_calc,
+        "prompt_tokens": total_prompt_calc,
+        "completion_tokens": total_completion_calc,
+        "cost_usd": round(total_cost_calc, 6)
     }
     return paginated_res

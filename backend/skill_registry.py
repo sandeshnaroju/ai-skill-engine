@@ -223,11 +223,30 @@ class SkillRegistry:
             })
         return result
 
+    SKILL_ALIASES = {
+        "image_and_video_generation": "media_generator",
+        "image_generation": "media_generator",
+        "video_generation": "media_generator",
+        "multimodal": "multimodal_analyst"
+    }
+
+    def _normalize_allowed_skills(self, allowed_skills: list) -> list:
+        if not allowed_skills:
+            return allowed_skills
+        normalized = []
+        for s in allowed_skills:
+            norm_name = self.SKILL_ALIASES.get(s, s)
+            normalized.append(norm_name)
+            if s != norm_name:
+                normalized.append(s)
+        return normalized
+
     def get_openai_tools(self, allowed_skills: list = None, tenant_id=None) -> list:
         skills = self.get_skills_dict(tenant_id)
         openai_tools = []
+        effective_allowed = self._normalize_allowed_skills(allowed_skills)
         for skill_name, data in skills.items():
-            if allowed_skills is not None and len(allowed_skills) > 0 and skill_name not in allowed_skills:
+            if effective_allowed is not None and len(effective_allowed) > 0 and skill_name not in effective_allowed:
                 continue
             tools = data.get("tools") or []
             for tool in tools:
@@ -259,10 +278,17 @@ class SkillRegistry:
         skills = self.get_skills_dict(tenant_id)
         if "__" in full_tool_name:
             skill_name, tool_name = full_tool_name.split("__", 1)
-            skill = skills.get(skill_name)
+            norm_skill_name = self.SKILL_ALIASES.get(skill_name, skill_name)
+            skill = skills.get(norm_skill_name) or skills.get(skill_name)
             if skill:
                 for tool in skill.get("tools", []):
                     if tool.get("name") == tool_name:
+                        return norm_skill_name, tool
+        else:
+            # Check by tool name across skills
+            for skill_name, skill in skills.items():
+                for tool in skill.get("tools", []):
+                    if tool.get("name") == full_tool_name:
                         return skill_name, tool
         return None, None
 
@@ -274,11 +300,12 @@ class SkillRegistry:
         else:
             instructions = ["You are AI Skill Engine, an enterprise chatbot equipped with advanced tools and skills.\n"]
 
+        effective_allowed = self._normalize_allowed_skills(allowed_skills)
         instructions.append("Active Available Skills:\n")
         for name, data in skills.items():
             if name == "system":
                 continue
-            if allowed_skills is not None and len(allowed_skills) > 0 and name not in allowed_skills:
+            if effective_allowed is not None and len(effective_allowed) > 0 and name not in effective_allowed:
                 continue
             instructions.append(f"### Skill: {name} (Source: {data.get('source', 'file')})")
             instructions.append(f"Description: {data.get('description', '')}")

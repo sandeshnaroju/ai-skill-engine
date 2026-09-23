@@ -340,78 +340,150 @@ def get_usage_summary(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    from models import Tenant
+    from models import Tenant, ExecutionLog
     from sqlalchemy import func
 
-    query = db.query(
+    user_tenant_ids = db.query(Tenant.id).filter(Tenant.user_id == current_user.id)
+
+    # Primary models aggregation
+    primary_query = db.query(
         ChatRequest.tenant_id,
-        ChatRequest.model_name,
+        func.coalesce(ChatRequest.primary_model_name, ChatRequest.model_name).label("model_name"),
         ChatRequest.request_source,
         func.count(ChatRequest.id).label("request_count"),
-        func.sum(ChatRequest.prompt_tokens).label("total_prompt_tokens"),
-        func.sum(ChatRequest.completion_tokens).label("total_completion_tokens"),
-        func.sum(ChatRequest.cost_usd).label("total_cost_usd")
-    ).filter(ChatRequest.status == "completed")
+        func.sum(ChatRequest.primary_prompt_tokens).label("total_prompt_tokens"),
+        func.sum(ChatRequest.primary_completion_tokens).label("total_completion_tokens"),
+        func.sum(ChatRequest.primary_cost_usd).label("total_cost_usd")
+    ).filter(ChatRequest.status == "completed", ChatRequest.tenant_id.in_(user_tenant_ids))
 
     if model_name:
-        query = query.filter(ChatRequest.model_name == model_name)
+        primary_query = primary_query.filter(func.coalesce(ChatRequest.primary_model_name, ChatRequest.model_name).ilike(f"%{model_name}%"))
     if tenant_name and tenant_name != "ALL":
-        query = query.join(Tenant).filter(Tenant.name == tenant_name)
-    if request_source:
-        query = query.filter(ChatRequest.request_source == request_source)
+        primary_query = primary_query.join(Tenant).filter(Tenant.name == tenant_name)
+    if request_source and request_source != "ALL":
+        primary_query = primary_query.filter(ChatRequest.request_source == request_source)
 
-    results = query.group_by(
+    primary_results = primary_query.group_by(
         ChatRequest.tenant_id,
-        ChatRequest.model_name,
+        func.coalesce(ChatRequest.primary_model_name, ChatRequest.model_name),
         ChatRequest.request_source
     ).all()
 
-    tenant_cache = {}
-    summary = []
-
-    for r in results:
-        tenant_id = r.tenant_id
-        if tenant_id not in tenant_cache:
-            t = db.query(Tenant).filter(Tenant.id == tenant_id).first()
-            tenant_cache[tenant_id] = t.name if t else "Unknown"
-
-        summary.append({
-            "tenant_name": tenant_cache[tenant_id],
-            "model_name": r.model_name or "Unknown",
-            "request_source": r.request_source or "api",
-            "request_count": r.request_count,
-            "prompt_tokens": r.total_prompt_tokens or 0,
-            "completion_tokens": r.total_completion_tokens or 0,
-            "cost_usd": round(r.total_cost_usd or 0.0, 6)
-        })
-
-    totals_query = db.query(
-        func.sum(ChatRequest.cost_usd).label("cost_usd"),
+    # Secondary models aggregation
+    secondary_query = db.query(
+        ChatRequest.tenant_id,
+        ChatRequest.secondary_model_name.label("model_name"),
+        ChatRequest.request_source,
         func.count(ChatRequest.id).label("request_count"),
-        func.sum(ChatRequest.prompt_tokens).label("prompt_tokens"),
-        func.sum(ChatRequest.completion_tokens).label("completion_tokens")
-    ).filter(ChatRequest.status == "completed")
+        func.sum(ChatRequest.secondary_prompt_tokens).label("total_prompt_tokens"),
+        func.sum(ChatRequest.secondary_completion_tokens).label("total_completion_tokens"),
+        func.sum(ChatRequest.secondary_cost_usd).label("total_cost_usd")
+    ).filter(
+        ChatRequest.status == "completed",
+        ChatRequest.secondary_model_name != None,
+        ChatRequest.tenant_id.in_(user_tenant_ids)
+    )
 
     if model_name:
-        totals_query = totals_query.filter(ChatRequest.model_name == model_name)
+        secondary_query = secondary_query.filter(ChatRequest.secondary_model_name.ilike(f"%{model_name}%"))
     if tenant_name and tenant_name != "ALL":
-        totals_query = totals_query.join(Tenant).filter(Tenant.name == tenant_name)
-    if request_source:
-        totals_query = totals_query.filter(ChatRequest.request_source == request_source)
+        secondary_query = secondary_query.join(Tenant).filter(Tenant.name == tenant_name)
+    if request_source and request_source != "ALL":
+        secondary_query = secondary_query.filter(ChatRequest.request_source == request_source)
 
-    totals_res = totals_query.first()
-    paginated_res = get_paginated_response(summary, page, page_size, lambda x: x, is_query=False)
+    secondary_results = secondary_query.group_by(
+        ChatRequest.tenant_id,
+        ChatRequest.secondary_model_name,
+        ChatRequest.request_source
+    ).all()
+
+    # Subagent models aggregation from ExecutionLog
+    subagent_query = db.query(
+        ExecutionLog.tenant_id,
+        ExecutionLog.model_name.label("model_name"),
+        ExecutionLog.request_source,
+        func.count(ExecutionLog.id).label("request_count"),
+        func.sum(ExecutionLog.prompt_tokens).label("total_prompt_tokens"),
+        func.sum(ExecutionLog.completion_tokens).label("total_completion_tokens"),
+        func.sum(ExecutionLog.cost_usd).label("total_cost_usd")
+    ).filter(
+        ExecutionLog.tenant_id.in_(user_tenant_ids),
+        ExecutionLog.model_name != None,
+        (ExecutionLog.sandbox_type == "subagent") | (ExecutionLog.cost_usd > 0.0) | (ExecutionLog.prompt_tokens > 0) | (ExecutionLog.completion_tokens > 0)
+    )
+
+    if model_name:
+        subagent_query = subagent_query.filter(ExecutionLog.model_name.ilike(f"%{model_name}%"))
+    if tenant_name and tenant_name != "ALL":
+        subagent_query = subagent_query.join(Tenant).filter(Tenant.name == tenant_name)
+    if request_source and request_source != "ALL":
+        subagent_query = subagent_query.filter(ExecutionLog.request_source == request_source)
+
+    subagent_results = subagent_query.group_by(
+        ExecutionLog.tenant_id,
+        ExecutionLog.model_name,
+        ExecutionLog.request_source
+    ).all()
+
+    tenant_cache = {}
+    grouped_map = {}
+
+    for r in list(primary_results) + list(secondary_results) + list(subagent_results):
+        if not r.model_name:
+            continue
+        tenant_id = r.tenant_id
+        if tenant_id not in tenant_cache:
+            t = db.query(Tenant).filter(Tenant.id == tenant_id).first() if tenant_id else None
+            tenant_cache[tenant_id] = t.name if t else "Default Workspace"
+
+        source_key = r.request_source or "api"
+        key = (tenant_id, r.model_name, source_key)
+        if key not in grouped_map:
+            grouped_map[key] = {
+                "tenant_name": tenant_cache[tenant_id],
+                "model_name": r.model_name,
+                "request_source": source_key,
+                "request_count": 0,
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "cost_usd": 0.0
+            }
+
+        grouped_map[key]["request_count"] += (r.request_count or 0)
+        grouped_map[key]["prompt_tokens"] += (r.total_prompt_tokens or 0)
+        grouped_map[key]["completion_tokens"] += (r.total_completion_tokens or 0)
+        grouped_map[key]["cost_usd"] += (r.total_cost_usd or 0.0)
+
+    summary = []
+    total_cost_calc = 0.0
+    total_req_calc = 0
+    total_prompt_calc = 0
+    total_completion_calc = 0
+
+    for item in grouped_map.values():
+        item["cost_usd"] = round(item["cost_usd"], 6)
+        total_cost_calc += item["cost_usd"]
+        total_req_calc += item["request_count"]
+        total_prompt_calc += item["prompt_tokens"]
+        total_completion_calc += item["completion_tokens"]
+        summary.append(item)
+
+    # Sort summary by cost_usd descending, then request_count descending
+    summary.sort(key=lambda x: (x["cost_usd"], x["request_count"]), reverse=True)
+
+    target_page = page or 1
+    paginated_res = get_paginated_response(summary, target_page, page_size, lambda x: x, is_query=False)
 
     return {
         "items": paginated_res["items"] if isinstance(paginated_res, dict) else paginated_res,
         "total": paginated_res["total"] if isinstance(paginated_res, dict) else len(summary),
-        "page": paginated_res["page"] if isinstance(paginated_res, dict) else 1,
+        "page": paginated_res["page"] if isinstance(paginated_res, dict) else target_page,
         "pages": paginated_res["pages"] if isinstance(paginated_res, dict) else 1,
         "totals": {
-            "request_count": (totals_res.request_count if totals_res else 0) or 0,
-            "prompt_tokens": (totals_res.prompt_tokens if totals_res else 0) or 0,
-            "completion_tokens": (totals_res.completion_tokens if totals_res else 0) or 0,
-            "cost_usd": round((totals_res.cost_usd if totals_res else 0.0) or 0.0, 6)
+            "request_count": total_req_calc,
+            "prompt_tokens": total_prompt_calc,
+            "completion_tokens": total_completion_calc,
+            "cost_usd": round(total_cost_calc, 6)
         }
     }
 
@@ -666,6 +738,15 @@ def delete_session(
     ).all()
     for art in artifacts:
         db.delete(art)
+
+    # Purge all cloud storage files (Azure Blob / S3 / Local) and sandbox caches
+    try:
+        from routers.files import purge_session_files_internal
+        purge_session_files_internal(db, tenant.id, tenant.name, s.session_id)
+        if s.id != s.session_id:
+            purge_session_files_internal(db, tenant.id, tenant.name, s.id)
+    except Exception as purge_err:
+        print(f"Notice: Failed to purge storage files on session delete: {purge_err}")
 
     # Delete session
     db.delete(s)

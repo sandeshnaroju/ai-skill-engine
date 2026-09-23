@@ -126,7 +126,7 @@ export default function ChatPlayground({ isSidebarOpen, toggleSidebar }) {
   const [copiedIdx, setCopiedIdx] = useState(null);
   const [expandedReasoning, setExpandedReasoning] = useState({});
 
-  // Slide-over configuration drawer (closed by default for clean ChatGPT/Claude UI)
+  // Slide-over configuration drawer (closed by default for clean chat UI)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [userDataPairs, setUserDataPairs] = useState([{ key: 'api_key', value: 'example_secret_key' }]);
@@ -249,6 +249,10 @@ export default function ChatPlayground({ isSidebarOpen, toggleSidebar }) {
       for (const file of files) {
         const formData = new FormData();
         formData.append('file', file);
+        if (activeSessionId) {
+          formData.append('session_id', activeSessionId);
+        }
+        formData.append('origin', 'chat_playground');
 
         const data = await apiClient.post('/api/v1/files/upload', formData, {
           tenantKey: apiKey.trim() || undefined
@@ -1062,7 +1066,7 @@ export default function ChatPlayground({ isSidebarOpen, toggleSidebar }) {
     }}>
 
       {/* ---------------------------------------------------------------- */}
-      {/* 1. TOP NAVIGATION BAR (Clean Claude / ChatGPT Style)             */}
+      {/* 1. TOP NAVIGATION BAR                                            */}
       {/* ---------------------------------------------------------------- */}
       <div style={{
         height: '54px',

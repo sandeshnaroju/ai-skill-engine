@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate, Routes, Route, Navigate } from 'react-router-dom';
-import { Key, Layers, MessageSquare, Database, ShieldCheck, Cpu, BookOpen, Sun, Moon, Activity, Box, PanelLeftClose, PanelLeftOpen, Zap, Terminal, FileText, DollarSign, LogOut, User as UserIcon, HardDrive, Mail, ChevronDown, ChevronUp, ExternalLink } from 'lucide-react';
+import { Key, Layers, MessageSquare, Database, ShieldCheck, Cpu, BookOpen, Sun, Moon, Activity, Box, PanelLeftClose, PanelLeftOpen, Zap, Terminal, FileText, DollarSign, LogOut, User as UserIcon, HardDrive, Mail, ChevronDown, ChevronUp, ExternalLink, FolderArchive } from 'lucide-react';
 import TenantManager from './components/TenantManager';
 import SkillCatalog from './components/SkillCatalog';
 import ChatPlayground from './components/ChatPlayground';
@@ -19,6 +19,7 @@ import UserDataTemplates from './components/UserDataTemplates';
 import EmailSettings from './components/EmailSettings';
 import Canvas from './components/Canvas';
 import ArtifactManager from './components/ArtifactManager';
+import SessionFileManager from './components/SessionFileManager';
 import { authApi, skillsApi, tenantsApi, logsApi, apiClient } from './api';
 import { ToastProvider, useToast } from './context/ToastContext';
 
@@ -59,6 +60,7 @@ function AppContent() {
     { id: 'tenants', label: 'Tenants & Keys', icon: Key, order: 70 },
     { id: 'email-config', label: 'Email Configuration', icon: Mail, order: 80 },
     { id: 'storage', label: 'Storage', icon: HardDrive, order: 90 },
+    { id: 'session-files', label: 'Session Files', icon: FolderArchive, order: 95 },
     { id: 'sandbox', label: 'Sandbox Config', icon: ShieldCheck, order: 100 },
     { id: 'usage', label: 'LLM Cost & Usage', icon: DollarSign, order: 110 },
     { id: 'logs', label: 'Sandbox Audit Logs', icon: Database, order: 120 },
@@ -97,6 +99,7 @@ function AppContent() {
         { id: 'tenants', label: 'Tenants & Keys', icon: Key, order: 10 },
         { id: 'email-config', label: 'Email Configuration', icon: Mail, order: 20 },
         { id: 'storage', label: 'Storage Settings', icon: HardDrive, order: 30 },
+        { id: 'session-files', label: 'Session Files', icon: FolderArchive, order: 35 },
         { id: 'sandbox', label: 'Sandbox Config', icon: ShieldCheck, order: 40 },
       ]
     },
@@ -949,6 +952,7 @@ function AppContent() {
             <Route path="/tenants/:tenantId" element={<TenantManager />} />
             <Route path="/email-config" element={<EmailSettings />} />
             <Route path="/storage" element={<StorageSettings />} />
+            <Route path="/session-files" element={<SessionFileManager />} />
             <Route path="/sandbox" element={<SandboxSettings />} />
             <Route path="/usage" element={<UsageSummary />} />
             <Route path="/logs" element={

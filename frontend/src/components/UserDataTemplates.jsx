@@ -191,6 +191,7 @@ export default function UserDataTemplates() {
       fetchTemplates();
     } catch (err) {
       console.error('Save template error:', err);
+      showError(err.message || 'Failed to save User Data profile');
     } finally {
       setSaving(false);
     }
@@ -208,6 +209,7 @@ export default function UserDataTemplates() {
           showSuccess(`User Data template "${tplName}" deleted successfully`);
         } catch (err) {
           console.error('Delete template error:', err);
+          showError(err.message || 'Failed to delete User Data profile');
         }
       }
     });

@@ -132,7 +132,7 @@ def execute_tool(fn_name: str, args: dict, tool_def: dict, user_data: dict,
         elif fn_name in ("download_from_storage", "cloud_storage__download_from_storage"):
             exec_res = run_download_from_storage_tool(db, args=exec_args, tenant=tenant)
         elif fn_name in ("upload_to_storage", "cloud_storage__upload_to_storage"):
-            exec_res = run_upload_to_storage_tool(db, args=exec_args, tenant=tenant)
+            exec_res = run_upload_to_storage_tool(db, args=exec_args, tenant=tenant, session_id=session_id)
         elif fn_name in ("download_public_file", "http_fetcher__download_public_file"):
             exec_res = run_download_public_file_tool(db, args=exec_args, tenant=tenant)
         elif fn_name in ("artifact_editor__open_or_update_artifact", "open_or_update_artifact"):

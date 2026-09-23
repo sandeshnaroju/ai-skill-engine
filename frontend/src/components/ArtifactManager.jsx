@@ -113,41 +113,20 @@ export default function ArtifactManager() {
     fetchArtifacts();
   }, [fetchArtifacts]);
 
-  // Open Canvas handler: Ensure fresh signed embed token exists so canvas loads immediately with 100% authorization
-  const handleOpenCanvas = async (art) => {
-    try {
-      let token = art.token;
-      if (!token) {
-        const res = await artifactsApi.mintEmbedToken(art.id, 120);
-        token = res.token;
-      }
-      setPreviewArtifact({
-        ...art,
-        token: token
-      });
-      setIsCanvasOpen(true);
-    } catch (err) {
-      console.warn('Fallback opening without fresh token:', err);
-      setPreviewArtifact(art);
-      setIsCanvasOpen(true);
-    }
+  // Open Canvas handler: Logged-in dashboard users are already authenticated via session
+  // cookie — no embed token is needed. Only external iframe embeds need minted tokens.
+  const handleOpenCanvas = (art) => {
+    setPreviewArtifact({ ...art, token: null });
+    setIsCanvasOpen(true);
   };
 
-  // Download handler: Ensure fresh signed embed token exists so direct browser download succeeds 100%
+  // Download handler: session cookie handles auth for dashboard users
   const handleDownload = async (art, e) => {
     e?.preventDefault?.();
     e?.stopPropagation?.();
     try {
-      let token = art.token;
-      if (!token) {
-        try {
-          const res = await artifactsApi.mintEmbedToken(art.id, 60);
-          token = res?.token;
-        } catch (tokErr) {
-          console.warn('Failed to mint download token:', tokErr);
-        }
-      }
-      const exportUrl = artifactsApi.getExportUrl(art.id, token);
+      // No token needed for logged-in dashboard users — session cookie authenticates
+      const exportUrl = artifactsApi.getExportUrl(art.id, null);
       const link = document.createElement('a');
       link.href = exportUrl;
       link.download = art.filename || 'download';
@@ -181,11 +160,8 @@ export default function ArtifactManager() {
   // Copy Embed URL
   const handleCopyEmbedUrl = async (art) => {
     try {
-      let token = art.token;
-      if (!token) {
-        const tokenRes = await artifactsApi.mintEmbedToken(art.id, 120);
-        token = tokenRes.token;
-      }
+      const tokenRes = await artifactsApi.mintEmbedToken(art.id, 120, art.tenant_id);
+      const token = tokenRes.token;
       const fullUrl = `${window.location.origin}/embed/canvas?token=${token}`;
       await navigator.clipboard.writeText(fullUrl);
       setCopiedId(art.id);

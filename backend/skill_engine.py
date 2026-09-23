@@ -328,11 +328,18 @@ def _log_and_append_tool_results(db, tenant, session_id, model_name, request_sou
                                  results, messages, executed_logs, persist, session_obj):
     """Persist execution logs and append tool result messages."""
     arts_map = {}
+    from models import ChatRequest
+    from engine.usage import update_request_subagent_cost
+
     for fn_name, args, tc_id, skill_name, command, exec_res, tool_result in results:
         art_d = exec_res.get("artifact_data")
         if art_d and isinstance(art_d, dict):
             art_id = art_d.get("id") or art_d.get("artifact_id") or f"art_{len(arts_map)}"
             arts_map[art_id] = art_d
+
+        tool_cost = exec_res.get("cost_usd", 0.0) or 0.0
+        p_tokens = exec_res.get("prompt_tokens", 0) or 0
+        c_tokens = exec_res.get("completion_tokens", 0) or 0
 
         log_entry = ExecutionLog(
             tenant_id=tenant.id,
@@ -345,13 +352,25 @@ def _log_and_append_tool_results(db, tenant, session_id, model_name, request_sou
             stderr=exec_res.get("stderr"),
             exit_code=exec_res.get("exit_code", 0),
             execution_time_ms=exec_res.get("execution_time_ms", 0),
-            model_name=model_name,
+            cost_usd=tool_cost,
+            prompt_tokens=p_tokens,
+            completion_tokens=c_tokens,
+            model_name=exec_res.get("model_name") or model_name,
             request_source=request_source,
             request_id=request_id
         )
         db.add(log_entry)
         db.commit()
         db.refresh(log_entry)
+
+        if request_id and (tool_cost > 0.0 or p_tokens > 0 or c_tokens > 0):
+            try:
+                cr = db.query(ChatRequest).filter(ChatRequest.id == request_id).first()
+                if cr:
+                    update_request_subagent_cost(cr, tool_cost, p_tokens, c_tokens)
+                    db.commit()
+            except Exception as ex:
+                print(f"Error updating subagent cost on chat request: {ex}")
 
         executed_logs.append({
             "id": log_entry.id,
@@ -362,6 +381,9 @@ def _log_and_append_tool_results(db, tenant, session_id, model_name, request_sou
             "stderr": log_entry.stderr,
             "exit_code": log_entry.exit_code,
             "execution_time_ms": log_entry.execution_time_ms,
+            "cost_usd": log_entry.cost_usd,
+            "prompt_tokens": log_entry.prompt_tokens,
+            "completion_tokens": log_entry.completion_tokens,
             "generated_files": exec_res.get("generated_files", []),
             "artifact_data": exec_res.get("artifact_data")
         })
@@ -837,7 +859,7 @@ class SkillEngine:
                             extracted_json, extracted_code, prochat_usage, prochat_rates = res_tuple
                             if prochat_usage and prochat_rates:
                                 pin_r, pout_r, pau_in_r, pau_out_r = prochat_rates
-                                update_request_usage(chat_req, prochat_usage, pin_r, pout_r, pau_in_r, pau_out_r, is_secondary=True, model_name=prochat_model or "genui-mars-0.1")
+                                update_request_usage(chat_req, prochat_usage, pin_r, pout_r, pau_in_r, pau_out_r, is_secondary=True, model_name=prochat_model)
 
                     arts_list = list(accumulated_artifacts.values())
                     if persist and session_obj:
@@ -861,7 +883,7 @@ class SkillEngine:
                     extracted_json, extracted_code, prochat_usage, prochat_rates = res_tuple
                     if prochat_usage and prochat_rates:
                         pin_r, pout_r, pau_in_r, pau_out_r = prochat_rates
-                        update_request_usage(chat_req, prochat_usage, pin_r, pout_r, pau_in_r, pau_out_r, is_secondary=True, model_name=prochat_model or "genui-mars-0.1")
+                        update_request_usage(chat_req, prochat_usage, pin_r, pout_r, pau_in_r, pau_out_r, is_secondary=True, model_name=prochat_model)
             arts_list = list(accumulated_artifacts.values())
             if persist and session_obj:
                 save_message(db, session_obj, "assistant", content=final_res, json_data=extracted_json, code=extracted_code, artifact_data=arts_list if arts_list else None)
@@ -1305,7 +1327,7 @@ class SkillEngine:
                                 last_extracted_json, last_extracted_code, prochat_usage, prochat_rates = res_val[:4]
                                 if prochat_usage and prochat_rates:
                                     pin_r, pout_r, pau_in_r, pau_out_r = prochat_rates
-                                    update_request_usage(chat_req, prochat_usage, pin_r, pout_r, pau_in_r, pau_out_r, is_secondary=True, model_name=prochat_model or "genui-mars-0.1")
+                                    update_request_usage(chat_req, prochat_usage, pin_r, pout_r, pau_in_r, pau_out_r, is_secondary=True, model_name=prochat_model)
                             elif res_val:
                                 last_extracted_json, last_extracted_code = res_val[0], res_val[1]
 
@@ -1336,7 +1358,7 @@ class SkillEngine:
                         last_extracted_json, last_extracted_code, prochat_usage, prochat_rates = res_val[:4]
                         if prochat_usage and prochat_rates:
                             pin_r, pout_r, pau_in_r, pau_out_r = prochat_rates
-                            update_request_usage(chat_req, prochat_usage, pin_r, pout_r, pau_in_r, pau_out_r, is_secondary=True, model_name=prochat_model or "genui-mars-0.1")
+                            update_request_usage(chat_req, prochat_usage, pin_r, pout_r, pau_in_r, pau_out_r, is_secondary=True, model_name=prochat_model)
                     elif res_val:
                         last_extracted_json, last_extracted_code = res_val[0], res_val[1]
 

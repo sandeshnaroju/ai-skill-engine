@@ -16,7 +16,7 @@ from fastapi.responses import StreamingResponse, Response
 from sqlalchemy.orm import Session
 
 from database import get_db
-from models import SessionArtifact, ArtifactBlock, ArtifactCommit, Tenant
+from models import SessionArtifact, ArtifactBlock, ArtifactCommit, Tenant, User
 from auth import get_current_tenant
 from .manager import (
     broadcaster,
@@ -107,15 +107,24 @@ def generate_embed_token_endpoint(
     current_tenant: Tenant = Depends(get_current_tenant),
     db: Session = Depends(get_db)
 ):
+    # First try to find the artifact owned by the current (resolved) tenant
     artifact = db.query(SessionArtifact).filter(
         SessionArtifact.id == artifact_id,
         SessionArtifact.tenant_id == current_tenant.id
     ).first()
 
+    # Fallback: if not found under current_tenant (e.g. admin browsing another tenant's
+    # artifacts), find the artifact regardless of owner so we can mint the correct token
+    if not artifact:
+        artifact = db.query(SessionArtifact).filter(
+            SessionArtifact.id == artifact_id
+        ).first()
+
     if not artifact:
         raise HTTPException(status_code=404, detail="Artifact not found")
 
-    token = mint_embed_token(artifact.id, current_tenant.id, expires_in_minutes=expires_in_minutes)
+    # Always mint the token scoped to the artifact's true owner tenant
+    token = mint_embed_token(artifact.id, artifact.tenant_id, expires_in_minutes=expires_in_minutes)
     return {
         "token": token,
         "expires_in_seconds": expires_in_minutes * 60,

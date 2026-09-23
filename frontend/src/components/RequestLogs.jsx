@@ -47,6 +47,9 @@ function ExecutionLogItem({ log }) {
         <span style={{ fontWeight: '600', color: 'var(--text-main)' }}>{log.tool_name}</span>
         <span style={{ color: 'var(--text-muted)', fontSize: '0.74rem' }}>{log.skill_name}</span>
         <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-muted)', fontSize: '0.74rem' }}>
+          {log.cost_usd != null && log.cost_usd > 0 && (
+            <span style={{ color: 'var(--primary-emerald)', fontWeight: '600' }}>${log.cost_usd.toFixed(6)}</span>
+          )}
           <span className={`badge-tag tag-${log.sandbox_type}`} style={{ fontSize: '0.7rem' }}>{log.sandbox_type}</span>
           {log.execution_time_ms}ms · exit {log.exit_code}
           {expanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
@@ -126,8 +129,8 @@ function RequestDrawer({ requestId, onClose }) {
             ))}
           </div>
 
-          {/* Primary & Secondary LLM Cost Breakdown */}
-          <div style={{ display: 'grid', gridTemplateColumns: data.secondary_model_name ? '1fr 1fr' : '1fr', gap: '10px' }}>
+          {/* Primary, Secondary, and Sub-Agent Cost Breakdown */}
+          <div style={{ display: 'grid', gridTemplateColumns: (data.secondary_model_name && data.subagent_cost_usd > 0) ? '1fr 1fr 1fr' : (data.secondary_model_name || data.subagent_cost_usd > 0 ? '1fr 1fr' : '1fr'), gap: '10px' }}>
             <div style={{ background: 'rgba(6, 182, 212, 0.05)', border: '1px solid rgba(6, 182, 212, 0.2)', borderRadius: '8px', padding: '12px' }}>
               <div style={{ fontSize: '0.74rem', color: 'var(--primary-cyan)', fontWeight: '700', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                 🤖 Primary LLM ({data.primary_model_name || data.model_name || 'Standard'})
@@ -157,6 +160,24 @@ function RequestDrawer({ requestId, onClose }) {
                   <span>Cost:</span>
                   <strong style={{ color: 'var(--primary-emerald)' }}>
                     {data.secondary_cost_usd != null && data.secondary_cost_usd > 0 ? `$${data.secondary_cost_usd.toFixed(6)}` : '$0.000000'}
+                  </strong>
+                </div>
+              </div>
+            )}
+
+            {data.subagent_cost_usd != null && data.subagent_cost_usd > 0 && (
+              <div style={{ background: 'rgba(168, 85, 247, 0.05)', border: '1px solid rgba(168, 85, 247, 0.2)', borderRadius: '8px', padding: '12px' }}>
+                <div style={{ fontSize: '0.74rem', color: '#c084fc', fontWeight: '700', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                  🎨 Sub-Agents & Media
+                </div>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-sub)', display: 'flex', justifyContent: 'space-between', marginTop: '4px' }}>
+                  <span>Tools Executed:</span>
+                  <strong>{data.tools_called || (data.execution_logs ? data.execution_logs.length : 0)}</strong>
+                </div>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-sub)', display: 'flex', justifyContent: 'space-between', marginTop: '4px' }}>
+                  <span>Cost:</span>
+                  <strong style={{ color: 'var(--primary-emerald)' }}>
+                    ${data.subagent_cost_usd.toFixed(6)}
                   </strong>
                 </div>
               </div>
