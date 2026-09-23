@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <strong>Enterprise self-hosted AI gateway, tool execution engine, and multi-tenant skill hub.</strong>
+  <strong>Enterprise self-hosted AI gateway, agent execution harness, and multi-tenant skill hub.</strong>
 </p>
 
 <p align="center">
@@ -96,9 +96,9 @@
 
 ## ✨ What It Does
 
-Point your chatbot or business backend at this server's single OpenAI-compatible `/api/v1/chat/completions` endpoint and immediately unlock:
+An all-in-one AI gateway and tool-calling execution harness. Point your chatbot or business backend at this server's single OpenAI-compatible `/api/v1/chat/completions` endpoint and immediately unlock:
 
-1. **Sandboxed Code Execution**: Run Python scripts and calculations safely in isolated Docker containers, Azure Container Apps, or E2B micro-VMs.
+1. **Sandboxed Code Execution Harness**: Run Python scripts and calculations safely in isolated Docker containers, Azure Container Apps, or E2B micro-VMs.
 2. **Universal Canvas Artifacts**: Co-edit and export interactive documents, spreadsheets, slides, and 3D CAD files via drop-in iframe or headless REST/SSE.
 3. **Multi-Tenant Gateway**: Isolated workspaces with dedicated API keys, custom skillsets, per-client token cost accounting, and separated audit logs.
 4. **Cloud Storage & Session Purge**: Stream files to Azure Blob Storage, AWS S3, or Local Disk, tracked per session with cascade cleanup APIs.
