@@ -378,14 +378,13 @@ export default function ChatPlayground({ isSidebarOpen, toggleSidebar }) {
         }
 
         if (toolCalls && toolCalls.length > 0) {
-          pendingReasoning.push(`💭 Analyzing context & invoking tool dependencies...`);
+          pendingReasoning.push({ type: 'phase_notice', content: 'Analyzing context & invoking tool dependencies...' });
           toolCalls.forEach(tc => {
             const rawName = tc.function?.name || tc.name || 'tool';
             const cleanName = rawName.split('__').pop().replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-            const args = typeof tc.function?.arguments === 'string'
-              ? tc.function.arguments
-              : JSON.stringify(tc.function?.arguments || tc.arguments || {});
-            pendingReasoning.push(`🛠️ Invoking Tool: ${cleanName}\nArgs: ${args}`);
+            const argsRaw = tc.function?.arguments || tc.arguments || {};
+            const argsObj = typeof argsRaw === 'string' ? (() => { try { return JSON.parse(argsRaw); } catch(e) { return { raw: argsRaw }; } })() : argsRaw;
+            pendingReasoning.push({ type: 'tool_call', name: cleanName, raw_name: rawName, arguments: argsObj });
           });
         }
 
@@ -419,7 +418,7 @@ export default function ChatPlayground({ isSidebarOpen, toggleSidebar }) {
             code: m.code,
             artifacts: messageArtifacts,
             timestamp: m.timestamp || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            reasoning: pendingReasoning.length > 0 ? pendingReasoning.join('\n\n') : null
+            reasoning: pendingReasoning.length > 0 ? JSON.stringify(pendingReasoning) : null
           });
           pendingReasoning = [];
         }
@@ -437,7 +436,7 @@ export default function ChatPlayground({ isSidebarOpen, toggleSidebar }) {
         role: 'assistant',
         content: 'No response content emitted.',
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        reasoning: pendingReasoning.join('\n\n')
+        reasoning: JSON.stringify(pendingReasoning)
       });
     }
 
@@ -686,7 +685,7 @@ export default function ChatPlayground({ isSidebarOpen, toggleSidebar }) {
       let finalContent = '';
       let finalJson = null;
       let finalCode = null;
-      let reasoningTraces = [];
+      let reasoningTraces = []; // array of structured objects {type, ...}
       let turnArtifacts = [];
       let turnGeneratedFiles = [];
 
@@ -822,7 +821,7 @@ export default function ChatPlayground({ isSidebarOpen, toggleSidebar }) {
             lastMsg.content = finalContent;
             lastMsg.json = finalJson;
             lastMsg.code = finalCode;
-            lastMsg.reasoning = reasoningTraces.join('\n\n');
+            lastMsg.reasoning = reasoningTraces.length > 0 ? JSON.stringify(reasoningTraces) : null;
             lastMsg.artifacts = [...turnArtifacts];
             if (turnArtifacts.length > 0) {
               lastMsg.artifact = turnArtifacts[turnArtifacts.length - 1];
@@ -877,8 +876,12 @@ export default function ChatPlayground({ isSidebarOpen, toggleSidebar }) {
                   const delta = dataJson.choices[0].delta;
                   if (delta.reasoning && !delta.tool_call && !delta.tool_result) {
                     setLiveThought(delta.reasoning);
-                    if (!reasoningTraces.some(t => t.includes(delta.reasoning))) {
-                      reasoningTraces.push(`💭 ${delta.reasoning}`);
+                    // Accumulate into last thought block or create new one
+                    const lastTrace = reasoningTraces[reasoningTraces.length - 1];
+                    if (lastTrace && lastTrace.type === 'thought') {
+                      lastTrace.content += ' ' + delta.reasoning;
+                    } else {
+                      reasoningTraces.push({ type: 'thought', content: delta.reasoning });
                     }
                     stateChanged = true;
                   }
@@ -902,15 +905,28 @@ export default function ChatPlayground({ isSidebarOpen, toggleSidebar }) {
                   if (delta.tool_call) {
                     const rawName = delta.tool_call.name || 'tool';
                     const cleanName = rawName.split('__').pop().replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                    const rawToolName = delta.tool_call.name || 'tool';
                     setLiveThought(`Invoking ${cleanName}...`);
-                    reasoningTraces.push(`🛠️ Invoking Tool: ${cleanName}\nArgs: ${JSON.stringify(delta.tool_call.arguments)}`);
+                    reasoningTraces.push({
+                      type: 'tool_call',
+                      name: cleanName,
+                      raw_name: rawToolName,
+                      arguments: delta.tool_call.arguments || {}
+                    });
                     stateChanged = true;
                   }
                   if (delta.tool_result) {
                     const rawName = delta.tool_result.tool_name || 'tool';
                     const cleanName = rawName.split('__').pop().replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
                     setLiveThought(`${cleanName} finished in ${delta.tool_result.execution_time_ms}ms.`);
-                    reasoningTraces.push(`⚡ Executed in ${delta.tool_result.sandbox_type} sandbox (${delta.tool_result.execution_time_ms}ms, Exit: ${delta.tool_result.exit_code})\nOutput: ${(delta.tool_result.stdout || delta.tool_result.stderr || '').trim()}`);
+                    reasoningTraces.push({
+                      type: 'tool_result',
+                      name: cleanName,
+                      sandbox_type: delta.tool_result.sandbox_type,
+                      execution_time_ms: delta.tool_result.execution_time_ms,
+                      exit_code: delta.tool_result.exit_code,
+                      output: (delta.tool_result.stdout || delta.tool_result.stderr || '').trim()
+                    });
                     setExecutedTools((prev) => [...prev, delta.tool_result]);
                     if (delta.tool_result.generated_files && delta.tool_result.generated_files.length > 0) {
                       turnGeneratedFiles.push(...delta.tool_result.generated_files);
@@ -1005,7 +1021,7 @@ export default function ChatPlayground({ isSidebarOpen, toggleSidebar }) {
           lastMsg.content = finalContent || (turnArtifacts.length > 0 ? 'Created Canvas document.' : (finalJson ? 'Generated dynamic UI.' : 'Completed task.'));
           lastMsg.json = finalJson;
           lastMsg.code = finalCode;
-          lastMsg.reasoning = reasoningTraces.join('\n\n');
+          lastMsg.reasoning = reasoningTraces.length > 0 ? JSON.stringify(reasoningTraces) : null;
           lastMsg.isStreaming = false;
           lastMsg.artifacts = [...turnArtifacts];
           if (turnArtifacts.length > 0) {

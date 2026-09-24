@@ -135,6 +135,8 @@ def execute_tool(fn_name: str, args: dict, tool_def: dict, user_data: dict,
             exec_res = run_upload_to_storage_tool(db, args=exec_args, tenant=tenant, session_id=session_id)
         elif fn_name in ("download_public_file", "http_fetcher__download_public_file"):
             exec_res = run_download_public_file_tool(db, args=exec_args, tenant=tenant)
+        elif fn_name in ("send_email", "email__send_email"):
+            exec_res = run_send_email_tool(db, args=exec_args, tenant=tenant)
         elif fn_name in ("artifact_editor__open_or_update_artifact", "open_or_update_artifact"):
             exec_res = run_open_or_update_artifact(db, exec_args, tenant, session_id=session_id)
         elif fn_name in ("artifact_editor__open_uploaded_file_as_artifact", "open_uploaded_file_as_artifact"):

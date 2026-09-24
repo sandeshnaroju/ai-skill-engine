@@ -345,7 +345,7 @@ function parseDxfContent(dxfText) {
 }
 
 
-export default function Cad2DViewer({ fullContent, artifact, token, filename = 'drawing.dxf' }) {
+export default function Cad2DViewer({ fullContent, artifact, token, filename = 'drawing.dxf', theme: propTheme }) {
   const containerRef = useRef(null);
   const mountRef = useRef(null);
   const rendererRef = useRef(null);
@@ -353,7 +353,29 @@ export default function Cad2DViewer({ fullContent, artifact, token, filename = '
   const cameraRef = useRef(null);
   const layerGroupsRef = useRef(new Map());
 
-  const [theme, setTheme] = useState('dark'); // 'dark' | 'light'
+  const [theme, setTheme] = useState(() => {
+    if (propTheme) return propTheme;
+    const docTheme = typeof document !== 'undefined' ? document.documentElement.getAttribute('data-theme') : null;
+    if (docTheme === 'light' || docTheme === 'dark') return docTheme;
+    const saved = typeof localStorage !== 'undefined' ? localStorage.getItem('app_theme') : null;
+    return (saved === 'light' || saved === 'dark') ? saved : 'dark';
+  });
+
+  useEffect(() => {
+    if (propTheme && propTheme !== theme) {
+      setTheme(propTheme);
+    }
+  }, [propTheme]);
+
+  useEffect(() => {
+    const handleAppTheme = (e) => {
+      if (e.detail?.theme && (e.detail.theme === 'light' || e.detail.theme === 'dark')) {
+        setTheme(e.detail.theme);
+      }
+    };
+    window.addEventListener('app-theme-change', handleAppTheme);
+    return () => window.removeEventListener('app-theme-change', handleAppTheme);
+  }, []);
   const [layers, setLayers] = useState([]);
   const [activeLayerNames, setActiveLayerNames] = useState(new Set());
   const [showLayerPanel, setShowLayerPanel] = useState(false);
@@ -1065,8 +1087,14 @@ export default function Cad2DViewer({ fullContent, artifact, token, filename = '
           </button>
 
           <button
-            onClick={() => setTheme(isDark ? 'light' : 'dark')}
-            title={isDark ? 'Switch to Paper White Theme' : 'Switch to AutoCAD Dark Theme'}
+            onClick={() => {
+              const next = isDark ? 'light' : 'dark';
+              setTheme(next);
+              localStorage.setItem('app_theme', next);
+              document.documentElement.setAttribute('data-theme', next);
+              window.dispatchEvent(new CustomEvent('app-theme-change', { detail: { theme: next } }));
+            }}
+            title={isDark ? 'Switch to Day / Light Mode' : 'Switch to AutoCAD Night / Dark Mode'}
             style={{
               padding: '6px',
               borderRadius: '6px',

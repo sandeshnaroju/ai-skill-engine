@@ -308,24 +308,33 @@ export default function ApiTester() {
       setTenants(tenantsList);
       setApps(appsList);
 
-      // Auto-select preferred/default tenant if none in URL
+      // Determine which tenant + app to auto-select (only when not already in URL)
       let tenantIdToUse = selectedTenantId;
+      let needsTenantSet = false;
       if (!tenantIdToUse && tenantsList.length > 0) {
         const preferredTenant = tenantsList.find(t => (t.models_count && t.models_count > 0) || t.name === 'Default Workspace') || tenantsList[0];
         tenantIdToUse = preferredTenant.id;
-        setSelectedTenantId(tenantIdToUse);
+        needsTenantSet = true;
       }
 
-      // Resolve key from selected/default tenant and load its models
+      const needsAppSet = appsList.length > 0 && !appId;
+      const firstAppId  = needsAppSet ? appsList[0].id : null;
+
+      // Batch tenant + app_id into ONE setSearchParams call to avoid multiple URL pushes
+      if (needsTenantSet || needsAppSet) {
+        setSearchParams(prev => {
+          const next = new URLSearchParams(prev);
+          if (needsTenantSet) next.set('tenant', tenantIdToUse);
+          if (needsAppSet)    next.set('app_id', firstAppId);
+          return next;
+        });
+      }
+
+      // Resolve key and fetch models (issues its own single batched setSearchParams)
       const activeT = tenantsList.find(t => t.id === tenantIdToUse) || tenantsList[0];
       const keyToUse = activeT ? activeT.api_key : '';
       if (keyToUse || tenantIdToUse) {
         fetchTenantModels(keyToUse, tenantIdToUse);
-      }
-
-      // Auto-select first app if none is in URL
-      if (appsList.length > 0 && !appId) {
-        setAppId(appsList[0].id);
       }
     } catch (e) {
       console.error('Failed to load metadata:', e);
@@ -344,6 +353,7 @@ export default function ApiTester() {
       const data = await tenantsApi.listLlms(targetKey || null, { tenant_id: targetId || undefined, page_size: 100 });
       const items = Array.isArray(data) ? data : (data.items || []);
       setTenantModels(items || []);
+
       // Categorize models by modality
       const textModels = (items || []).filter(
         m => m.provider !== 'prochat' && !m.model_name.toLowerCase().includes('genui') && (m.model_type === 'text' || m.model_type === 'multimodal' || !m.model_type)
@@ -358,36 +368,42 @@ export default function ApiTester() {
         m => m.provider !== 'prochat' && (m.model_type === 'text' || m.model_type === 'multimodal' || !m.model_type)
       );
 
-      // Only auto-select first model if no model is set or URL model doesn't exist in list
+      const firstVision    = visionModels[0]?.model_name || '';
+      const firstImageGen  = (imageGenModels.length > 0 ? imageGenModels[0] : visionModels[0])?.model_name || '';
+      const firstVideoGen  = (videoGenModels.length > 0 ? videoGenModels[0] : visionModels[0])?.model_name || '';
       const urlModelExists = model && textModels.some(m => m.model_name === model);
-      if (!urlModelExists) {
-        if (textModels.length > 0) {
-          setModel(textModels[0].model_name);
-        } else {
-          setModel('');
+      const newModel       = !urlModelExists ? (textModels[0]?.model_name || '') : null;
+
+      // --- Batch ALL url-param updates into ONE setSearchParams call ---
+      // Each individual setter creates its own URLSearchParams from the stale
+      // searchParams closure, causing N separate history pushes and N re-renders.
+      setSearchParams(prev => {
+        const next = new URLSearchParams(prev);
+        if (newModel !== null) {
+          if (newModel) next.set('model', newModel);
+          else next.delete('model');
         }
-      }
-
-      // Default Sub-Agent dropdowns to respective first matching models if not set
-      const firstVision = visionModels[0]?.model_name || '';
-      const firstImageGen = (imageGenModels.length > 0 ? imageGenModels[0] : visionModels[0])?.model_name || '';
-      const firstVideoGen = (videoGenModels.length > 0 ? videoGenModels[0] : visionModels[0])?.model_name || '';
-
-      if (!imageModel && firstVision) setImageModel(firstVision);
-      if (!imageGenModel && firstImageGen) setImageGenModel(firstImageGen);
-      if (!audioModel && firstVision) setAudioModel(firstVision);
-      if (!videoModel && firstVision) setVideoModel(firstVision);
-      if (!videoGenModel && firstVideoGen) setVideoGenModel(firstVideoGen);
+        if (!prev.get('image_model')    && firstVision)   next.set('image_model',   firstVision);
+        if (!prev.get('image_gen_model') && firstImageGen) next.set('image_gen_model', firstImageGen);
+        if (!prev.get('audio_model')    && firstVision)   next.set('audio_model',   firstVision);
+        if (!prev.get('video_model')    && firstVision)   next.set('video_model',   firstVision);
+        if (!prev.get('video_gen_model') && firstVideoGen) next.set('video_gen_model', firstVideoGen);
+        return next;
+      });
     } catch (e) {
       console.error('Failed to fetch tenant models:', e);
     }
   };
 
   useEffect(() => {
-    if (selectedTenantId || selectedTenantKey) {
-      fetchTenantModels(selectedTenantKey, selectedTenantId);
+    // Effect fires only when the user actually selects a different tenant.
+    // loadMetaData() already calls fetchTenantModels directly on initial load,
+    // so we do NOT include `tenants` here to avoid a double-fire on mount.
+    if (selectedTenantId) {
+      const key = tenants.find(t => t.id === selectedTenantId)?.api_key || '';
+      fetchTenantModels(key, selectedTenantId);
     }
-  }, [selectedTenantId, selectedTenantKey]);
+  }, [selectedTenantId]);
 
   const handleSend = async () => {
     if (loading) return;

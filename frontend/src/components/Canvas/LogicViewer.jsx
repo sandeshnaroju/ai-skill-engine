@@ -83,8 +83,30 @@ function parseXER(xerText) {
   return { tables, tasks };
 }
 
-export default function LogicViewer({ fullContent, artifact, filename = 'program.l5x' }) {
-  const [theme, setTheme] = useState('dark');
+export default function LogicViewer({ fullContent, artifact, filename = 'program.l5x', theme: propTheme }) {
+  const [theme, setTheme] = useState(() => {
+    if (propTheme) return propTheme;
+    const docTheme = typeof document !== 'undefined' ? document.documentElement.getAttribute('data-theme') : null;
+    if (docTheme === 'light' || docTheme === 'dark') return docTheme;
+    const saved = typeof localStorage !== 'undefined' ? localStorage.getItem('app_theme') : null;
+    return (saved === 'light' || saved === 'dark') ? saved : 'dark';
+  });
+
+  useEffect(() => {
+    if (propTheme && propTheme !== theme) {
+      setTheme(propTheme);
+    }
+  }, [propTheme]);
+
+  useEffect(() => {
+    const handleAppTheme = (e) => {
+      if (e.detail?.theme && (e.detail.theme === 'light' || e.detail.theme === 'dark')) {
+        setTheme(e.detail.theme);
+      }
+    };
+    window.addEventListener('app-theme-change', handleAppTheme);
+    return () => window.removeEventListener('app-theme-change', handleAppTheme);
+  }, []);
   const [search, setSearch] = useState('');
   const [activeTab, setActiveTab] = useState('main'); // 'rungs' | 'tags' | 'gantt'
 
@@ -167,7 +189,14 @@ export default function LogicViewer({ fullContent, artifact, filename = 'program
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <button
-            onClick={() => setTheme(isDark ? 'light' : 'dark')}
+            onClick={() => {
+              const next = isDark ? 'light' : 'dark';
+              setTheme(next);
+              localStorage.setItem('app_theme', next);
+              document.documentElement.setAttribute('data-theme', next);
+              window.dispatchEvent(new CustomEvent('app-theme-change', { detail: { theme: next } }));
+            }}
+            title={isDark ? 'Switch to Day / Light Mode' : 'Switch to Night / Dark Mode'}
             style={{
               padding: '6px',
               borderRadius: '6px',
