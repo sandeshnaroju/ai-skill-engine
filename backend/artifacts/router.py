@@ -177,13 +177,15 @@ async def stream_artifact_updates(
     if not cand_token and authorization and authorization.startswith("Bearer "):
         cand_token = authorization.split(" ")[1].strip()
 
-    if cand_token:
-        try:
-            payload = verify_embed_token(cand_token)
-            if payload.get("art") != artifact_id:
-                raise HTTPException(status_code=403, detail="Token mismatch")
-        except ValueError:
-            raise HTTPException(status_code=401, detail="Invalid token for live stream")
+    if not cand_token:
+        raise HTTPException(status_code=401, detail="Token required for live stream")
+
+    try:
+        payload = verify_embed_token(cand_token)
+        if payload.get("art") != artifact_id:
+            raise HTTPException(status_code=403, detail="Token mismatch")
+    except ValueError:
+        raise HTTPException(status_code=401, detail="Invalid token for live stream")
 
     queue = broadcaster.subscribe(artifact_id)
 
