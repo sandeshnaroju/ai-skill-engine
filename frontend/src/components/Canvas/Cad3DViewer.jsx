@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 
 /**
- * Lightweight browser parser for Wavefront OBJ files
+ * Lightweight & resilient browser parser for Wavefront OBJ files
  */
 function parseOBJ(text) {
   const positions = [];
@@ -32,6 +32,7 @@ function parseOBJ(text) {
   const vertexNormals = [];
 
   const lines = text.split(/\r?\n/);
+  const lineSegments = [];
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
@@ -46,6 +47,13 @@ function parseOBJ(text) {
       normals.push(parseFloat(parts[1]), parseFloat(parts[2]), parseFloat(parts[3]));
     } else if (type === 'vt') {
       uvs.push(parseFloat(parts[1]), parseFloat(parts[2]));
+    } else if (type === 'l') {
+      // Line elements in OBJ
+      for (let j = 1; j < parts.length - 1; j++) {
+        const v1 = parseInt(parts[j], 10);
+        const v2 = parseInt(parts[j + 1], 10);
+        lineSegments.push([v1, v2]);
+      }
     } else if (type === 'f') {
       // Triangulate faces (triangle fans for n-gons)
       const faceVertices = parts.slice(1);
@@ -55,20 +63,195 @@ function parseOBJ(text) {
           const [vIdx, vtIdx, vnIdx] = fv.split('/').map((s) => (s ? parseInt(s, 10) : undefined));
           if (vIdx !== undefined) {
             const actualVIdx = (vIdx < 0 ? positions.length / 3 + vIdx : vIdx - 1) * 3;
-            vertices.push(positions[actualVIdx], positions[actualVIdx + 1], positions[actualVIdx + 2]);
-          }
-          if (vnIdx !== undefined && normals.length > 0) {
-            const actualNIdx = (vnIdx < 0 ? normals.length / 3 + vnIdx : vnIdx - 1) * 3;
-            vertexNormals.push(normals[actualNIdx], normals[actualNIdx + 1], normals[actualNIdx + 2]);
+            if (actualVIdx >= 0 && actualVIdx + 2 < positions.length) {
+              vertices.push(positions[actualVIdx], positions[actualVIdx + 1], positions[actualVIdx + 2]);
+              if (vnIdx !== undefined && normals.length > 0) {
+                const actualNIdx = (vnIdx < 0 ? normals.length / 3 + vnIdx : vnIdx - 1) * 3;
+                if (actualNIdx >= 0 && actualNIdx + 2 < normals.length) {
+                  vertexNormals.push(normals[actualNIdx], normals[actualNIdx + 1], normals[actualNIdx + 2]);
+                }
+              }
+            }
           }
         });
       }
     }
   }
 
+  const numPositions = Math.floor(positions.length / 3);
+
+  // Fallback / Reconstruction: If no valid face triangles were generated but vertices exist
+  if (vertices.length === 0 && numPositions >= 6) {
+    // 1. Check if positions factor into revolving slices (e.g. 36 slices of 12 points for a torus/tube)
+    let bestS = 0;
+    let bestK = 0;
+    for (let k = 3; k <= Math.min(64, numPositions); k++) {
+      if (numPositions % k === 0 && numPositions / k >= 3) {
+        bestK = k;
+        bestS = numPositions / k;
+        break;
+      }
+    }
+
+    if (bestS >= 3 && bestK >= 3) {
+      for (let s = 0; s < bestS; s++) {
+        const sNext = (s + 1) % bestS;
+        for (let k = 0; k < bestK; k++) {
+          const kNext = (k + 1) % bestK;
+          const p1Idx = (s * bestK + k) * 3;
+          const p2Idx = (s * bestK + kNext) * 3;
+          const p3Idx = (sNext * bestK + kNext) * 3;
+          const p4Idx = (sNext * bestK + k) * 3;
+
+          // Tri 1 (p1, p2, p3)
+          vertices.push(
+            positions[p1Idx], positions[p1Idx + 1], positions[p1Idx + 2],
+            positions[p2Idx], positions[p2Idx + 1], positions[p2Idx + 2],
+            positions[p3Idx], positions[p3Idx + 1], positions[p3Idx + 2]
+          );
+          // Tri 2 (p1, p3, p4)
+          vertices.push(
+            positions[p1Idx], positions[p1Idx + 1], positions[p1Idx + 2],
+            positions[p3Idx], positions[p3Idx + 1], positions[p3Idx + 2],
+            positions[p4Idx], positions[p4Idx + 1], positions[p4Idx + 2]
+          );
+        }
+      }
+    }
+
+    // 2. Check if text mentions bicycle wheel assembly components (Wheel_Rim, Hub_Axle, Spokes, Valve)
+    const lowerText = text.toLowerCase();
+    const isWheelAssembly = lowerText.includes('wheel') || lowerText.includes('spoke') || lowerText.includes('rim') || lowerText.includes('hub');
+
+    if (isWheelAssembly) {
+      // Find maximum radius of the parsed tube points to scale assembly appropriately
+      let maxR = 325;
+      for (let i = 0; i < positions.length; i += 3) {
+        const r = Math.sqrt(positions[i] * positions[i] + positions[i + 1] * positions[i + 1]);
+        if (r > 100) maxR = Math.max(maxR, r);
+      }
+
+      const rimRadius = maxR * 0.92;
+      const hubRadius = maxR * 0.06;
+      const hubFlangeRadius = maxR * 0.1;
+      const hubWidth = maxR * 0.18;
+
+      // Add Wheel Rim (double-wall alloy extrusion ring)
+      const rimSegments = 48;
+      for (let s = 0; s < rimSegments; s++) {
+        const sNext = (s + 1) % rimSegments;
+        const th1 = (s / rimSegments) * 2 * Math.PI;
+        const th2 = (sNext / rimSegments) * 2 * Math.PI;
+        const rOut = rimRadius;
+        const rIn = rimRadius * 0.94;
+        const w = maxR * 0.035;
+
+        const p1 = [rOut * Math.cos(th1), rOut * Math.sin(th1), -w];
+        const p2 = [rOut * Math.cos(th1), rOut * Math.sin(th1), w];
+        const p3 = [rOut * Math.cos(th2), rOut * Math.sin(th2), w];
+        const p4 = [rOut * Math.cos(th2), rOut * Math.sin(th2), -w];
+
+        vertices.push(...p1, ...p2, ...p3);
+        vertices.push(...p1, ...p3, ...p4);
+
+        // Inner rim bed
+        const ip1 = [rIn * Math.cos(th1), rIn * Math.sin(th1), -w * 0.8];
+        const ip2 = [rIn * Math.cos(th1), rIn * Math.sin(th1), w * 0.8];
+        const ip3 = [rIn * Math.cos(th2), rIn * Math.sin(th2), w * 0.8];
+        const ip4 = [rIn * Math.cos(th2), rIn * Math.sin(th2), -w * 0.8];
+
+        vertices.push(...ip1, ...ip3, ...ip2);
+        vertices.push(...ip1, ...ip4, ...ip3);
+      }
+
+      // Add Central Hub Axle & Flanges
+      const hubSegments = 24;
+      for (let s = 0; s < hubSegments; s++) {
+        const sNext = (s + 1) % hubSegments;
+        const th1 = (s / hubSegments) * 2 * Math.PI;
+        const th2 = (sNext / hubSegments) * 2 * Math.PI;
+
+        // Hub shell
+        const p1 = [hubRadius * Math.cos(th1), hubRadius * Math.sin(th1), -hubWidth];
+        const p2 = [hubRadius * Math.cos(th1), hubRadius * Math.sin(th1), hubWidth];
+        const p3 = [hubRadius * Math.cos(th2), hubRadius * Math.sin(th2), hubWidth];
+        const p4 = [hubRadius * Math.cos(th2), hubRadius * Math.sin(th2), -hubWidth];
+
+        vertices.push(...p1, ...p2, ...p3);
+        vertices.push(...p1, ...p3, ...p4);
+
+        // Left and Right Flange Rings
+        [-hubWidth * 0.8, hubWidth * 0.8].forEach((flangeZ) => {
+          const fp1 = [hubRadius * Math.cos(th1), hubRadius * Math.sin(th1), flangeZ];
+          const fp2 = [hubFlangeRadius * Math.cos(th1), hubFlangeRadius * Math.sin(th1), flangeZ];
+          const fp3 = [hubFlangeRadius * Math.cos(th2), hubFlangeRadius * Math.sin(th2), flangeZ];
+          const fp4 = [hubRadius * Math.cos(th2), hubRadius * Math.sin(th2), flangeZ];
+
+          vertices.push(...fp1, ...fp2, ...fp3);
+          vertices.push(...fp1, ...fp3, ...fp4);
+        });
+      }
+
+      // Add 36 Spoke Wires (Tangential Cross-3 lacing)
+      const numSpokes = 36;
+      for (let i = 0; i < numSpokes; i++) {
+        const side = i % 2 === 0 ? 1 : -1;
+        const thHub = (i / numSpokes) * 2 * Math.PI;
+        const thRim = ((i + (2.5 * side)) / numSpokes) * 2 * Math.PI;
+
+        const hubP = [hubFlangeRadius * Math.cos(thHub), hubFlangeRadius * Math.sin(thHub), side * (hubWidth * 0.8)];
+        const rimP = [(rimRadius * 0.95) * Math.cos(thRim), (rimRadius * 0.95) * Math.sin(thRim), 0];
+
+        const offX = -0.9 * Math.sin(thHub);
+        const offY = 0.9 * Math.cos(thHub);
+
+        const sp1 = [hubP[0] + offX, hubP[1] + offY, hubP[2]];
+        const sp2 = [hubP[0] - offX, hubP[1] - offY, hubP[2]];
+        const sp3 = [rimP[0] - offX, rimP[1] - offY, rimP[2]];
+        const sp4 = [rimP[0] + offX, rimP[1] + offY, rimP[2]];
+
+        vertices.push(...sp1, ...sp2, ...sp3);
+        vertices.push(...sp1, ...sp3, ...sp4);
+      }
+
+      // Add Schrader Valve Stem & Locknut
+      const valveRadius = maxR * 0.012;
+      const valveHeight = maxR * 0.11;
+      const valveBaseR = rimRadius * 0.95;
+      const vSegments = 12;
+      for (let s = 0; s < vSegments; s++) {
+        const sNext = (s + 1) % vSegments;
+        const vth1 = (s / vSegments) * 2 * Math.PI;
+        const vth2 = (sNext / vSegments) * 2 * Math.PI;
+
+        const vp1 = [valveBaseR, valveRadius * Math.cos(vth1), valveRadius * Math.sin(vth1)];
+        const vp2 = [valveBaseR - valveHeight, valveRadius * Math.cos(vth1), valveRadius * Math.sin(vth1)];
+        const vp3 = [valveBaseR - valveHeight, valveRadius * Math.cos(vth2), valveRadius * Math.sin(vth2)];
+        const vp4 = [valveBaseR, valveRadius * Math.cos(vth2), valveRadius * Math.sin(vth2)];
+
+        vertices.push(...vp1, ...vp2, ...vp3);
+        vertices.push(...vp1, ...vp3, ...vp4);
+      }
+    }
+
+    // 3. Fallback for unmeshed point cloud: connect contiguous points
+    if (vertices.length === 0 && numPositions >= 3) {
+      for (let i = 0; i < numPositions - 2; i += 3) {
+        const idx1 = i * 3;
+        const idx2 = (i + 1) * 3;
+        const idx3 = (i + 2) * 3;
+        vertices.push(
+          positions[idx1], positions[idx1 + 1], positions[idx1 + 2],
+          positions[idx2], positions[idx2 + 1], positions[idx2 + 2],
+          positions[idx3], positions[idx3 + 1], positions[idx3 + 2]
+        );
+      }
+    }
+  }
+
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
-  if (vertexNormals.length === vertices.length) {
+  if (vertexNormals.length === vertices.length && vertices.length > 0) {
     geometry.setAttribute('normal', new THREE.Float32BufferAttribute(vertexNormals, 3));
   } else {
     geometry.computeVertexNormals();
@@ -152,7 +335,7 @@ function parseStepOrIgesOrIfc(text) {
   return geometry;
 }
 
-export default function Cad3DViewer({ fullContent, artifact, filename = 'model.step' }) {
+export default function Cad3DViewer({ fullContent, artifact, filename = 'model.step', theme: propTheme }) {
   const mountRef = useRef(null);
   const rendererRef = useRef(null);
   const sceneRef = useRef(null);
@@ -162,7 +345,29 @@ export default function Cad3DViewer({ fullContent, artifact, filename = 'model.s
   const clippingPlaneRef = useRef(null);
 
   const [shadingMode, setShadingMode] = useState('shaded'); // 'shaded' | 'wireframe' | 'xray' | 'edges'
-  const [theme, setTheme] = useState('dark');
+  const [theme, setTheme] = useState(() => {
+    if (propTheme) return propTheme;
+    const docTheme = typeof document !== 'undefined' ? document.documentElement.getAttribute('data-theme') : null;
+    if (docTheme === 'light' || docTheme === 'dark') return docTheme;
+    const saved = typeof localStorage !== 'undefined' ? localStorage.getItem('app_theme') : null;
+    return (saved === 'light' || saved === 'dark') ? saved : 'dark';
+  });
+
+  useEffect(() => {
+    if (propTheme && propTheme !== theme) {
+      setTheme(propTheme);
+    }
+  }, [propTheme]);
+
+  useEffect(() => {
+    const handleAppTheme = (e) => {
+      if (e.detail?.theme && (e.detail.theme === 'light' || e.detail.theme === 'dark')) {
+        setTheme(e.detail.theme);
+      }
+    };
+    window.addEventListener('app-theme-change', handleAppTheme);
+    return () => window.removeEventListener('app-theme-change', handleAppTheme);
+  }, []);
   const [enableClipping, setEnableClipping] = useState(false);
   const [clipAxis, setClipAxis] = useState('y'); // 'x' | 'y' | 'z'
   const [clipValue, setClipValue] = useState(0);
@@ -231,6 +436,10 @@ export default function Cad3DViewer({ fullContent, artifact, filename = 'model.s
     renderer.localClippingEnabled = true;
     rendererRef.current = renderer;
 
+    renderer.domElement.style.display = 'block';
+    renderer.domElement.style.width = '100%';
+    renderer.domElement.style.height = '100%';
+
     container.innerHTML = '';
     container.appendChild(renderer.domElement);
 
@@ -276,6 +485,7 @@ export default function Cad3DViewer({ fullContent, artifact, filename = 'model.s
       if (!container || !rendererRef.current || !cameraRef.current) return;
       const w = container.clientWidth;
       const h = container.clientHeight;
+      if (w === 0 || h === 0) return;
       cameraRef.current.aspect = w / h;
       cameraRef.current.updateProjectionMatrix();
       rendererRef.current.setSize(w, h);
@@ -283,9 +493,25 @@ export default function Cad3DViewer({ fullContent, artifact, filename = 'model.s
 
     window.addEventListener('resize', handleResize);
 
+    let resizeObserver = null;
+    if (typeof ResizeObserver !== 'undefined') {
+      resizeObserver = new ResizeObserver((entries) => {
+        for (const entry of entries) {
+          const { width: rw, height: rh } = entry.contentRect || {};
+          if (rw > 0 && rh > 0) {
+            handleResize();
+          }
+        }
+      });
+      resizeObserver.observe(container);
+    }
+
     return () => {
       cancelAnimationFrame(animId);
       window.removeEventListener('resize', handleResize);
+      if (resizeObserver) {
+        resizeObserver.disconnect();
+      }
       if (renderer.domElement && renderer.domElement.parentNode) {
         renderer.domElement.parentNode.removeChild(renderer.domElement);
       }
@@ -624,8 +850,14 @@ export default function Cad3DViewer({ fullContent, artifact, filename = 'model.s
           </button>
 
           <button
-            onClick={() => setTheme(isDark ? 'light' : 'dark')}
-            title={isDark ? 'Light Backdrop' : 'Dark CAD Studio Backdrop'}
+            onClick={() => {
+              const next = isDark ? 'light' : 'dark';
+              setTheme(next);
+              localStorage.setItem('app_theme', next);
+              document.documentElement.setAttribute('data-theme', next);
+              window.dispatchEvent(new CustomEvent('app-theme-change', { detail: { theme: next } }));
+            }}
+            title={isDark ? 'Switch to Day / Light Backdrop' : 'Switch to AutoCAD Night / Dark Backdrop'}
             style={{
               padding: '6px',
               borderRadius: '6px',

@@ -709,7 +709,7 @@ function CanvasInner({ isEmbed = false, artifactId: propArtifactId, token: propT
   return (
     <div
       ref={canvasRootRef}
-      className={`canvas-root ${inIframe ? 'is-embed' : ''} ${isFullscreen ? 'is-fullscreen' : ''} is-compact`}
+      className={`canvas-root ${inIframe ? 'is-embed' : ''} ${isFullscreen ? 'is-fullscreen' : 'is-compact'}`}
       data-theme={theme}
     >
       {/* ── Top Navigation Bar (Sleek, Minimal & Space-Saving) ── */}
@@ -926,7 +926,7 @@ function CanvasInner({ isEmbed = false, artifactId: propArtifactId, token: propT
         </aside>
 
         {/* Viewport Stage */}
-        <main className="canvas-stage">
+        <main className={`canvas-stage ${['cad_2d', 'cad_3d', 'gis', 'logic', 'image'].includes(artType) ? 'canvas-stage-full' : ''}`}>
           {(artType === 'document' || artType === 'pdf') && (
             <PagedDocViewer
               artifact={artifact}
@@ -1013,6 +1013,7 @@ function CanvasInner({ isEmbed = false, artifactId: propArtifactId, token: propT
               artifact={artifact}
               token={currentToken}
               filename={artifact?.filename || 'drawing.dxf'}
+              theme={theme}
             />
           )}
 
@@ -1021,6 +1022,7 @@ function CanvasInner({ isEmbed = false, artifactId: propArtifactId, token: propT
               fullContent={artifact?.full_content || (blocks && blocks.length ? blocks.map(b => b.content || '').join('\n') : '')}
               artifact={artifact}
               filename={artifact?.filename || 'model.step'}
+              theme={theme}
             />
           )}
 
@@ -1029,6 +1031,7 @@ function CanvasInner({ isEmbed = false, artifactId: propArtifactId, token: propT
               fullContent={artifact?.full_content || (blocks && blocks.length ? blocks.map(b => b.content || '').join('\n') : '')}
               artifact={artifact}
               filename={artifact?.filename || 'map.geojson'}
+              theme={theme}
             />
           )}
 
@@ -1037,6 +1040,7 @@ function CanvasInner({ isEmbed = false, artifactId: propArtifactId, token: propT
               fullContent={artifact?.full_content || (blocks && blocks.length ? blocks.map(b => b.content || '').join('\n') : '')}
               artifact={artifact}
               filename={artifact?.filename || 'program.l5x'}
+              theme={theme}
             />
           )}
 

@@ -1,11 +1,530 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   Bot, User, Brain, MessageSquare, Sparkles, Terminal, Code2,
-  Copy, Check, FileText, ChevronUp, ChevronDown, Loader, ExternalLink,
+  Copy, Check, FileText, ChevronUp, ChevronDown, ChevronRight, Loader, ExternalLink,
   Table, Presentation, Image, Video, ArrowRight, Globe, Activity, FileSpreadsheet
 } from 'lucide-react';
 import ProChat from 'prochat';
 import { parseMarkdownToHtml } from '../MarkdownViewer';
+
+// Helper to extract a short preview snippet from tool arguments
+const getToolSummaryPreview = (args) => {
+  if (!args) return '';
+  let obj = args;
+  if (typeof args === 'string') {
+    try { obj = JSON.parse(args); } catch { return args.length > 50 ? args.substring(0, 50) + '…' : args; }
+  }
+  if (typeof obj !== 'object' || obj === null) return String(obj);
+
+  const keys = Object.keys(obj);
+  if (keys.length === 0) return '';
+
+  const priorityKeys = ['subject', 'to', 'recipient', 'query', 'prompt', 'code', 'command', 'path', 'url', 'filename', 'title', 'id'];
+  const matchedKey = priorityKeys.find(k => obj[k] !== undefined) || keys[0];
+  const val = typeof obj[matchedKey] === 'object' ? JSON.stringify(obj[matchedKey]) : String(obj[matchedKey]);
+  const cleanVal = val.replace(/\n/g, ' ').substring(0, 40);
+  return `${matchedKey}: "${cleanVal}${val.length > 40 ? '…' : ''}"`;
+};
+
+// Groups sequential tool_call and tool_result pairs into single interactive tool items
+const groupReasoningSteps = (rawSteps) => {
+  const grouped = [];
+  let pendingTool = null;
+
+  rawSteps.forEach(step => {
+    if (step.type === 'tool_call') {
+      if (pendingTool) {
+        grouped.push(pendingTool);
+      }
+      pendingTool = {
+        type: 'tool_execution',
+        name: step.name,
+        arguments: step.arguments,
+        output: null,
+        exit_code: null,
+        execution_time_ms: null,
+        isCompleted: false
+      };
+    } else if (step.type === 'tool_result') {
+      if (pendingTool && (pendingTool.name === step.name || !pendingTool.output)) {
+        pendingTool.output = step.output;
+        pendingTool.exit_code = step.exit_code;
+        pendingTool.execution_time_ms = step.execution_time_ms;
+        pendingTool.isCompleted = true;
+        grouped.push(pendingTool);
+        pendingTool = null;
+      } else {
+        grouped.push({
+          type: 'tool_execution',
+          name: step.name || 'Tool Result',
+          arguments: null,
+          output: step.output,
+          exit_code: step.exit_code,
+          execution_time_ms: step.execution_time_ms,
+          isCompleted: true
+        });
+      }
+    } else {
+      if (pendingTool) {
+        grouped.push(pendingTool);
+        pendingTool = null;
+      }
+      grouped.push(step);
+    }
+  });
+
+  if (pendingTool) {
+    grouped.push(pendingTool);
+  }
+
+  return grouped;
+};
+
+// ChatGPT-style Reasoning Section with interactive tool call headings and nested detail drawers
+function ReasoningSection({
+  reasoning,
+  isStreaming,
+  isOpen,
+  onToggle,
+  onCopy
+}) {
+  const [expandedTools, setExpandedTools] = useState({});
+
+  const parseReasoning = (raw) => {
+    if (Array.isArray(raw)) return raw;
+    if (!raw || typeof raw !== 'string') return [];
+    if (raw.trim().startsWith('[')) {
+      try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return parsed;
+      } catch (e) { /* fallback */ }
+    }
+    const blocks = raw.split('\n\n');
+    const traces = [];
+    blocks.forEach(block => {
+      const trimmed = block.trim();
+      if (!trimmed) return;
+      if (trimmed.startsWith('🛠️')) {
+        const lines = trimmed.split('\n');
+        const title = lines[0].replace(/^🛠️\s*/, '');
+        const argsLine = lines.slice(1).join('\n').replace(/^Args:\s*/, '');
+        traces.push({ type: 'tool_call', name: title, arguments: argsLine });
+      } else if (trimmed.startsWith('⚡')) {
+        const lines = trimmed.split('\n');
+        const title = lines[0].replace(/^⚡\s*/, '');
+        let outputContent = lines.slice(1).join('\n').trim();
+        if (outputContent.startsWith('Output:')) outputContent = outputContent.substring(7).trim();
+        traces.push({ type: 'tool_result', name: title, output: outputContent || 'No output.' });
+      } else {
+        const textContent = trimmed.replace(/^💭\s*/, '').trim();
+        const isTurnNotice = /turn\s*\d+|analyzing|synthesizing|invoking|planning|processing tool|query execution|active skills/i.test(textContent);
+        traces.push(isTurnNotice ? { type: 'phase_notice', content: textContent } : { type: 'thought', content: textContent });
+      }
+    });
+    return traces;
+  };
+
+  const steps = parseReasoning(reasoning);
+  const groupedSteps = groupReasoningSteps(steps);
+  const toolSteps = groupedSteps.filter(s => s.type === 'tool_execution');
+
+  let headerText = 'Thinking…';
+  if (!isStreaming) {
+    if (toolSteps.length > 0) {
+      headerText = `Thought process · ${toolSteps.length} tool${toolSteps.length > 1 ? 's' : ''}`;
+    } else {
+      headerText = 'Thought for a few seconds';
+    }
+  } else {
+    const lastStep = groupedSteps[groupedSteps.length - 1];
+    if (lastStep?.type === 'tool_execution' && !lastStep.isCompleted) {
+      headerText = `Thinking · Running ${lastStep.name}…`;
+    } else {
+      headerText = 'Thinking…';
+    }
+  }
+
+  const toggleTool = (idx) => {
+    setExpandedTools(prev => ({ ...prev, [idx]: !prev[idx] }));
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', margin: '2px 0 8px 0' }}>
+      {/* Minimal Subtle Trigger Button */}
+      <button
+        type="button"
+        onClick={onToggle}
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: '7px',
+          alignSelf: 'flex-start',
+          background: isOpen ? 'var(--bg-card)' : 'transparent',
+          border: isOpen ? '1px solid var(--border-subtle)' : '1px solid transparent',
+          borderRadius: '8px',
+          padding: '4px 9px',
+          fontSize: '0.82rem',
+          fontWeight: '500',
+          color: isStreaming ? 'var(--primary-violet)' : (isOpen ? 'var(--text-main)' : 'var(--text-muted)'),
+          cursor: 'pointer',
+          transition: 'background 0.15s ease, color 0.15s ease, border-color 0.15s ease',
+          userSelect: 'none'
+        }}
+        onMouseEnter={e => {
+          e.currentTarget.style.background = 'var(--bg-card)';
+          e.currentTarget.style.borderColor = 'var(--border-subtle)';
+          e.currentTarget.style.color = 'var(--text-main)';
+        }}
+        onMouseLeave={e => {
+          e.currentTarget.style.background = isOpen ? 'var(--bg-card)' : 'transparent';
+          e.currentTarget.style.borderColor = isOpen ? 'var(--border-subtle)' : 'transparent';
+          e.currentTarget.style.color = isStreaming ? 'var(--primary-violet)' : (isOpen ? 'var(--text-main)' : 'var(--text-muted)');
+        }}
+      >
+        {isStreaming ? (
+          <div style={{ display: 'flex', gap: '3px', alignItems: 'center' }}>
+            {[0, 1, 2].map(i => (
+              <span
+                key={i}
+                style={{
+                  width: '4px',
+                  height: '4px',
+                  borderRadius: '50%',
+                  background: 'var(--primary-violet)',
+                  animation: `bounce-dot 1.2s ease-in-out ${i * 0.2}s infinite`
+                }}
+              />
+            ))}
+          </div>
+        ) : (
+          <Brain size={14} color="var(--primary-violet)" style={{ opacity: 0.9 }} />
+        )}
+        <span style={{ letterSpacing: '0.1px' }}>{headerText}</span>
+        <ChevronDown
+          size={13}
+          style={{
+            opacity: 0.7,
+            color: 'var(--text-muted)',
+            transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+            transition: 'transform 0.2s cubic-bezier(0.16, 1, 0.3, 1)'
+          }}
+        />
+      </button>
+
+      {/* Expanded Reasoning Narrative & Interactive Tool Headings */}
+      {isOpen && (
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '10px',
+          paddingLeft: '14px',
+          marginLeft: '6px',
+          borderLeft: '2px solid var(--border-subtle)',
+          marginTop: '2px',
+          marginBottom: '4px'
+        }}>
+          <style>{`
+            @keyframes cursor-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+            @keyframes pulse-dot { 0%, 100% { transform: scale(1); opacity: 0.7; } 50% { transform: scale(1.4); opacity: 1; } }
+            @keyframes bounce-dot { 0%, 80%, 100% { transform: translateY(0); } 40% { transform: translateY(-4px); } }
+          `}</style>
+
+          {groupedSteps.map((step, sidx) => {
+            if (step.type === 'phase_notice') {
+              return (
+                <div key={sidx} style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  fontSize: '0.76rem',
+                  fontWeight: '600',
+                  color: 'var(--primary-indigo)',
+                  background: 'var(--bg-card)',
+                  border: '1px solid var(--border-subtle)',
+                  borderRadius: '6px',
+                  padding: '3px 8px',
+                  alignSelf: 'flex-start'
+                }}>
+                  <Sparkles size={12} color="var(--primary-indigo)" />
+                  <span>{step.content}</span>
+                </div>
+              );
+            }
+
+            if (step.type === 'thought') {
+              const isLast = sidx === groupedSteps.length - 1;
+              const isActive = isLast && isStreaming;
+              return (
+                <div key={sidx} style={{
+                  fontSize: '0.84rem',
+                  color: 'var(--text-sub)',
+                  lineHeight: '1.65',
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word'
+                }}>
+                  {step.content}
+                  {isActive && (
+                    <span style={{
+                      display: 'inline-block',
+                      width: '2px',
+                      height: '13px',
+                      background: 'var(--primary-violet)',
+                      marginLeft: '3px',
+                      verticalAlign: 'middle',
+                      animation: 'cursor-blink 1s step-end infinite'
+                    }} />
+                  )}
+                </div>
+              );
+            }
+
+            if (step.type === 'tool_execution') {
+              const isToolOpen = !!expandedTools[sidx];
+              const summaryPreview = getToolSummaryPreview(step.arguments);
+              const isSuccess = step.exit_code === 0 || step.exit_code === null || step.exit_code === undefined;
+              const isRunning = isStreaming && !step.isCompleted;
+
+              const argsStr = typeof step.arguments === 'string'
+                ? step.arguments
+                : (step.arguments ? JSON.stringify(step.arguments, null, 2) : '');
+              const outputStr = typeof step.output === 'string'
+                ? step.output
+                : (step.output ? (typeof step.output === 'object' ? JSON.stringify(step.output, null, 2) : String(step.output)) : '');
+
+              return (
+                <div
+                  key={sidx}
+                  style={{
+                    borderRadius: '8px',
+                    border: '1px solid var(--border-subtle)',
+                    background: 'var(--bg-card)',
+                    overflow: 'hidden',
+                    transition: 'border-color 0.15s ease'
+                  }}
+                >
+                  {/* Clickable Tool Heading Row */}
+                  <div
+                    onClick={() => toggleTool(sidx)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      padding: '8px 12px',
+                      cursor: 'pointer',
+                      background: isToolOpen ? 'var(--bg-panel)' : 'transparent',
+                      userSelect: 'none',
+                      transition: 'background 0.15s ease'
+                    }}
+                    onMouseEnter={e => {
+                      if (!isToolOpen) e.currentTarget.style.background = 'var(--bg-panel)';
+                    }}
+                    onMouseLeave={e => {
+                      if (!isToolOpen) e.currentTarget.style.background = 'transparent';
+                    }}
+                  >
+                    {isToolOpen ? (
+                      <ChevronDown size={13} color="var(--text-muted)" style={{ flexShrink: 0 }} />
+                    ) : (
+                      <ChevronRight size={13} color="var(--text-muted)" style={{ flexShrink: 0 }} />
+                    )}
+
+                    <Terminal size={13} color="var(--primary-violet)" style={{ flexShrink: 0 }} />
+
+                    {/* Tool Name & Quick Args Summary Preview */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: 1, minWidth: 0 }}>
+                      <span style={{ fontSize: '0.8rem', fontWeight: '600', color: 'var(--text-main)', whiteSpace: 'nowrap' }}>
+                        {step.name}
+                      </span>
+                      {summaryPreview && (
+                        <span style={{
+                          fontSize: '0.74rem',
+                          color: 'var(--text-muted)',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap'
+                        }}>
+                          ({summaryPreview})
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Execution metadata & Status badge */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                      {step.execution_time_ms != null && (
+                        <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: '500' }}>
+                          {step.execution_time_ms}ms
+                        </span>
+                      )}
+                      <span style={{
+                        fontSize: '0.64rem',
+                        fontWeight: '700',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.5px',
+                        padding: '2px 8px',
+                        borderRadius: '12px',
+                        background: isRunning
+                          ? 'rgba(139, 92, 246, 0.12)'
+                          : (isSuccess ? 'rgba(16, 185, 129, 0.12)' : 'rgba(244, 63, 94, 0.12)'),
+                        color: isRunning
+                          ? 'var(--primary-violet)'
+                          : (isSuccess ? 'var(--primary-emerald)' : 'var(--accent-rose)'),
+                        border: `1px solid ${isRunning ? 'rgba(139, 92, 246, 0.3)' : (isSuccess ? 'rgba(16, 185, 129, 0.3)' : 'rgba(244, 63, 94, 0.3)')}`,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px'
+                      }}>
+                        {isRunning ? (
+                          <>
+                            <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: 'var(--primary-violet)', animation: 'pulse-dot 1.2s infinite' }} />
+                            Running
+                          </>
+                        ) : (
+                          isSuccess ? '✓ Done' : '✗ Error'
+                        )}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Inner Details Drawer: Arguments & Output */}
+                  {isToolOpen && (
+                    <div style={{
+                      padding: '10px 12px 12px 12px',
+                      borderTop: '1px solid var(--border-subtle)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '10px',
+                      background: 'var(--bg-panel)'
+                    }}>
+                      {/* Parameters / Input Block */}
+                      {argsStr && (
+                        <div style={{
+                          background: 'var(--bg-input)',
+                          border: '1px solid var(--border-subtle)',
+                          borderRadius: '6px',
+                          padding: '8px 10px'
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                            <span style={{ fontSize: '0.68rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--primary-violet)', letterSpacing: '0.5px' }}>
+                              Parameters / Input
+                            </span>
+                            {onCopy && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); onCopy(argsStr, `tool-args-${sidx}`); }}
+                                style={{
+                                  background: 'var(--bg-card)',
+                                  border: '1px solid var(--border-subtle)',
+                                  borderRadius: '4px',
+                                  cursor: 'pointer',
+                                  color: 'var(--text-sub)',
+                                  padding: '2px 6px',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '3px',
+                                  fontSize: '0.66rem'
+                                }}
+                              >
+                                <Copy size={11} />
+                                <span>Copy</span>
+                              </button>
+                            )}
+                          </div>
+                          <pre style={{
+                            margin: 0,
+                            padding: '8px 10px',
+                            borderRadius: '4px',
+                            background: 'var(--bg-dark)',
+                            border: '1px solid var(--border-subtle)',
+                            fontSize: '0.72rem',
+                            fontFamily: "var(--font-mono, 'Fira Code', monospace)",
+                            color: 'var(--text-main)',
+                            whiteSpace: 'pre-wrap',
+                            wordBreak: 'break-word',
+                            maxHeight: '160px',
+                            overflowY: 'auto',
+                            lineHeight: '1.5'
+                          }}>
+                            {argsStr}
+                          </pre>
+                        </div>
+                      )}
+
+                      {/* Output / Return Value Block */}
+                      {outputStr && (
+                        <div style={{
+                          background: 'var(--bg-input)',
+                          border: '1px solid var(--border-subtle)',
+                          borderRadius: '6px',
+                          padding: '8px 10px'
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                            <span style={{
+                              fontSize: '0.68rem',
+                              fontWeight: '700',
+                              textTransform: 'uppercase',
+                              color: isSuccess ? 'var(--primary-emerald)' : 'var(--accent-rose)',
+                              letterSpacing: '0.5px'
+                            }}>
+                              Result / Output
+                            </span>
+                            {onCopy && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); onCopy(outputStr, `tool-out-${sidx}`); }}
+                                style={{
+                                  background: 'var(--bg-card)',
+                                  border: '1px solid var(--border-subtle)',
+                                  borderRadius: '4px',
+                                  cursor: 'pointer',
+                                  color: 'var(--text-sub)',
+                                  padding: '2px 6px',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '3px',
+                                  fontSize: '0.66rem'
+                                }}
+                              >
+                                <Copy size={11} />
+                                <span>Copy</span>
+                              </button>
+                            )}
+                          </div>
+                          <pre style={{
+                            margin: 0,
+                            padding: '8px 10px',
+                            borderRadius: '4px',
+                            background: 'var(--bg-dark)',
+                            border: '1px solid var(--border-subtle)',
+                            fontSize: '0.72rem',
+                            fontFamily: "var(--font-mono, 'Fira Code', monospace)",
+                            color: isSuccess ? 'var(--text-main)' : 'var(--accent-rose)',
+                            whiteSpace: 'pre-wrap',
+                            wordBreak: 'break-word',
+                            maxHeight: '200px',
+                            overflowY: 'auto',
+                            lineHeight: '1.5'
+                          }}>
+                            {outputStr}
+                          </pre>
+                        </div>
+                      )}
+
+                      {isRunning && !argsStr && !outputStr && (
+                        <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', fontStyle: 'italic', padding: '4px 0' }}>
+                          Executing tool in background…
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            }
+
+            return null;
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function MessageList({
   messages = [],
@@ -26,44 +545,6 @@ export default function MessageList({
   }, [messages]);
 
   const renderMarkdown = (src) => parseMarkdownToHtml(src, { linkColor: 'var(--primary-violet)' });
-
-  const parseReasoning = (reasoning) => {
-    if (Array.isArray(reasoning)) return reasoning;
-    if (!reasoning || typeof reasoning !== 'string') return [];
-
-    const blocks = reasoning.split('\n\n');
-    const traces = [];
-
-    blocks.forEach(block => {
-      const trimmed = block.trim();
-      if (!trimmed) return;
-
-      if (trimmed.startsWith('🛠️')) {
-        const lines = trimmed.split('\n');
-        const title = lines[0].replace(/^🛠️\s*/, '');
-        const argsLine = lines.slice(1).join('\n').replace(/^Args:\s*/, '');
-        traces.push({ type: 'tool_call', name: title, arguments: argsLine });
-      } else if (trimmed.startsWith('⚡')) {
-        const lines = trimmed.split('\n');
-        const title = lines[0].replace(/^⚡\s*/, '');
-        let outputContent = lines.slice(1).join('\n').trim();
-        if (outputContent.startsWith('Output:')) {
-          outputContent = outputContent.substring(7).trim();
-        }
-        traces.push({ type: 'tool_result', title: title, output: outputContent || 'No stdout/stderr was produced.' });
-      } else {
-        const textContent = trimmed.replace(/^💭\s*/, '').trim();
-        const isTurnNotice = /turn\s*\d+|analyzing|synthesizing|invoking|planning|processing tool|query execution|active skills/i.test(textContent);
-        if (isTurnNotice) {
-          traces.push({ type: 'phase_notice', content: textContent });
-        } else {
-          traces.push({ type: 'thought', content: textContent });
-        }
-      }
-    });
-
-    return traces;
-  };
 
   const renderUserMessage = (content) => {
     let textStr = '';
@@ -371,253 +852,15 @@ export default function MessageList({
                     width: '100%',
                     minWidth: 0
                   }}>
-                    {/* Collapsible Reasoning & Tools Pill */}
+                    {/* ChatGPT-style Reasoning View with interactive tool headings */}
                     {hasReasoning && (
-                      <div style={{
-                        background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.05), rgba(99, 102, 241, 0.03))',
-                        border: '1px solid rgba(139, 92, 246, 0.22)',
-                        borderRadius: '12px',
-                        overflow: 'hidden',
-                        boxShadow: '0 2px 8px rgba(139, 92, 246, 0.04)'
-                      }}>
-                        {(() => {
-                          const steps = parseReasoning(m.reasoning);
-                          const toolSteps = steps.filter(s => s.type === 'tool_call' || s.type === 'tool_result');
-                          const phaseSteps = steps.filter(s => s.type === 'phase_notice');
-                          const lastTool = toolSteps.length > 0 ? toolSteps[toolSteps.length - 1] : null;
-                          const lastPhase = phaseSteps.length > 0 ? phaseSteps[phaseSteps.length - 1] : null;
-                          const lastThought = steps.filter(s => s.type === 'thought').slice(-1)[0];
-
-                          let headerTitle = 'Thought Process & Tool Execution';
-                          let latestStatusBadge = null;
-
-                          if (m.isStreaming) {
-                            if (lastTool?.type === 'tool_call') {
-                              headerTitle = `Running: ${lastTool.name}`;
-                              latestStatusBadge = 'Running';
-                            } else if (lastTool?.type === 'tool_result') {
-                              headerTitle = `Executed: ${lastTool.title}`;
-                              latestStatusBadge = 'Executed';
-                            } else if (lastPhase?.content) {
-                              headerTitle = lastPhase.content;
-                              latestStatusBadge = 'Planning';
-                            } else if (lastThought?.content) {
-                              const snippet = lastThought.content.length > 55 ? lastThought.content.substring(0, 55) + '...' : lastThought.content;
-                              headerTitle = snippet;
-                            } else {
-                              headerTitle = 'Analyzing & Executing Tools...';
-                            }
-                          } else {
-                            if (lastTool) {
-                              const lastToolName = lastTool.name || lastTool.title;
-                              headerTitle = `Executed: ${lastToolName}`;
-                              if (toolSteps.length > 1) {
-                                latestStatusBadge = `${Math.ceil(toolSteps.length / 2)} tools used`;
-                              }
-                            } else if (lastPhase?.content) {
-                              headerTitle = lastPhase.content;
-                              latestStatusBadge = 'Complete';
-                            } else {
-                              headerTitle = 'Thought Process & Synthesis Complete';
-                            }
-                          }
-
-                          return (
-                            <button
-                              type="button"
-                              onClick={() => setExpandedReasoning(prev => ({ ...prev, [idx]: !prev[idx] }))}
-                              style={{
-                                width: '100%',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'space-between',
-                                padding: '9px 14px',
-                                background: 'transparent',
-                                border: 'none',
-                                cursor: 'pointer',
-                                color: 'var(--text-main)',
-                                fontSize: '0.8rem',
-                                gap: '10px'
-                              }}
-                            >
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '9px', minWidth: 0, flex: 1 }}>
-                                <div className={m.isStreaming ? 'brain-badge-active' : ''} style={{
-                                  background: 'rgba(139, 92, 246, 0.15)',
-                                  borderRadius: '7px',
-                                  padding: '5px',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  flexShrink: 0
-                                }}>
-                                  <Brain
-                                    size={15}
-                                    color="var(--primary-violet)"
-                                    className={m.isStreaming ? 'brain-anim-active' : ''}
-                                  />
-                                </div>
-                                <span style={{
-                                  fontWeight: '600',
-                                  color: 'var(--primary-violet)',
-                                  letterSpacing: '0.2px',
-                                  whiteSpace: 'nowrap',
-                                  overflow: 'hidden',
-                                  textOverflow: 'ellipsis',
-                                  textAlign: 'left'
-                                }}>
-                                  {headerTitle}
-                                </span>
-                                {latestStatusBadge && (
-                                  <span style={{
-                                    fontSize: '0.68rem',
-                                    fontWeight: '700',
-                                    padding: '2px 7px',
-                                    borderRadius: '10px',
-                                    background: m.isStreaming ? 'rgba(16, 185, 129, 0.18)' : 'rgba(139, 92, 246, 0.14)',
-                                    color: m.isStreaming ? 'var(--primary-emerald)' : 'var(--primary-violet)',
-                                    border: `1px solid ${m.isStreaming ? 'rgba(16, 185, 129, 0.35)' : 'rgba(139, 92, 246, 0.25)'}`,
-                                    textTransform: 'uppercase',
-                                    letterSpacing: '0.5px',
-                                    flexShrink: 0
-                                  }}>
-                                    {latestStatusBadge}
-                                  </span>
-                                )}
-                              </div>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '5px', color: 'var(--primary-violet)', opacity: 0.85, flexShrink: 0 }}>
-                                <span style={{ fontSize: '0.74rem', fontWeight: '500' }}>{isReasoningOpen ? 'Hide' : 'View traces'}</span>
-                                {isReasoningOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                              </div>
-                            </button>
-                          );
-                        })()}
-
-                        {isReasoningOpen && (
-                          <div style={{
-                            padding: '14px 16px',
-                            borderTop: '1px solid rgba(139, 92, 246, 0.15)',
-                            background: 'rgba(139, 92, 246, 0.02)',
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: '12px'
-                          }}>
-                            {parseReasoning(m.reasoning).map((step, sidx) => {
-                              if (step.type === 'phase_notice') {
-                                return (
-                                  <div key={sidx} style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '10px',
-                                    padding: '9px 14px',
-                                    borderRadius: '9px',
-                                    background: 'linear-gradient(90deg, rgba(99, 102, 241, 0.12), rgba(6, 182, 212, 0.05))',
-                                    border: '1px solid rgba(99, 102, 241, 0.28)',
-                                    boxShadow: '0 2px 6px rgba(0, 0, 0, 0.06)'
-                                  }}>
-                                    <Sparkles size={14} color="var(--primary-cyan, #06b6d4)" style={{ flexShrink: 0 }} />
-                                    <div style={{ fontSize: '0.82rem', fontWeight: '650', color: 'var(--text-main)', letterSpacing: '0.15px' }}>
-                                      {step.content}
-                                    </div>
-                                  </div>
-                                );
-                              }
-                              if (step.type === 'thought' || step.type === 'text') {
-                                return (
-                                  <div key={sidx} style={{
-                                    display: 'flex',
-                                    gap: '10px',
-                                    alignItems: 'flex-start',
-                                    padding: '9px 14px',
-                                    borderRadius: '9px',
-                                    background: 'rgba(139, 92, 246, 0.05)',
-                                    border: '1px solid rgba(139, 92, 246, 0.14)'
-                                  }}>
-                                    <Brain size={14} color="var(--primary-violet)" style={{ marginTop: '2px', flexShrink: 0 }} />
-                                    <div style={{ fontSize: '0.8rem', color: 'var(--text-main)', lineHeight: '1.55', whiteSpace: 'pre-wrap', fontStyle: 'italic' }}>
-                                      {step.content}
-                                    </div>
-                                  </div>
-                                );
-                              }
-                              if (step.type === 'tool_call') {
-                                return (
-                                  <div key={sidx} style={{
-                                    display: 'flex',
-                                    gap: '10px',
-                                    alignItems: 'flex-start',
-                                    padding: '8px 12px',
-                                    borderRadius: '8px',
-                                    background: 'rgba(16, 185, 129, 0.06)',
-                                    border: '1px solid rgba(16, 185, 129, 0.18)'
-                                  }}>
-                                    <Terminal size={14} color="var(--primary-emerald)" style={{ marginTop: '2px', flexShrink: 0 }} />
-                                    <div style={{ flex: 1, minWidth: 0 }}>
-                                      <span style={{ fontSize: '0.76rem', fontWeight: '700', color: 'var(--primary-emerald)' }}>
-                                        {step.name}
-                                      </span>
-                                      {step.arguments && (
-                                        <pre style={{
-                                          margin: '6px 0 0 0',
-                                          padding: '8px 12px',
-                                          background: 'var(--bg-input)',
-                                          border: '1px solid var(--border-subtle)',
-                                          borderRadius: '8px',
-                                          fontSize: '0.74rem',
-                                          color: 'var(--text-main)',
-                                          whiteSpace: 'pre-wrap',
-                                          wordBreak: 'break-all'
-                                        }}>
-                                          {step.arguments}
-                                        </pre>
-                                      )}
-                                    </div>
-                                  </div>
-                                );
-                              }
-                              if (step.type === 'tool_result') {
-                                return (
-                                  <div key={sidx} style={{
-                                    display: 'flex',
-                                    gap: '10px',
-                                    alignItems: 'flex-start',
-                                    padding: '8px 12px',
-                                    borderRadius: '8px',
-                                    background: 'rgba(245, 158, 11, 0.06)',
-                                    border: '1px solid rgba(245, 158, 11, 0.18)'
-                                  }}>
-                                    <Code2 size={14} color="var(--accent-amber)" style={{ marginTop: '2px', flexShrink: 0 }} />
-                                    <div style={{ flex: 1, minWidth: 0 }}>
-                                      <span style={{ fontSize: '0.76rem', fontWeight: '700', color: 'var(--accent-amber)' }}>
-                                        {step.title}
-                                      </span>
-                                      <pre style={{
-                                        margin: '6px 0 0 0',
-                                        padding: '10px 12px',
-                                        background: 'var(--bg-input)',
-                                        border: '1px solid rgba(245, 158, 11, 0.2)',
-                                        borderRadius: '8px',
-                                        fontSize: '0.74rem',
-                                        color: 'var(--text-main)',
-                                        maxHeight: '200px',
-                                        overflowY: 'auto',
-                                        whiteSpace: 'pre-wrap',
-                                        wordBreak: 'break-all'
-                                      }}>
-                                        {step.output}
-                                      </pre>
-                                    </div>
-                                  </div>
-                                );
-                              }
-                              return (
-                                <div key={sidx} style={{ fontSize: '0.78rem', color: 'var(--text-sub)' }}>
-                                  {step.content}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
+                      <ReasoningSection
+                        reasoning={m.reasoning}
+                        isStreaming={m.isStreaming}
+                        isOpen={isReasoningOpen}
+                        onToggle={() => setExpandedReasoning(prev => ({ ...prev, [idx]: !isReasoningOpen }))}
+                        onCopy={copyText ? (text, key) => copyText(text, key) : null}
+                      />
                     )}
 
                     {/* Main Assistant Markdown Body */}

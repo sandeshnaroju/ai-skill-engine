@@ -1094,93 +1094,114 @@ class SkillEngine:
                 turn_usage = None
                 in_think_tag = False
 
-                for chunk in response_stream:
-                    if getattr(chunk, "usage", None):
-                        turn_usage = chunk.usage
-                    if not chunk.choices:
-                        continue
-                    choice = chunk.choices[0]
-                    delta = choice.delta
+                try:
+                    for chunk in response_stream:
+                        if getattr(chunk, "usage", None):
+                            turn_usage = chunk.usage
+                        if not chunk.choices:
+                            continue
+                        choice = chunk.choices[0]
+                        delta = choice.delta
 
-                    # 1. Extract dedicated reasoning / thought tokens (Gemini, DeepSeek, OpenRouter, Anthropic CoT)
-                    raw_thought = (
-                        getattr(delta, "reasoning_content", None) or
-                        getattr(delta, "reasoning", None) or
-                        getattr(delta, "thought", None) or
-                        getattr(delta, "thoughts", None)
-                    )
-                    # Check extra_content for Google Gemini thought / reasoning
-                    if not raw_thought:
-                        extra_c = getattr(delta, "extra_content", None)
-                        if isinstance(extra_c, dict):
-                            g_data = extra_c.get("google") or {}
-                            if isinstance(g_data, dict):
-                                raw_thought = g_data.get("thought") or g_data.get("thought_signature")
+                        # 1. Extract dedicated reasoning / thought tokens (Gemini, DeepSeek, OpenRouter, Anthropic CoT)
+                        raw_thought = (
+                            getattr(delta, "reasoning_content", None) or
+                            getattr(delta, "reasoning", None) or
+                            getattr(delta, "thought", None) or
+                            getattr(delta, "thoughts", None)
+                        )
+                        # Check extra_content for Google Gemini thought / reasoning
+                        if not raw_thought:
+                            extra_c = getattr(delta, "extra_content", None)
+                            if isinstance(extra_c, dict):
+                                g_data = extra_c.get("google") or {}
+                                if isinstance(g_data, dict):
+                                    raw_thought = g_data.get("thought") or g_data.get("thought_signature")
 
-                    thought_text = ""
-                    if isinstance(raw_thought, str):
-                        # If it is an opaque thought_signature hash, don't spam raw hash; indicate reasoning activity
-                        if raw_thought.startswith("E") and len(raw_thought) > 100:
-                            thought_text = "Thinking..."
-                        else:
-                            thought_text = raw_thought
-                    elif isinstance(raw_thought, dict):
-                        thought_text = raw_thought.get("text") or raw_thought.get("content") or json.dumps(raw_thought)
-
-                    if thought_text:
-                        yield _chunk(session_id, model_name, reasoning=thought_text)
-
-                    # 2. Extract content & handle inline <think> tags (e.g., local Ollama / vLLM DeepSeek R1 models)
-                    if delta.content:
-                        content_piece = delta.content
-                        if "<think>" in content_piece:
-                            in_think_tag = True
-                            parts = content_piece.split("<think>", 1)
-                            if parts[0]:
-                                full_text += parts[0]
-                                yield f"data: {json.dumps({'id': f'chatcmpl-{session_id}', 'object': 'chat.completion.chunk', 'created': 1700000000, 'model': model_name, 'choices': [{'index': 0, 'delta': {'content': parts[0]}, 'finish_reason': choice.finish_reason}]})}\n\n"
-                            content_piece = parts[1] if len(parts) > 1 else ""
-
-                        if in_think_tag:
-                            if "</think>" in content_piece:
-                                think_part, rest = content_piece.split("</think>", 1)
-                                if think_part:
-                                    yield _chunk(session_id, model_name, reasoning=think_part)
-                                in_think_tag = False
-                                content_piece = rest
+                        thought_text = ""
+                        if isinstance(raw_thought, str):
+                            # If it is an opaque thought_signature hash, don't spam raw hash; indicate reasoning activity
+                            if raw_thought.startswith("E") and len(raw_thought) > 100:
+                                thought_text = "Thinking..."
                             else:
-                                if content_piece:
-                                    yield _chunk(session_id, model_name, reasoning=content_piece)
-                                content_piece = ""
+                                thought_text = raw_thought
+                        elif isinstance(raw_thought, dict):
+                            thought_text = raw_thought.get("text") or raw_thought.get("content") or json.dumps(raw_thought)
 
-                        if content_piece:
-                            full_text += content_piece
-                            final_answer = full_text
-                            yield f"data: {json.dumps({'id': f'chatcmpl-{session_id}', 'object': 'chat.completion.chunk', 'created': 1700000000, 'model': model_name, 'choices': [{'index': 0, 'delta': {'content': content_piece}, 'finish_reason': choice.finish_reason}]})}\n\n"
+                        if thought_text:
+                            yield _chunk(session_id, model_name, reasoning=thought_text)
 
-                    if delta.tool_calls:
-                        for tc in delta.tool_calls:
-                            tc_idx = tc.index
-                            if tc_idx is None:
-                                if tc.id:
-                                    if tc.id not in id_to_index:
-                                        id_to_index[tc.id] = len(id_to_index)
-                                    tc_idx = id_to_index[tc.id]
+                        # 2. Extract content & handle inline <think> tags (e.g., local Ollama / vLLM DeepSeek R1 models)
+                        if delta.content:
+                            content_piece = delta.content
+                            if "<think>" in content_piece:
+                                in_think_tag = True
+                                parts = content_piece.split("<think>", 1)
+                                if parts[0]:
+                                    full_text += parts[0]
+                                    yield f"data: {json.dumps({'id': f'chatcmpl-{session_id}', 'object': 'chat.completion.chunk', 'created': 1700000000, 'model': model_name, 'choices': [{'index': 0, 'delta': {'content': parts[0]}, 'finish_reason': choice.finish_reason}]})}\n\n"
+                                content_piece = parts[1] if len(parts) > 1 else ""
+
+                            if in_think_tag:
+                                if "</think>" in content_piece:
+                                    think_part, rest = content_piece.split("</think>", 1)
+                                    if think_part:
+                                        yield _chunk(session_id, model_name, reasoning=think_part)
+                                    in_think_tag = False
+                                    content_piece = rest
                                 else:
-                                    tc_idx = last_idx
-                            last_idx = tc_idx
+                                    if content_piece:
+                                        yield _chunk(session_id, model_name, reasoning=content_piece)
+                                    content_piece = ""
 
-                            if tc_idx not in tool_calls_accumulator:
-                                tool_calls_accumulator[tc_idx] = {"id": tc.id or f"call_{tc_idx}", "type": "function", "function": {"name": "", "arguments": ""}}
-                            if tc.function and tc.function.name:
-                                tool_calls_accumulator[tc_idx]["function"]["name"] += tc.function.name
-                            if tc.function and tc.function.arguments:
-                                tool_calls_accumulator[tc_idx]["function"]["arguments"] += tc.function.arguments
-                            extra = getattr(tc, "extra_content", None)
-                            if extra:
-                                extra = extra.model_dump() if hasattr(extra, "model_dump") else extra.dict() if hasattr(extra, "dict") else extra
-                                tool_calls_accumulator[tc_idx]["extra_content"] = extra
+                            if content_piece:
+                                full_text += content_piece
+                                final_answer = full_text
+                                yield f"data: {json.dumps({'id': f'chatcmpl-{session_id}', 'object': 'chat.completion.chunk', 'created': 1700000000, 'model': model_name, 'choices': [{'index': 0, 'delta': {'content': content_piece}, 'finish_reason': choice.finish_reason}]})}\n\n"
 
+                        if delta.tool_calls:
+                            for tc in delta.tool_calls:
+                                tc_idx = tc.index
+                                if tc_idx is None:
+                                    if tc.id:
+                                        if tc.id not in id_to_index:
+                                            id_to_index[tc.id] = len(id_to_index)
+                                        tc_idx = id_to_index[tc.id]
+                                    else:
+                                        tc_idx = last_idx
+                                last_idx = tc_idx
+
+                                if tc_idx not in tool_calls_accumulator:
+                                    tool_calls_accumulator[tc_idx] = {"id": tc.id or f"call_{tc_idx}", "type": "function", "function": {"name": "", "arguments": ""}}
+                                if tc.function and tc.function.name:
+                                    tool_calls_accumulator[tc_idx]["function"]["name"] += tc.function.name
+                                if tc.function and tc.function.arguments:
+                                    tool_calls_accumulator[tc_idx]["function"]["arguments"] += tc.function.arguments
+                                extra = getattr(tc, "extra_content", None)
+                                if extra:
+                                    extra = extra.model_dump() if hasattr(extra, "model_dump") else extra.dict() if hasattr(extra, "dict") else extra
+                                    tool_calls_accumulator[tc_idx]["extra_content"] = extra
+
+                except Exception as stream_err:
+                    # The upstream LLM connection dropped mid-stream (network timeout, provider EOF, etc.).
+                    # Emit a friendly error chunk so the frontend can display it, then fall through
+                    # to the normal finalization path so [DONE] is always sent.
+                    err_msg = f"Stream interrupted: {stream_err}"
+                    print(f"[stream_openai_chat] LLM stream error on turn {turn}: {stream_err}")
+                    err_content = f"\n\n> ⚠️ {err_msg}"
+                    yield f"data: {json.dumps({'id': f'chatcmpl-{session_id}', 'object': 'chat.completion.chunk', 'created': 1700000000, 'model': model_name, 'choices': [{'index': 0, 'delta': {'content': err_content}, 'finish_reason': 'stop'}]})}\n\n"
+                    # Treat whatever we accumulated so far as the final answer and break out of turns
+                    final_answer = full_text
+                    arts_list = list(accumulated_artifacts.values())
+                    if persist and session_obj:
+                        save_message(db, session_obj, "assistant", content=final_answer or err_msg,
+                                     artifact_data=arts_list if arts_list else None)
+                    finalize_request(db, chat_req, final_answer or err_msg, executed_logs, start_time,
+                                     accumulated_usage if accumulated_usage["prompt_tokens"] else None,
+                                     in_r, out_r, au_in_r, au_out_r, model_name=model_name)
+                    yield f"data: {json.dumps({'type': 'done', 'request_id': request_id, 'tools_called': len(executed_logs), 'artifacts': arts_list})}\n\n"
+                    yield "data: [DONE]\n\n"
+                    return
 
                 # Accumulate this turn's token usage into the running total.
                 if turn_usage:
@@ -1366,7 +1387,7 @@ class SkillEngine:
             if persist and session_obj:
                 save_message(db, session_obj, "assistant", content=final_answer,
                              json_data=last_extracted_json, code=last_extracted_code,
-                             artifact_data=last_artifact_data)
+                             artifact_data=arts_list if arts_list else None)
 
             finalize_request(db, chat_req, final_answer, executed_logs, start_time,
                              accumulated_usage if accumulated_usage["prompt_tokens"] else None,

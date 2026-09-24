@@ -78,8 +78,30 @@ function parseKMLtoGeoJSON(kmlText) {
   return { type: 'FeatureCollection', features };
 }
 
-export default function GisViewer({ fullContent, artifact, filename = 'map.geojson' }) {
-  const [theme, setTheme] = useState('dark');
+export default function GisViewer({ fullContent, artifact, filename = 'map.geojson', theme: propTheme }) {
+  const [theme, setTheme] = useState(() => {
+    if (propTheme) return propTheme;
+    const docTheme = typeof document !== 'undefined' ? document.documentElement.getAttribute('data-theme') : null;
+    if (docTheme === 'light' || docTheme === 'dark') return docTheme;
+    const saved = typeof localStorage !== 'undefined' ? localStorage.getItem('app_theme') : null;
+    return (saved === 'light' || saved === 'dark') ? saved : 'dark';
+  });
+
+  useEffect(() => {
+    if (propTheme && propTheme !== theme) {
+      setTheme(propTheme);
+    }
+  }, [propTheme]);
+
+  useEffect(() => {
+    const handleAppTheme = (e) => {
+      if (e.detail?.theme && (e.detail.theme === 'light' || e.detail.theme === 'dark')) {
+        setTheme(e.detail.theme);
+      }
+    };
+    window.addEventListener('app-theme-change', handleAppTheme);
+    return () => window.removeEventListener('app-theme-change', handleAppTheme);
+  }, []);
   const [selectedFeature, setSelectedFeature] = useState(null);
   const [showTable, setShowTable] = useState(false);
   const [zoom, setZoom] = useState(1);
@@ -297,8 +319,14 @@ export default function GisViewer({ fullContent, artifact, filename = 'map.geojs
           </button>
 
           <button
-            onClick={() => setTheme(isDark ? 'light' : 'dark')}
-            title="Toggle Map Backdrop"
+            onClick={() => {
+              const next = isDark ? 'light' : 'dark';
+              setTheme(next);
+              localStorage.setItem('app_theme', next);
+              document.documentElement.setAttribute('data-theme', next);
+              window.dispatchEvent(new CustomEvent('app-theme-change', { detail: { theme: next } }));
+            }}
+            title={isDark ? 'Switch to Day / Light Mode' : 'Switch to Night / Dark Mode'}
             style={{
               padding: '6px',
               borderRadius: '6px',
