@@ -139,6 +139,9 @@ def execute_tool(fn_name: str, args: dict, tool_def: dict, user_data: dict,
             exec_res = run_send_email_tool(db, args=exec_args, tenant=tenant)
         elif fn_name in ("artifact_editor__open_or_update_artifact", "open_or_update_artifact"):
             exec_res = run_open_or_update_artifact(db, exec_args, tenant, session_id=session_id)
+        elif fn_name in ("pcb_designer__design_pcb_board", "design_pcb_board"):
+            exec_args.setdefault("artifact_type", "pcb")
+            exec_res = run_open_or_update_artifact(db, exec_args, tenant, session_id=session_id)
         elif fn_name in ("artifact_editor__open_uploaded_file_as_artifact", "open_uploaded_file_as_artifact"):
             exec_res = run_open_uploaded_file_as_artifact(db, exec_args, tenant, session_id=session_id)
         elif fn_name in ("artifact_editor__search_artifacts", "artifact_search"):

@@ -12,6 +12,7 @@ from .spreadsheets import _parse_spreadsheet
 from .presentations import _parse_pptx
 from .cad import _parse_cad_2d, _parse_cad_3d
 from .engineering import _parse_gis, _parse_engineering_data, _parse_diagram
+from .pcb import _parse_pcb_file, parse_eda_file
 from .code import _parse_code_file
 from .media import _parse_image_file
 
@@ -108,6 +109,23 @@ def import_file_to_artifact_data(filepath: str, title: Optional[str] = None, exp
     elif ext in (".geojson", ".kml", ".kmz", ".shp"):
         artifact_type = "gis"
         content, blocks = _parse_gis(filepath, display_filename, ext)
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # 6b. Electronic Circuits & PCB Layouts (.pcb.json, .kicad_pcb, .eda, .eda.json, .easyeda, .gbr, .gerber, .drl, .dsn)
+    # ─────────────────────────────────────────────────────────────────────────
+    elif ext in (".pcb.json", ".kicad_pcb", ".eda", ".easyeda", ".gbr", ".gerber", ".gtl", ".gbl", ".gts", ".gbs", ".gto", ".gbo", ".gko", ".drl", ".dsn") or display_filename.endswith((".pcb.json", ".eda.json", ".easyeda.json")):
+        artifact_type = "pcb"
+        if ext in (".eda", ".easyeda") or display_filename.endswith((".eda.json", ".easyeda.json")):
+            try:
+                with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+                    raw_txt = f.read()
+                res = parse_eda_file(filepath, raw_txt)
+                content = res.get("content", "")
+                blocks = res.get("blocks", [])
+            except Exception:
+                content, blocks = _parse_pcb_file(filepath, display_filename, ext)
+        else:
+            content, blocks = _parse_pcb_file(filepath, display_filename, ext)
 
     # ─────────────────────────────────────────────────────────────────────────
     # 7. Industrial / Logic / Engineering (.l5x, .l5k, .xer, .s7p, .m, .slx)

@@ -57,6 +57,8 @@ def run_open_or_update_artifact(db, args: dict, tenant, session_id: str) -> dict
             artifact_type = "diagram"
         elif fn.endswith((".l5x", ".l5k", ".s7p", ".xer", ".m", ".slx")):
             artifact_type = "engineering_data"
+        elif fn.endswith((".pcb.json", ".kicad_pcb", ".gbr", ".gerber", ".drl", ".dsn")):
+            artifact_type = "pcb"
         elif fn.endswith((".py", ".js", ".jsx", ".ts", ".tsx", ".html", ".css", ".json", ".sql", ".sh")):
             artifact_type = "code"
         else:

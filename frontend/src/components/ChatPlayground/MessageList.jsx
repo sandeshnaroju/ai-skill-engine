@@ -2,7 +2,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
   Bot, User, Brain, MessageSquare, Sparkles, Terminal, Code2,
   Copy, Check, FileText, ChevronUp, ChevronDown, ChevronRight, Loader, ExternalLink,
-  Table, Presentation, Image, Video, ArrowRight, Globe, Activity, FileSpreadsheet
+  Table, Presentation, Image, Video, ArrowRight, Globe, Activity, FileSpreadsheet,
+  Cpu, Layers, Box
 } from 'lucide-react';
 import ProChat from 'prochat';
 import { parseMarkdownToHtml } from '../MarkdownViewer';
@@ -917,8 +918,12 @@ export default function MessageList({
                                   alignItems: 'center',
                                   justifyContent: 'center'
                                 }}>
-                                  {art.artifact_type === 'video' || (art.title && art.title.toLowerCase().includes('video')) ? (
+                                  {art.artifact_type === 'pcb' || (art.filename && art.filename.toLowerCase().endsWith('.pcb.json')) ? (
+                                    <Cpu size={18} color="#06b6d4" />
+                                  ) : art.artifact_type === 'video' || (art.title && art.title.toLowerCase().includes('video')) ? (
                                     <Video size={18} color="#06b6d4" />
+                                  ) : art.artifact_type === 'cad_2d' || art.artifact_type === 'cad_3d' || (art.filename && (art.filename.endsWith('.dxf') || art.filename.endsWith('.step'))) ? (
+                                    <Layers size={18} color="#3b82f6" />
                                   ) : art.artifact_type === 'presentation' || (art.title && art.title.toLowerCase().includes('slide')) ? (
                                     <Presentation size={18} color="var(--primary-violet)" />
                                   ) : art.artifact_type === 'spreadsheet' || (art.title && art.title.toLowerCase().includes('sheet')) ? (

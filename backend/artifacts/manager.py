@@ -311,6 +311,44 @@ def decompose_content(content: str, artifact_type: str) -> List[Dict]:
                     "order_index": idx
                 })
 
+    elif artifact_type == "pcb" and content:
+        # Preserve full PCB JSON / layout model as primary block
+        blocks.append({
+            "block_key": "main_pcb",
+            "title": "PCB Layout & Netlist",
+            "content": content,
+            "order_index": 0
+        })
+        try:
+            pcb_data = json.loads(content)
+            if isinstance(pcb_data, dict):
+                idx = 1
+                if "schematic" in pcb_data:
+                    blocks.append({
+                        "block_key": "sec_schematic",
+                        "title": "Circuit Schematic",
+                        "content": json.dumps(pcb_data["schematic"], indent=2),
+                        "order_index": idx
+                    })
+                    idx += 1
+                if "components" in pcb_data:
+                    blocks.append({
+                        "block_key": "sec_components",
+                        "title": "BOM & Placements",
+                        "content": json.dumps(pcb_data["components"], indent=2),
+                        "order_index": idx
+                    })
+                    idx += 1
+                if "traces" in pcb_data or "vias" in pcb_data:
+                    blocks.append({
+                        "block_key": "sec_routing",
+                        "title": "Copper Routing & Vias",
+                        "content": json.dumps({"traces": pcb_data.get("traces", []), "vias": pcb_data.get("vias", [])}, indent=2),
+                        "order_index": idx
+                    })
+        except Exception:
+            pass
+
     if not blocks:
         blocks.append({
             "block_key": "main_block",
@@ -341,6 +379,11 @@ def assemble_full_content(artifact: SessionArtifact) -> str:
                 return json.dumps({"sheets": sheets}, indent=2)
         except Exception:
             pass
+
+    if artifact.artifact_type == "pcb":
+        primary = next((b for b in artifact.blocks if b.block_key == "main_pcb"), None)
+        if primary:
+            return primary.content
 
     # For CAD artifacts, return only the primary full-drawing block to avoid
     # duplicating content (main_drawing block already contains the full DXF/model;

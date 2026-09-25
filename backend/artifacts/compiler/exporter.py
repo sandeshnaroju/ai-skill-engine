@@ -13,6 +13,16 @@ from .docx import compile_to_docx
 from .xlsx import compile_to_xlsx
 from .pptx import compile_to_pptx
 from .pdf import compile_to_pdf
+from .pcb import (
+    compile_to_gerber_zip,
+    compile_to_kicad_pcb,
+    compile_to_bom_csv,
+    compile_to_centroid_csv,
+    export_to_eda_pcb,
+    export_to_spice_netlist,
+    run_circuit_simulation,
+)
+import json
 
 
 def export_artifact(artifact: SessionArtifact, target_format: str = None) -> Tuple[bytes, str, str]:
@@ -24,7 +34,47 @@ def export_artifact(artifact: SessionArtifact, target_format: str = None) -> Tup
     ext = ext.lower().lstrip(".")
     base_name = artifact.filename.rsplit(".", 1)[0] if "." in artifact.filename else artifact.filename
 
-    if ext == "docx" or (ext == "doc" and artifact.artifact_type == "document"):
+    # PCB & Circuit Exports
+    if ext in ("gerber_zip", "gerber", "gbr") or (ext == "zip" and getattr(artifact, "artifact_type", None) == "pcb"):
+        content = assemble_full_content(artifact)
+        zip_bytes = compile_to_gerber_zip(content, base_name=base_name)
+        return zip_bytes, "application/zip", f"{base_name}_gerbers.zip"
+
+    elif ext in ("eda", "eda_json", "eda_pcb", "easyeda", "easyeda_json"):
+        content = assemble_full_content(artifact)
+        try:
+            circuit_data = json.loads(content)
+        except Exception:
+            circuit_data = {}
+        eda_obj = export_to_eda_pcb(circuit_data)
+        out_str = json.dumps(eda_obj, indent=2)
+        return out_str.encode("utf-8"), "application/json", f"{base_name}_eda.json"
+
+    elif ext in ("spice", "spice_netlist", "cir"):
+        content = assemble_full_content(artifact)
+        try:
+            circuit_data = json.loads(content)
+        except Exception:
+            circuit_data = {}
+        spice_net = export_to_spice_netlist(circuit_data)
+        return spice_net.encode("utf-8"), "text/plain", f"{base_name}.cir"
+
+    elif ext in ("kicad_pcb", "kicad") or (getattr(artifact, "artifact_type", None) == "pcb" and ext == "kicad_pcb"):
+        content = assemble_full_content(artifact)
+        kicad_str = compile_to_kicad_pcb(content)
+        return kicad_str.encode("utf-8"), "text/plain", f"{base_name}.kicad_pcb"
+
+    elif ext in ("bom_csv", "bom"):
+        content = assemble_full_content(artifact)
+        bom_str = compile_to_bom_csv(content)
+        return bom_str.encode("utf-8"), "text/csv", f"{base_name}_BOM.csv"
+
+    elif ext in ("centroid_csv", "cpl"):
+        content = assemble_full_content(artifact)
+        cpl_str = compile_to_centroid_csv(content)
+        return cpl_str.encode("utf-8"), "text/csv", f"{base_name}_CPL.csv"
+
+    elif ext == "docx" or (ext == "doc" and artifact.artifact_type == "document"):
         buf = compile_to_docx(artifact)
         return buf.read(), "application/vnd.openxmlformats-officedocument.wordprocessingml.document", f"{base_name}.docx"
 

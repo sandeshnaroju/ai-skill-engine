@@ -16,11 +16,11 @@ tools:
           description: File name with extension (e.g. main.py, agreement.docx, pitch_deck.pptx, model.xlsx, drawing.dxf, part.step, map.geojson, schedule.xer).
         artifact_type:
           type: string
-          enum: ["code", "document", "spreadsheet", "presentation", "diagram_svg", "image", "audio", "video", "cad_2d", "cad_3d", "gis", "diagram", "engineering_data"]
+          enum: ["code", "document", "spreadsheet", "presentation", "diagram_svg", "image", "audio", "video", "cad_2d", "cad_3d", "gis", "pcb", "diagram", "engineering_data"]
           description: Category of artifact.
         language:
           type: string
-          description: Programming, markup, CAD, or data language (e.g. python, javascript, markdown, svg, json, dxf, step, geojson, xml).
+          description: Programming, markup, CAD, or data language (e.g. python, javascript, markdown, svg, json, dxf, step, geojson, pcb, xml).
         content:
           type: string
           description: Complete raw content of the artifact.
@@ -29,14 +29,14 @@ tools:
         - filename
         - artifact_type
   - name: open_uploaded_file_as_artifact
-    description: Open an uploaded user file (document, spreadsheet, presentation, PDF, CAD drawing, 3D model, GIS map, industrial engineering file, image, audio/video, or code script) in the interactive Canvas Artifact Editor. Call this whenever the user asks to inspect, open, view, or edit a file they previously uploaded or provided in chat (e.g. "open this report in canvas", "edit slide 2 in this presentation", "review this spreadsheet", "inspect this 3D model", "view this generated image").
+    description: Open an uploaded user file (document, spreadsheet, presentation, PDF, CAD drawing, 3D model, GIS map, PCB layout, industrial engineering file, image, audio/video, or code script) in the interactive Canvas Artifact Editor. Call this whenever the user asks to inspect, open, view, or edit a file they previously uploaded or provided in chat (e.g. "open this report in canvas", "edit slide 2 in this presentation", "review this spreadsheet", "inspect this 3D model", "view this PCB board").
     type: code
     parameters:
       type: object
       properties:
         filename:
           type: string
-          description: Name of the uploaded file (e.g. "quarterly_earnings.xlsx", "contract.docx", "pitch.pptx", "part.step", "model.dxf", "diagram.png").
+          description: Name of the uploaded file (e.g. "quarterly_earnings.xlsx", "contract.docx", "pitch.pptx", "part.step", "model.dxf", "board.pcb.json").
         file_path:
           type: string
           description: Optional sandbox path of the file if known (e.g. "sandbox/uploads/tenant/file.pdf").
@@ -45,7 +45,7 @@ tools:
           description: Optional display title for the Canvas header.
         artifact_type:
           type: string
-          enum: ["code", "document", "spreadsheet", "presentation", "pdf", "image", "cad_2d", "cad_3d", "gis", "diagram", "engineering_data", "audio", "video"]
+          enum: ["code", "document", "spreadsheet", "presentation", "pdf", "image", "cad_2d", "cad_3d", "gis", "pcb", "diagram", "engineering_data", "audio", "video"]
           description: Optional explicit artifact type override.
       required:
         - filename
