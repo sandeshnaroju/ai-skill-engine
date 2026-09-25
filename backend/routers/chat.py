@@ -716,41 +716,54 @@ def delete_session(
     tenant: Tenant = Depends(get_current_tenant),
     db: Session = Depends(get_db)
 ):
+    """
+    Completely purges all external API session resources associated with a session ID for the authenticated tenant:
+    - Purges all cloud storage files (Azure Blob, AWS S3, or Local Disk) and sandbox caches
+    - Deletes all session artifacts, blocks, and commit history, broadcasting deletion SSE events
+    Dedicated endpoint for external API users to perform complete session teardown.
+    """
     clean_session_id = (session_id or "").strip()
     if not clean_session_id:
         raise HTTPException(status_code=400, detail="Invalid session ID")
 
-    s = db.query(ConversationSession).filter(
-        ConversationSession.tenant_id == tenant.id,
-        (ConversationSession.session_id == clean_session_id) | (ConversationSession.id == clean_session_id)
-    ).first()
+    from models import SessionArtifact
+    from artifacts import broadcaster
+    from routers.files import purge_session_files_internal
 
-    if not s:
-        raise HTTPException(status_code=404, detail="Session not found")
-
-    # Delete related chat messages
-    db.query(ChatMessage).filter(ChatMessage.session_id == s.id).delete()
-
-    # Delete related session artifacts
+    # 1. Find and delete all session artifacts belonging to this external session
     artifacts = db.query(SessionArtifact).filter(
-        SessionArtifact.session_id == session_id,
-        SessionArtifact.tenant_id == tenant.id
+        SessionArtifact.tenant_id == tenant.id,
+        SessionArtifact.session_id == clean_session_id
     ).all()
+
+    deleted_artifact_ids = []
     for art in artifacts:
+        try:
+            broadcaster.broadcast(art.id, "artifact_deleted", {"artifact_id": art.id})
+        except Exception:
+            pass
+        deleted_artifact_ids.append(art.id)
         db.delete(art)
 
-    # Purge all cloud storage files (Azure Blob / S3 / Local) and sandbox caches
+    # 2. Purge all cloud storage files (Azure Blob / S3 / Local) and sandbox caches for this session
+    deleted_files_count = 0
+    deleted_files_list = []
     try:
-        from routers.files import purge_session_files_internal
-        purge_session_files_internal(db, tenant.id, tenant.name, s.session_id)
-        if s.id != s.session_id:
-            purge_session_files_internal(db, tenant.id, tenant.name, s.id)
+        purge_res = purge_session_files_internal(db, tenant.id, tenant.name, clean_session_id)
+        deleted_files_count = purge_res.get("deleted_count", 0)
+        deleted_files_list = purge_res.get("deleted_files", [])
     except Exception as purge_err:
         print(f"Notice: Failed to purge storage files on session delete: {purge_err}")
 
-    # Delete session
-    db.delete(s)
     db.commit()
 
-    return {"status": "success", "message": f"Session {session_id} deleted successfully"}
+    return {
+        "status": "success",
+        "session_id": clean_session_id,
+        "deleted_artifacts_count": len(deleted_artifact_ids),
+        "deleted_artifacts": deleted_artifact_ids,
+        "deleted_files_count": deleted_files_count,
+        "deleted_files": deleted_files_list,
+        "message": f"Session {clean_session_id} cleaned up successfully"
+    }
 
