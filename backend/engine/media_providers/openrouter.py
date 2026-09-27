@@ -278,15 +278,30 @@ class OpenRouterMediaProvider(BaseMediaProvider):
                         raise RuntimeError(f"OpenRouter Video generation timed out waiting for job completion ({job_id})")
             else:
                 import logging
-                err_msg = resp.text[:500]
+                err_msg = resp.text[:1000]
                 logging.getLogger("openrouter_media").warning(
                     f"[OpenRouter Video] HTTP {resp.status_code}: {err_msg}"
                 )
+                detail = err_msg
                 try:
                     err_json = resp.json()
-                    detail = err_json.get("error", {}).get("message") or err_msg
+                    err_obj = err_json.get("error") if isinstance(err_json, dict) else {}
+                    if isinstance(err_obj, dict):
+                        detail = err_obj.get("message") or str(err_obj)
+                    elif isinstance(err_obj, str):
+                        detail = err_obj
                 except Exception:
                     detail = err_msg
+
+                # Provide actionable guidance if the upstream model's privacy/real-person filter triggers
+                if "PrivacyInformation" in detail or "real person" in detail.lower() or "sensitivecontent" in detail.lower():
+                    detail = (
+                        f"Content Moderation Filter: {model_name} strictly blocks images containing real people or "
+                        f"photorealistic human faces to enforce deepfake privacy regulations (code: PrivacyInformation). "
+                        f"Recommendation: To animate photos of real people, switch to a model designed for portrait animation "
+                        f"such as Google Veo (google/veo-3.1), Kling AI (kwaivgi/kling-v3.0-pro), or MiniMax Hailuo (minimax/hailuo-3)."
+                    )
+
                 raise RuntimeError(f"OpenRouter Video API error (HTTP {resp.status_code}): {detail}")
         except RuntimeError:
             raise
