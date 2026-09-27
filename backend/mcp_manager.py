@@ -1,8 +1,10 @@
 import os
 import json
+import shlex
 import time
-import subprocess
-import urllib.request
+import subprocess  # nosec B404 - required to launch locally-configured stdio MCP servers
+import urllib.parse
+import requests
 from typing import Dict, Any, List
 
 
@@ -83,8 +85,8 @@ class McpManager:
 
             try:
                 proc = subprocess.Popen(
-                    command,
-                    shell=True,
+                    shlex.split(command),
+                    shell=False,
                     stdin=subprocess.PIPE,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
@@ -106,7 +108,7 @@ class McpManager:
 
         elif transport in ["sse", "http"]:
             url = server_obj.url
-            if not url:
+            if not url or urllib.parse.urlparse(url).scheme not in ("http", "https"):
                 return []
 
             req_payload = {
@@ -116,12 +118,10 @@ class McpManager:
                 "params": {}
             }
             try:
-                data = json.dumps(req_payload).encode("utf-8")
-                req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
-                with urllib.request.urlopen(req, timeout=15) as res:
-                    resp = json.loads(res.read().decode("utf-8"))
-                    if "result" in resp and "tools" in resp["result"]:
-                        return resp["result"]["tools"]
+                res = requests.post(url, json=req_payload, headers={"Content-Type": "application/json"}, timeout=15)
+                resp = res.json()
+                if "result" in resp and "tools" in resp["result"]:
+                    return resp["result"]["tools"]
             except Exception as e:
                 print(f"Failed to list tools from HTTP MCP server {server_obj.name}: {e}")
             return []
@@ -149,8 +149,8 @@ class McpManager:
 
             try:
                 proc = subprocess.Popen(
-                    command,
-                    shell=True,
+                    shlex.split(command),
+                    shell=False,
                     stdin=subprocess.PIPE,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
@@ -210,6 +210,14 @@ class McpManager:
 
         elif transport in ["sse", "http"]:
             url = server_obj.url
+            if not url or urllib.parse.urlparse(url).scheme not in ("http", "https"):
+                return {
+                    "stdout": "",
+                    "stderr": f"Invalid or unsupported MCP server URL for {server_obj.name}",
+                    "exit_code": 1,
+                    "execution_time_ms": int((time.time() - start_time) * 1000),
+                    "sandbox_type": f"mcp_server_{server_obj.name}"
+                }
             req_payload = {
                 "jsonrpc": "2.0",
                 "id": 1,
@@ -217,11 +225,9 @@ class McpManager:
                 "params": {"name": tool_name, "arguments": arguments}
             }
             try:
-                data = json.dumps(req_payload).encode("utf-8")
-                req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
-                with urllib.request.urlopen(req, timeout=timeout) as res:
-                    resp = json.loads(res.read().decode("utf-8"))
-                    exec_duration = int((time.time() - start_time) * 1000)
+                res = requests.post(url, json=req_payload, headers={"Content-Type": "application/json"}, timeout=timeout)
+                resp = res.json()
+                exec_duration = int((time.time() - start_time) * 1000)
                     if "result" in resp:
                         content_items = resp["result"].get("content", [])
                         output_text = "\n".join([
