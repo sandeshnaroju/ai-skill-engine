@@ -3903,3 +3903,38 @@
 [data-theme="light"] .canvas-download-option-item:hover {
   background: rgba(0, 0, 0, 0.05) !important;
 }
+
+/* ── PCB Studio & Multi-Layer Layout Engine ── */
+.pcb-viewer-root {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+.pcb-component-group {
+  cursor: pointer;
+  transition: filter 0.15s ease;
+}
+
+.pcb-component-group:hover {
+  filter: drop-shadow(0 0 3px rgba(255, 255, 255, 0.6));
+}
+
+.pcb-tool-btn {
+  transition: all 0.15s ease;
+}
+
+.pcb-tool-btn:hover {
+  background: rgba(255, 255, 255, 0.12) !important;
+  color: #ffffff !important;
+}
+
+@keyframes netPulse {
+  0% { opacity: 0.7; }
+  50% { opacity: 1; }
+  100% { opacity: 0.7; }
+}
+
+.layer-top-copper path,
+.layer-bottom-copper path {
+  transition: stroke 0.15s ease, opacity 0.15s ease;
+}
+

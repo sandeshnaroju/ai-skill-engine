@@ -19,6 +19,7 @@ import Cad2DViewer from './Cad2DViewer';
 import Cad3DViewer from './Cad3DViewer';
 import GisViewer from './GisViewer';
 import LogicViewer from './LogicViewer';
+import PcbViewer from './PcbViewer';
 import BlockHistoryModal from './BlockHistoryModal';
 import './canvas.css';
 
@@ -195,6 +196,59 @@ function CanvasInner({ isEmbed = false, artifactId: propArtifactId, token: propT
           desc: 'Geographic vector dataset',
           color: '#34d399',
           bg: 'rgba(52, 211, 153, 0.15)'
+        }
+      ];
+    }
+
+    if (type === 'pcb' || fn.endsWith('.pcb.json') || fn.endsWith('.kicad_pcb') || fn.endsWith('.gbr') || fn.endsWith('.gerber')) {
+      return [
+        {
+          label: 'Gerber Manufacturing ZIP (.zip)',
+          format: 'gerber_zip',
+          icon: Download,
+          desc: 'JLCPCB / PCBWay photoplotter archive',
+          color: '#10b981',
+          bg: 'rgba(16, 185, 129, 0.15)'
+        },
+        {
+          label: 'EDA Document (.json)',
+          format: 'eda',
+          icon: Cpu,
+          desc: 'Standard EDA online & desktop format',
+          color: '#0284c7',
+          bg: 'rgba(2, 132, 199, 0.15)'
+        },
+        {
+          label: 'SPICE Netlist (.cir)',
+          format: 'spice',
+          icon: Code,
+          desc: 'ngspice / LTspice simulation netlist',
+          color: '#a855f7',
+          bg: 'rgba(168, 85, 247, 0.15)'
+        },
+        {
+          label: 'KiCad Board (.kicad_pcb)',
+          format: 'kicad_pcb',
+          icon: Cpu,
+          desc: 'KiCad 7/8 EDA circuit board',
+          color: '#38bdf8',
+          bg: 'rgba(56, 189, 248, 0.15)'
+        },
+        {
+          label: 'Bill of Materials (.csv)',
+          format: 'bom_csv',
+          icon: Table,
+          desc: 'Component parts & LCSC codes',
+          color: '#fbbf24',
+          bg: 'rgba(251, 191, 36, 0.15)'
+        },
+        {
+          label: 'Circuit JSON (.json)',
+          format: 'json',
+          icon: Code,
+          desc: 'Raw declarative board schema',
+          color: '#818cf8',
+          bg: 'rgba(129, 140, 248, 0.15)'
         }
       ];
     }
@@ -606,6 +660,14 @@ function CanvasInner({ isEmbed = false, artifactId: propArtifactId, token: propT
     }
 
     if (
+      type === 'pcb' ||
+      type === 'circuit' ||
+      /\.(pcb\.json|kicad_pcb|gbr|gerber|drl|dsn)$/i.test(filename)
+    ) {
+      return 'pcb';
+    }
+
+    if (
       type === 'engineering_data' ||
       type === 'engineering' ||
       type === 'logic' ||
@@ -646,6 +708,8 @@ function CanvasInner({ isEmbed = false, artifactId: propArtifactId, token: propT
         return <Box size={15} />;
       case 'gis':
         return <MapPin size={15} />;
+      case 'pcb':
+        return <Cpu size={15} />;
       case 'engineering_data':
         return <Cpu size={15} />;
       case 'document':
@@ -1031,6 +1095,15 @@ function CanvasInner({ isEmbed = false, artifactId: propArtifactId, token: propT
               fullContent={artifact?.full_content || (blocks && blocks.length ? blocks.map(b => b.content || '').join('\n') : '')}
               artifact={artifact}
               filename={artifact?.filename || 'map.geojson'}
+              theme={theme}
+            />
+          )}
+
+          {artType === 'pcb' && (
+            <PcbViewer
+              fullContent={artifact?.full_content || (blocks && blocks.length ? blocks.map(b => b.content || '').join('\n') : '')}
+              artifact={artifact}
+              filename={artifact?.filename || 'board.pcb.json'}
               theme={theme}
             />
           )}

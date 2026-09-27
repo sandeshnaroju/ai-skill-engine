@@ -223,6 +223,8 @@ export default function ApiTester() {
   const [streamContent, setStreamContent] = useState('');
   const [streamReasoning, setStreamReasoning] = useState([]);
   const [streamTools, setStreamTools] = useState([]);
+  const [streamStatus, setStreamStatus] = useState('');
+  const [streamStatuses, setStreamStatuses] = useState([]);
   const [prochatUiJson, setProchatUiJson] = useState(null);
   const [prochatUiCode, setProchatUiCode] = useState('');
 
@@ -412,6 +414,8 @@ export default function ApiTester() {
     setStreamContent('');
     setStreamReasoning([]);
     setStreamTools([]);
+    setStreamStatus('');
+    setStreamStatuses([]);
     setStreamArtifacts([]);
     setProchatUiJson(null);
     setProchatUiCode('');
@@ -617,8 +621,22 @@ export default function ApiTester() {
                     }
                     if (dataJson.choices && dataJson.choices[0] && dataJson.choices[0].delta) {
                       const delta = dataJson.choices[0].delta;
-                      if (delta.reasoning) {
-                        setStreamReasoning(prev => [...prev, delta.reasoning]);
+                      if (delta.status) {
+                        setStreamStatus(delta.status);
+                        setStreamStatuses(prev => {
+                          if (prev.includes(delta.status)) return prev;
+                          return [...prev, delta.status];
+                        });
+                        logText(`[STATUS] ${delta.status}`);
+                      }
+                      const thoughtChunk = delta.reasoning || delta.reasoning_content;
+                      if (thoughtChunk) {
+                        setStreamReasoning(prev => {
+                          if (prev.length === 0) return [thoughtChunk];
+                          const next = [...prev];
+                          next[next.length - 1] += thoughtChunk;
+                          return next;
+                        });
                       }
                       if (delta.artifact) {
                         const rawA = delta.artifact;
@@ -1047,6 +1065,8 @@ export default function ApiTester() {
           setStreamReasoning={setStreamReasoning}
           streamTools={streamTools}
           setStreamTools={setStreamTools}
+          streamStatus={streamStatus}
+          streamStatuses={streamStatuses}
           loading={loading}
           prochatUiJson={prochatUiJson}
           prochatUiCode={prochatUiCode}

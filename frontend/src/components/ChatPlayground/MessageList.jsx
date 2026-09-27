@@ -2,7 +2,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
   Bot, User, Brain, MessageSquare, Sparkles, Terminal, Code2,
   Copy, Check, FileText, ChevronUp, ChevronDown, ChevronRight, Loader, ExternalLink,
-  Table, Presentation, Image, Video, ArrowRight, Globe, Activity, FileSpreadsheet
+  Table, Presentation, Image, Video, ArrowRight, Globe, Activity, FileSpreadsheet,
+  Cpu, Layers, Box
 } from 'lucide-react';
 import ProChat from 'prochat';
 import { parseMarkdownToHtml } from '../MarkdownViewer';
@@ -139,6 +140,8 @@ function ReasoningSection({
     const lastStep = groupedSteps[groupedSteps.length - 1];
     if (lastStep?.type === 'tool_execution' && !lastStep.isCompleted) {
       headerText = `Thinking · Running ${lastStep.name}…`;
+    } else if (lastStep?.type === 'status' || lastStep?.type === 'phase_notice') {
+      headerText = lastStep.content;
     } else {
       headerText = 'Thinking…';
     }
@@ -230,7 +233,9 @@ function ReasoningSection({
           `}</style>
 
           {groupedSteps.map((step, sidx) => {
-            if (step.type === 'phase_notice') {
+            if (step.type === 'phase_notice' || step.type === 'status') {
+              const isLast = sidx === groupedSteps.length - 1;
+              const isActive = isLast && isStreaming;
               return (
                 <div key={sidx} style={{
                   display: 'inline-flex',
@@ -242,10 +247,20 @@ function ReasoningSection({
                   background: 'var(--bg-card)',
                   border: '1px solid var(--border-subtle)',
                   borderRadius: '6px',
-                  padding: '3px 8px',
+                  padding: '4px 10px',
                   alignSelf: 'flex-start'
                 }}>
-                  <Sparkles size={12} color="var(--primary-indigo)" />
+                  {isActive ? (
+                    <span style={{
+                      width: '6px',
+                      height: '6px',
+                      borderRadius: '50%',
+                      background: 'var(--primary-indigo)',
+                      animation: 'pulse-dot 1.2s ease-in-out infinite'
+                    }} />
+                  ) : (
+                    <Sparkles size={12} color="var(--primary-indigo)" />
+                  )}
                   <span>{step.content}</span>
                 </div>
               );
@@ -863,6 +878,34 @@ export default function MessageList({
                       />
                     )}
 
+                    {/* Live streaming status indicator when there is no reasoning or content yet */}
+                    {m.isStreaming && !hasReasoning && !m.content && (
+                      <div style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        fontSize: '0.82rem',
+                        color: 'var(--primary-violet)',
+                        padding: '4px 0'
+                      }}>
+                        <div style={{ display: 'flex', gap: '3px', alignItems: 'center' }}>
+                          {[0, 1, 2].map(i => (
+                            <span
+                              key={i}
+                              style={{
+                                width: '5px',
+                                height: '5px',
+                                borderRadius: '50%',
+                                background: 'var(--primary-violet)',
+                                animation: `bounce-dot 1.2s ease-in-out ${i * 0.2}s infinite`
+                              }}
+                            />
+                          ))}
+                        </div>
+                        <span>{m.status || 'Thinking…'}</span>
+                      </div>
+                    )}
+
                     {/* Main Assistant Markdown Body */}
                     {m.content && (
                       <div style={{
@@ -917,8 +960,12 @@ export default function MessageList({
                                   alignItems: 'center',
                                   justifyContent: 'center'
                                 }}>
-                                  {art.artifact_type === 'video' || (art.title && art.title.toLowerCase().includes('video')) ? (
+                                  {art.artifact_type === 'pcb' || (art.filename && art.filename.toLowerCase().endsWith('.pcb.json')) ? (
+                                    <Cpu size={18} color="#06b6d4" />
+                                  ) : art.artifact_type === 'video' || (art.title && art.title.toLowerCase().includes('video')) ? (
                                     <Video size={18} color="#06b6d4" />
+                                  ) : art.artifact_type === 'cad_2d' || art.artifact_type === 'cad_3d' || (art.filename && (art.filename.endsWith('.dxf') || art.filename.endsWith('.step'))) ? (
+                                    <Layers size={18} color="#3b82f6" />
                                   ) : art.artifact_type === 'presentation' || (art.title && art.title.toLowerCase().includes('slide')) ? (
                                     <Presentation size={18} color="var(--primary-violet)" />
                                   ) : art.artifact_type === 'spreadsheet' || (art.title && art.title.toLowerCase().includes('sheet')) ? (

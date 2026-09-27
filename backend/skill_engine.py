@@ -306,7 +306,7 @@ def _build_messages(db, persist, session_obj, user_message, allowed_skills, user
 
 
 def _resolve_model(db, tenant, model_name):
-    """Return model_name if configured and active for this tenant, falling back to first active tenant model or default."""
+    """Return model_name if configured and active for this tenant, falling back to any tenant model, then first active tenant model or default."""
     from models import TenantLLM
     if model_name and model_name.lower() not in ("default", ""):
         existing = db.query(TenantLLM).filter(
@@ -316,12 +316,29 @@ def _resolve_model(db, tenant, model_name):
         ).first()
         if existing:
             return existing.model_name
+        
+        # Fallback to model_name configured in any other tenant (e.g. Default Workspace)
+        any_tenant = db.query(TenantLLM).filter(
+            TenantLLM.model_name == model_name,
+            TenantLLM.is_active == True
+        ).first()
+        if any_tenant:
+            return any_tenant.model_name
 
     first = db.query(TenantLLM).filter(
         TenantLLM.tenant_id == tenant.id,
         TenantLLM.is_active == True
     ).first()
-    return first.model_name if first else get_model_name()
+    if first:
+        return first.model_name
+
+    any_active = db.query(TenantLLM).filter(
+        TenantLLM.is_active == True
+    ).first()
+    if any_active:
+        return any_active.model_name
+
+    return get_model_name()
 
 
 def _log_and_append_tool_results(db, tenant, session_id, model_name, request_source, request_id,
@@ -436,6 +453,7 @@ def _prepare_completion_kwargs(
     is_openrouter = "openrouter" in m_lower or "openrouter.ai" in base_url_str
     is_deepseek = "deepseek" in m_lower or "api.deepseek.com" in base_url_str
     is_grok = "grok" in m_lower or "api.x.ai" in base_url_str
+    is_anthropic = "claude" in m_lower or "anthropic" in m_lower or "anthropic.com" in base_url_str
     is_openai_reasoning = any(k in m_lower for k in ["o1", "o3", "o4"])
 
     kwargs = {"model": model_name, "messages": messages}
@@ -566,18 +584,36 @@ def _prepare_completion_kwargs(
     # 2. Or custom Gemini extension via `extra_body: {"google": {"thinking_config": {"thinking_level": "...", "include_thoughts": True}}}`
     #    Note: In OpenAI Python client, passing `extra_body={'extra_body': {'google': ...}}` maps to JSON `{"extra_body": {"google": ...}}`.
     if is_gemini or is_prochat:
-        if reasoning_effort:
+        # Google Gemini OpenAI-compatible endpoint returns reasoning thoughts during streaming
+        # when requested via `extra_body: {"extra_body": {"google": {"thinking_config": ...}}}`.
+        # Note: Do NOT set kwargs["reasoning_effort"] when using thinking_config, as Google
+        # returns 400: "Expected one of either reasoning_effort or custom thinking_config; found both."
+        t_cfg = {"include_thoughts": True}
+        if thinking_budget is not None:
+            try:
+                t_cfg["thinking_budget"] = int(thinking_budget)
+            except Exception:
+                pass
+        elif reasoning_effort:
             val = str(reasoning_effort).strip().lower()
-            if val in ("minimal", "low", "medium", "high", "none"):
-                kwargs["reasoning_effort"] = val
+            if val == "none":
+                t_cfg["include_thoughts"] = False
+                t_cfg["thinking_budget"] = 0
+            # When reasoning_effort is low/medium/high, include_thoughts=True allows Gemini to
+            # dynamically stream thoughts without being artificially throttled by fixed budget caps.
 
-        # If user passes extra_body with google thinking_config, wrap appropriately for OpenAI Python SDK
-        if "google" in merged_extra_body:
-            g_val = merged_extra_body.pop("google")
-            merged_extra_body["extra_body"] = {"google": g_val}
-        elif "thinking_config" in merged_extra_body:
-            tc_val = merged_extra_body.pop("thinking_config")
-            merged_extra_body["extra_body"] = {"google": {"thinking_config": tc_val}}
+        if t_cfg.get("include_thoughts"):
+            merged_extra_body["extra_body"] = {
+                "google": {
+                    "thinking_config": t_cfg
+                }
+            }
+        else:
+            kwargs["reasoning_effort"] = "none"
+
+        merged_extra_body.pop("google", None)
+        merged_extra_body.pop("include_thoughts", None)
+        merged_extra_body.pop("thinking_config", None)
     elif is_openrouter:
         if reasoning_effort or thinking_budget is not None:
             r_obj = {}
@@ -613,13 +649,38 @@ def _prepare_completion_kwargs(
                 merged_extra_body["thinking"] = {"type": "enabled"}
     elif is_grok:
         # xAI Grok Chat Completion API specification:
-        # reasoning_effort: "none" (disables reasoning), "low", "medium", "high", "xhigh"
+        # reasoning_effort: "low", "medium", "high", "xhigh" (defaults to "high")
+        # Note: Grok does not support "none" (rejects with 400)
         if reasoning_effort:
             r_val = str(reasoning_effort).strip().lower()
-            if r_val in ("none", "low", "medium", "high", "xhigh"):
+            if r_val in ("low", "medium", "high", "xhigh"):
                 kwargs["reasoning_effort"] = r_val
             elif r_val == "max":
                 kwargs["reasoning_effort"] = "xhigh"
+    elif is_anthropic:
+        # Anthropic Claude Extended & Adaptive Thinking specification:
+        # - Requires thinking budget >= 1024 tokens
+        # - Requires temperature = 1.0 when thinking is enabled
+        budget = 2048
+        if thinking_budget is not None:
+            try:
+                budget = max(1024, int(thinking_budget))
+            except Exception:
+                budget = 2048
+        elif reasoning_effort:
+            r_val = str(reasoning_effort).strip().lower()
+            if r_val == "low":
+                budget = 1024
+            elif r_val == "medium":
+                budget = 2048
+            elif r_val in ("high", "max", "xhigh"):
+                budget = 4096
+
+        if reasoning_effort and str(reasoning_effort).strip().lower() == "none":
+            merged_extra_body.pop("thinking", None)
+        else:
+            merged_extra_body["thinking"] = {"type": "enabled", "budget_tokens": budget}
+            kwargs["temperature"] = 1.0
     else:
         if reasoning_effort:
             kwargs["reasoning_effort"] = reasoning_effort
@@ -852,6 +913,29 @@ class SkillEngine:
 
                 else:
                     final_answer = response_msg.content or ""
+                    model_reasoning = (
+                        getattr(response_msg, "reasoning_content", None) or
+                        getattr(response_msg, "reasoning", None) or
+                        getattr(response_msg, "thought", None) or
+                        getattr(response_msg, "thinking", None)
+                    )
+                    if not model_reasoning and hasattr(response_msg, "model_extra") and isinstance(response_msg.model_extra, dict):
+                        model_reasoning = (
+                            response_msg.model_extra.get("thought") or
+                            response_msg.model_extra.get("thoughts") or
+                            response_msg.model_extra.get("thinking") or
+                            response_msg.model_extra.get("reasoning_content") or
+                            response_msg.model_extra.get("reasoning")
+                        )
+                    # Parse inline <thought> (Gemini), <thinking> (Claude), or <think> (DeepSeek)
+                    for start_t, end_t in [("<thought>", "</thought>"), ("<thinking>", "</thinking>"), ("<think>", "</think>")]:
+                        if start_t in final_answer and end_t in final_answer:
+                            t_parts = final_answer.split(start_t, 1)[1].split(end_t, 1)
+                            if not model_reasoning:
+                                model_reasoning = t_parts[0].strip()
+                            final_answer = (final_answer.split(start_t, 1)[0] + t_parts[1]).strip()
+                            break
+
                     extracted_json, extracted_code = None, None
                     if prochat_model:
                         res_tuple = get_prochat_ui(db, tenant, messages, final_answer, prochat_model)
@@ -867,12 +951,15 @@ class SkillEngine:
 
                     finalize_request(db, chat_req, final_answer, executed_logs, start_time,
                                      getattr(response, "usage", None), in_r, out_r, au_in_r, au_out_r, model_name=model_name)
-                    return {
+                    res_payload = {
                         "response": final_answer, "json": extracted_json, "code": extracted_code,
                         "session_id": session_id, "request_id": request_id,
                         "tenant": tenant.name, "executed_tools": executed_logs,
                         "artifacts": arts_list
                     }
+                    if model_reasoning:
+                        res_payload["reasoning"] = model_reasoning
+                    return res_payload
 
             # Max turns reached
             final_res = messages[-1].get("content") or "Reached maximum tool execution turns."
@@ -981,7 +1068,7 @@ class SkillEngine:
 
             allowed_skills = resolve_allowed_skills(db, tenant, app_id, skill_names)
 
-            yield _chunk(session_id, model_name, reasoning="Analyzing query & active skills...")
+            yield _chunk(session_id, model_name, status="Analyzing query & active skills...")
 
             messages = _build_messages(db, persist, session_obj, user_message, allowed_skills, user_data, client_messages, tenant_id=tenant.id, raw_session_id=session_id)
             model_name = _resolve_model(db, tenant, model_name)
@@ -1021,7 +1108,7 @@ class SkillEngine:
                     turn_msg = "Analyzing conversation context & planning query execution..."
                 else:
                     turn_msg = f"Processing tool outputs & synthesizing response (Turn {turn+1})..."
-                yield _chunk(session_id, model_name, reasoning=turn_msg)
+                yield _chunk(session_id, model_name, status=turn_msg)
 
                 kwargs = _prepare_completion_kwargs(
                     model_name=model_name,
@@ -1103,48 +1190,71 @@ class SkillEngine:
                         choice = chunk.choices[0]
                         delta = choice.delta
 
-                        # 1. Extract dedicated reasoning / thought tokens (Gemini, DeepSeek, OpenRouter, Anthropic CoT)
+                        # 1. Extract dedicated reasoning / thought tokens (Gemini, Grok, Anthropic, DeepSeek, OpenRouter)
+                        # 1. Check Google Gemini thought streaming marker in extra_content or model_extra
+                        extra_c = getattr(delta, "extra_content", None)
+                        if not extra_c and hasattr(delta, "model_extra") and isinstance(delta.model_extra, dict):
+                            extra_c = delta.model_extra.get("extra_content")
+                        is_google_thought = False
+                        if isinstance(extra_c, dict):
+                            g_data = extra_c.get("google") or {}
+                            if isinstance(g_data, dict) and g_data.get("thought") is True:
+                                is_google_thought = True
+
+                        # 2. Extract dedicated reasoning / thought tokens (DeepSeek, Grok, Anthropic, OpenRouter)
                         raw_thought = (
                             getattr(delta, "reasoning_content", None) or
                             getattr(delta, "reasoning", None) or
-                            getattr(delta, "thought", None) or
-                            getattr(delta, "thoughts", None)
+                            getattr(delta, "thinking", None)
                         )
-                        # Check extra_content for Google Gemini thought / reasoning
-                        if not raw_thought:
-                            extra_c = getattr(delta, "extra_content", None)
-                            if isinstance(extra_c, dict):
-                                g_data = extra_c.get("google") or {}
-                                if isinstance(g_data, dict):
-                                    raw_thought = g_data.get("thought") or g_data.get("thought_signature")
+                        if not raw_thought and hasattr(delta, "model_extra") and isinstance(delta.model_extra, dict):
+                            raw_thought = (
+                                delta.model_extra.get("reasoning_content") or
+                                delta.model_extra.get("reasoning") or
+                                delta.model_extra.get("thinking")
+                            )
 
-                        thought_text = ""
-                        if isinstance(raw_thought, str):
-                            # If it is an opaque thought_signature hash, don't spam raw hash; indicate reasoning activity
-                            if raw_thought.startswith("E") and len(raw_thought) > 100:
-                                thought_text = "Thinking..."
-                            else:
-                                thought_text = raw_thought
-                        elif isinstance(raw_thought, dict):
-                            thought_text = raw_thought.get("text") or raw_thought.get("content") or json.dumps(raw_thought)
+                        if raw_thought and isinstance(raw_thought, str):
+                            yield _chunk(session_id, model_name, reasoning=raw_thought)
 
-                        if thought_text:
-                            yield _chunk(session_id, model_name, reasoning=thought_text)
-
-                        # 2. Extract content & handle inline <think> tags (e.g., local Ollama / vLLM DeepSeek R1 models)
+                        # 2. Extract content & handle Gemini thoughts & inline tags (<think>, <thought>, <thinking>)
                         if delta.content:
                             content_piece = delta.content
-                            if "<think>" in content_piece:
+
+                            # Direct Google Gemini streamed thought piece
+                            if is_google_thought:
+                                c_clean = content_piece.replace("<thought>", "").replace("</thought>", "")
+                                if c_clean:
+                                    yield _chunk(session_id, model_name, reasoning=c_clean)
+                                continue
+
+                            # Strip any leading residual </thought> tag from answer boundary
+                            if content_piece.startswith("</thought>"):
+                                content_piece = content_piece[len("</thought>"):].lstrip("\n")
+
+                            matched_tag = None
+                            for t in ["<think>", "<thought>", "<thinking>"]:
+                                if t in content_piece:
+                                    matched_tag = t
+                                    break
+
+                            if matched_tag:
                                 in_think_tag = True
-                                parts = content_piece.split("<think>", 1)
+                                parts = content_piece.split(matched_tag, 1)
                                 if parts[0]:
                                     full_text += parts[0]
+                                    final_answer = full_text
                                     yield f"data: {json.dumps({'id': f'chatcmpl-{session_id}', 'object': 'chat.completion.chunk', 'created': 1700000000, 'model': model_name, 'choices': [{'index': 0, 'delta': {'content': parts[0]}, 'finish_reason': choice.finish_reason}]})}\n\n"
                                 content_piece = parts[1] if len(parts) > 1 else ""
 
                             if in_think_tag:
-                                if "</think>" in content_piece:
-                                    think_part, rest = content_piece.split("</think>", 1)
+                                end_tag = None
+                                for et in ["</think>", "</thought>", "</thinking>"]:
+                                    if et in content_piece:
+                                        end_tag = et
+                                        break
+                                if end_tag:
+                                    think_part, rest = content_piece.split(end_tag, 1)
                                     if think_part:
                                         yield _chunk(session_id, model_name, reasoning=think_part)
                                     in_think_tag = False
@@ -1249,7 +1359,7 @@ class SkillEngine:
                         clean_skill = (skill_name or "System").replace("_", " ").title()
                         
                         yield _chunk(session_id, model_name,
-                                     reasoning=f"Invoking {clean_name} (Skill: {clean_skill})...",
+                                     status=f"Invoking {clean_name} (Skill: {clean_skill})...",
                                      tool_call={"name": clean_name, "arguments": args})
 
                     # Execute tools in parallel with thread-safe DB sessions
@@ -1312,7 +1422,7 @@ class SkillEngine:
                             clean_skill = (skill_name or "System").replace("_", " ").title()
 
                             yield _chunk(session_id, model_name,
-                                         reasoning=f"{clean_name} finished in {exec_res.get('execution_time_ms')}ms.",
+                                         status=f"{clean_name} finished in {exec_res.get('execution_time_ms')}ms.",
                                          tool_result={
                                              "tool_name": clean_name, "skill_name": clean_skill,
                                              "stdout": exec_res.get("stdout"), "stderr": exec_res.get("stderr"),
@@ -1402,6 +1512,8 @@ class SkillEngine:
             from datetime import datetime
             chat_req.completed_at = datetime.utcnow()
             db.commit()
+            err_text = f"\n\n> ⚠️ **Error:** {e}"
+            yield f"data: {json.dumps({'id': f'chatcmpl-{session_id}', 'object': 'chat.completion.chunk', 'created': 1700000000, 'model': model_name, 'choices': [{'index': 0, 'delta': {'content': err_text}, 'finish_reason': 'stop'}]})}\n\n"
             yield f"data: {json.dumps({'type': 'error', 'request_id': request_id, 'detail': str(e)})}\n\n"
             yield "data: [DONE]\n\n"
         finally:

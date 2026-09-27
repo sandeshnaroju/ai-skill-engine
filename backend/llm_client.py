@@ -29,6 +29,18 @@ def get_llm_client(db=None, tenant_id: str = None, model_name: str = None):
         TenantLLM.is_active == True
     ).first()
 
+    if not config:
+        config = db.query(TenantLLM).filter(
+            TenantLLM.model_name == model_name,
+            TenantLLM.is_active == True
+        ).first()
+
+    if not config:
+        # Fall back to any active model in DB if the requested model name doesn't match
+        config = db.query(TenantLLM).filter(
+            TenantLLM.is_active == True
+        ).first()
+
     if config:
         api_key = decrypt_key(config.api_key_encrypted)
         base_url = config.base_url
@@ -45,7 +57,7 @@ def get_llm_client(db=None, tenant_id: str = None, model_name: str = None):
                 }
             )
         else:
-            if not base_url and (config.provider == "gemini" or "gemini" in model_name.lower()):
+            if not base_url and (config.provider == "gemini" or "gemini" in (config.model_name or "").lower()):
                 base_url = "https://generativelanguage.googleapis.com/v1beta/openai/"
             
             if base_url:
@@ -55,5 +67,10 @@ def get_llm_client(db=None, tenant_id: str = None, model_name: str = None):
 
     raise ValueError(f"Model '{model_name}' is not configured/registered for this tenant.")
 
-def get_model_name():
-    return os.getenv("LLM_MODEL", "gemini-2.5-flash")
+def get_model_name(db=None):
+    if db:
+        from models import TenantLLM
+        first = db.query(TenantLLM).filter(TenantLLM.is_active == True).first()
+        if first:
+            return first.model_name
+    return os.getenv("LLM_MODEL", "gemini-3.7-flash")

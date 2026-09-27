@@ -20,6 +20,8 @@ export default function ResponseViewer({
   setStreamReasoning,
   streamTools,
   setStreamTools,
+  streamStatus = '',
+  streamStatuses = [],
   loading,
   prochatUiJson,
   prochatUiCode,
@@ -378,12 +380,71 @@ export default function ResponseViewer({
                 boxShadow: 'var(--shadow-card)'
               }}
             >
-              {/* Reasoning thoughts & tool calls */}
-              {(streamReasoning.length > 0 || streamTools.length > 0) && (
+              <style>{`
+                @keyframes bounce-dot { 0%, 80%, 100% { transform: translateY(0); } 40% { transform: translateY(-4px); } }
+              `}</style>
+
+              {/* Live Engine Status Banner */}
+              {(streamStatus || (loading && !streamContent)) && (
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '8px 12px',
+                  background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.08), rgba(139, 92, 246, 0.08))',
+                  border: '1px solid rgba(99, 102, 241, 0.25)',
+                  borderRadius: '8px',
+                  fontSize: '0.8rem',
+                  fontWeight: '600',
+                  color: 'var(--primary-indigo)',
+                  boxSizing: 'border-box'
+                }}>
+                  {loading ? (
+                    <div style={{ display: 'flex', gap: '3px', alignItems: 'center' }}>
+                      {[0, 1, 2].map(i => (
+                        <span
+                          key={i}
+                          style={{
+                            width: '4px',
+                            height: '4px',
+                            borderRadius: '50%',
+                            background: 'var(--primary-indigo)',
+                            animation: `bounce-dot 1.2s ease-in-out ${i * 0.2}s infinite`
+                          }}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <Sparkles size={13} color="var(--primary-indigo)" />
+                  )}
+                  <span style={{ letterSpacing: '0.02em' }}>{streamStatus || 'Connecting to engine…'}</span>
+                </div>
+              )}
+
+              {/* Reasoning thoughts, tool calls & status steps */}
+              {(streamStatuses.length > 0 || streamReasoning.length > 0 || streamTools.length > 0) && (
                 <div style={{ background: 'rgba(139, 92, 246, 0.04)', border: '1px solid rgba(139, 92, 246, 0.2)', borderRadius: '10px', padding: '12px', display: 'flex', flexDirection: 'column', gap: '8px', minWidth: 0, maxWidth: '100%', boxSizing: 'border-box' }}>
                   <div style={{ fontSize: '0.74rem', fontWeight: '700', color: 'var(--primary-violet)', letterSpacing: '0.05em', borderBottom: '1px solid rgba(139, 92, 246, 0.15)', paddingBottom: '4px', marginBottom: '4px' }}>
                     ENGINE TRACES & REASONING
                   </div>
+                  {streamStatuses.map((st, idx) => (
+                    <div key={`status-${idx}`} style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      fontSize: '0.75rem',
+                      fontWeight: '600',
+                      color: 'var(--primary-indigo)',
+                      background: 'var(--bg-card)',
+                      border: '1px solid var(--border-subtle)',
+                      borderRadius: '6px',
+                      padding: '3px 8px',
+                      alignSelf: 'flex-start'
+                    }}>
+                      <Sparkles size={11} color="var(--primary-indigo)" />
+                      <span>{st}</span>
+                    </div>
+                  ))}
                   {streamReasoning.map((thought, idx) => (
                     <div key={`thought-${idx}`} style={{ fontSize: '0.78rem', color: 'var(--text-sub)', fontStyle: 'italic', marginBottom: '4px', wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
                       💭 {typeof thought === 'object' ? JSON.stringify(thought) : String(thought)}
@@ -461,7 +522,7 @@ export default function ResponseViewer({
                   </div>
                 ) : (
                   <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-                    {loading ? 'Assistant is typing...' : 'Console idle. Run request to see output.'}
+                    {loading ? (streamStatus ? `Status: ${streamStatus}` : 'Assistant is typing...') : 'Console idle. Run request to see output.'}
                   </span>
                 )}
               </div>

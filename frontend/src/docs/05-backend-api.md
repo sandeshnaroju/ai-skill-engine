@@ -38,14 +38,30 @@ Authorization: Bearer sk_mgr_YOUR_TENANT_API_KEY
 When `"stream": true`, the endpoint streams JSON chunks prefixed with `data: `:
 
 ```text
-data: {"choices": [{"delta": {"content": "Planning calculations..."}}]}
-data: {"choices": [{"delta": {"reasoning": "I need to import pandas and load the CSV."}}]}
-data: {"choices": [{"delta": {"tool_call": {"name": "run_python", "arguments": {"code": "import pandas as pd..."}}}}]}
-data: {"choices": [{"delta": {"tool_result": {"tool_name": "run_python", "exit_code": 0, "stdout": "Mean: 42.5\n"}}}]}
-data: {"choices": [{"delta": {"artifacts": [{"artifact_id": "uuid", "title": "Report", "embed_url": "..."}]}}]}
+data: {"choices": [{"delta": {"status": "Analyzing query & active skills..."}}]}
+data: {"choices": [{"delta": {"status": "Analyzing conversation context & planning query execution..."}}]}
+data: {"choices": [{"delta": {"reasoning": "I need to import pandas and calculate interest."}}]}
+data: {"choices": [{"delta": {"status": "Invoking Python Code Runner (Skill: Code Interpreter)...", "tool_call": {"name": "run_python", "arguments": {"code": "p = 20000\nr = 0.12\nt = 20\nprint(p * (1 + r)**t)"}}}}]}
+data: {"choices": [{"delta": {"status": "Python Code Runner finished in 42ms.", "tool_result": {"tool_name": "run_python", "exit_code": 0, "stdout": "192925.86\n"}}}]}
+data: {"choices": [{"delta": {"status": "Processing tool outputs & synthesizing response..."}}]}
+data: {"choices": [{"delta": {"content": "Based on the calculation, the total amount is ₹192,925.86."}}]}
+data: {"choices": [{"delta": {"artifacts": [{"artifact_id": "uuid", "title": "Investment Report", "embed_url": "..."}]}}]}
 data: {"type": "done", "tools_called": ["run_python"]}
 data: [DONE]
 ```
+
+### Delta Chunk Fields
+
+Each streaming chunk contains a `choices[0].delta` object. Client applications can inspect these fields to render rich real-time UI states:
+
+| Field | Type | Description |
+|---|---|---|
+| `delta.status` | String | **Real-time orchestrator lifecycle & progress updates**. Emitted during query analysis, tool dispatch, sandbox execution timings, and multi-turn transitions (e.g., `"Analyzing query & active skills..."`, `"Invoking Python Code Runner..."`, `"Python Code Runner finished in 42ms."`). Use this to drive loading spinners, step-by-step progress steppers, and status banners. |
+| `delta.reasoning` | String | **Live chain-of-thought (CoT) / thinking tokens** streamed from reasoning models (e.g. Gemini Thinking, DeepSeek R1, Grok 3, OpenAI o1/o3-mini). |
+| `delta.content` | String | Standard assistant reply text / Markdown tokens. |
+| `delta.tool_call` | Object | Dispatched tool call metadata (`name`, `arguments`, `skill_name`, `call_id`). |
+| `delta.tool_result` | Object | Live tool execution result from the sandbox or external API (`tool_name`, `stdout`, `stderr`, `exit_code`, `generated_files`). |
+| `delta.artifacts` | Array | Newly generated or modified Universal Canvas artifacts with signed HMAC embed URLs. |
 
 ---
 
@@ -103,14 +119,19 @@ for chunk in response_stream:
         continue
     delta = chunk.choices[0].delta
 
+    # Real-Time Engine Lifecycle Status
+    status = getattr(delta, "status", None) or (delta.model_extra or {}).get("status")
+    if status:
+        print(f"\n[Status] {status}")
+
+    # Thinking / CoT Reasoning
+    reasoning = getattr(delta, "reasoning", None) or (delta.model_extra or {}).get("reasoning")
+    if reasoning:
+        print(f"\n[Reasoning] {reasoning}", end="", flush=True)
+
     # Assistant Text Content
     if delta.content:
         print(delta.content, end="", flush=True)
-
-    # Thinking / Status Reasoning
-    reasoning = getattr(delta, "reasoning", None) or (delta.model_extra or {}).get("reasoning")
-    if reasoning:
-        print(f"\n[Reasoning] {reasoning}")
 
     # Tool Execution Calls
     tool_call = getattr(delta, "tool_call", None) or (delta.model_extra or {}).get("tool_call")
@@ -167,9 +188,19 @@ while (true) {
       const delta = dataJson.choices[0]?.delta;
       if (!delta) continue;
 
+      // Real-Time Engine Status
+      if (delta.status) console.log(`\n[Status] ${delta.status}`);
+
+      // Model Reasoning / Chain-of-Thought
+      if (delta.reasoning) process.stdout.write(delta.reasoning);
+
+      // Assistant Text Reply
       if (delta.content) process.stdout.write(delta.content);
-      if (delta.reasoning) console.log(`\n[Status] ${delta.reasoning}`);
+
+      // Tool Call Dispatched
       if (delta.tool_call) console.log(`\n[Tool Call] ${delta.tool_call.name}`, delta.tool_call.arguments);
+
+      // Tool Result Returned
       if (delta.tool_result) console.log(`\n[Tool Result] ${delta.tool_result.tool_name} exit=${delta.tool_result.exit_code}`);
     } catch (err) {}
   }
