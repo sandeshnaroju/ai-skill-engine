@@ -584,33 +584,36 @@ def _prepare_completion_kwargs(
     # 2. Or custom Gemini extension via `extra_body: {"google": {"thinking_config": {"thinking_level": "...", "include_thoughts": True}}}`
     #    Note: In OpenAI Python client, passing `extra_body={'extra_body': {'google': ...}}` maps to JSON `{"extra_body": {"google": ...}}`.
     if is_gemini or is_prochat:
-        # Google Gemini OpenAI-compatible endpoint natively supports `reasoning_effort`:
-        # ("minimal", "low", "medium", "high", "none").
-        # Passing extra_body with "google" or "include_thoughts" at top level causes a 400 Bad Request.
-        # Sending both reasoning_effort and thinking_config also triggers a 400 Bad Request.
-        if reasoning_effort:
-            val = str(reasoning_effort).strip().lower()
-            if val in ("minimal", "low", "medium", "high", "none"):
-                kwargs["reasoning_effort"] = val
-        elif thinking_budget is not None:
+        # Google Gemini OpenAI-compatible endpoint returns reasoning thoughts during streaming
+        # when requested via `extra_body: {"extra_body": {"google": {"thinking_config": ...}}}`.
+        # Note: Do NOT set kwargs["reasoning_effort"] when using thinking_config, as Google
+        # returns 400: "Expected one of either reasoning_effort or custom thinking_config; found both."
+        t_cfg = {"include_thoughts": True}
+        if thinking_budget is not None:
             try:
-                b = int(thinking_budget)
-                if b <= 0:
-                    kwargs["reasoning_effort"] = "none"
-                elif b <= 2048:
-                    kwargs["reasoning_effort"] = "low"
-                elif b <= 8192:
-                    kwargs["reasoning_effort"] = "medium"
-                else:
-                    kwargs["reasoning_effort"] = "high"
+                t_cfg["thinking_budget"] = int(thinking_budget)
             except Exception:
                 pass
-        
-        # Clean up any leftover keys so they are not serialized into extra_body
+        elif reasoning_effort:
+            val = str(reasoning_effort).strip().lower()
+            if val == "none":
+                t_cfg["include_thoughts"] = False
+                t_cfg["thinking_budget"] = 0
+            # When reasoning_effort is low/medium/high, include_thoughts=True allows Gemini to
+            # dynamically stream thoughts without being artificially throttled by fixed budget caps.
+
+        if t_cfg.get("include_thoughts"):
+            merged_extra_body["extra_body"] = {
+                "google": {
+                    "thinking_config": t_cfg
+                }
+            }
+        else:
+            kwargs["reasoning_effort"] = "none"
+
         merged_extra_body.pop("google", None)
         merged_extra_body.pop("include_thoughts", None)
         merged_extra_body.pop("thinking_config", None)
-        merged_extra_body.pop("extra_body", None)
     elif is_openrouter:
         if reasoning_effort or thinking_budget is not None:
             r_obj = {}
@@ -1188,43 +1191,47 @@ class SkillEngine:
                         delta = choice.delta
 
                         # 1. Extract dedicated reasoning / thought tokens (Gemini, Grok, Anthropic, DeepSeek, OpenRouter)
+                        # 1. Check Google Gemini thought streaming marker in extra_content or model_extra
+                        extra_c = getattr(delta, "extra_content", None)
+                        if not extra_c and hasattr(delta, "model_extra") and isinstance(delta.model_extra, dict):
+                            extra_c = delta.model_extra.get("extra_content")
+                        is_google_thought = False
+                        if isinstance(extra_c, dict):
+                            g_data = extra_c.get("google") or {}
+                            if isinstance(g_data, dict) and g_data.get("thought") is True:
+                                is_google_thought = True
+
+                        # 2. Extract dedicated reasoning / thought tokens (DeepSeek, Grok, Anthropic, OpenRouter)
                         raw_thought = (
                             getattr(delta, "reasoning_content", None) or
                             getattr(delta, "reasoning", None) or
-                            getattr(delta, "thought", None) or
-                            getattr(delta, "thoughts", None) or
                             getattr(delta, "thinking", None)
                         )
-                        # Check extra_content or model_extra for thought / reasoning / thinking
-                        if not raw_thought:
-                            extra_c = getattr(delta, "extra_content", None)
-                            if isinstance(extra_c, dict):
-                                g_data = extra_c.get("google") or {}
-                                if isinstance(g_data, dict):
-                                    raw_thought = g_data.get("thought") or g_data.get("thought_signature")
                         if not raw_thought and hasattr(delta, "model_extra") and isinstance(delta.model_extra, dict):
                             raw_thought = (
-                                delta.model_extra.get("thought") or
-                                delta.model_extra.get("thoughts") or
-                                delta.model_extra.get("thinking") or
                                 delta.model_extra.get("reasoning_content") or
-                                delta.model_extra.get("reasoning")
+                                delta.model_extra.get("reasoning") or
+                                delta.model_extra.get("thinking")
                             )
 
-                        thought_text = ""
-                        if isinstance(raw_thought, str):
-                            # Skip long opaque encrypted signatures
-                            if not (raw_thought.startswith("E") and len(raw_thought) > 100):
-                                thought_text = raw_thought
-                        elif isinstance(raw_thought, dict):
-                            thought_text = raw_thought.get("text") or raw_thought.get("content") or raw_thought.get("thinking") or json.dumps(raw_thought)
+                        if raw_thought and isinstance(raw_thought, str):
+                            yield _chunk(session_id, model_name, reasoning=raw_thought)
 
-                        if thought_text:
-                            yield _chunk(session_id, model_name, reasoning=thought_text)
-
-                        # 2. Extract content & handle inline tags (<think>, <thought>, <thinking>)
+                        # 2. Extract content & handle Gemini thoughts & inline tags (<think>, <thought>, <thinking>)
                         if delta.content:
                             content_piece = delta.content
+
+                            # Direct Google Gemini streamed thought piece
+                            if is_google_thought:
+                                c_clean = content_piece.replace("<thought>", "").replace("</thought>", "")
+                                if c_clean:
+                                    yield _chunk(session_id, model_name, reasoning=c_clean)
+                                continue
+
+                            # Strip any leading residual </thought> tag from answer boundary
+                            if content_piece.startswith("</thought>"):
+                                content_piece = content_piece[len("</thought>"):].lstrip("\n")
+
                             matched_tag = None
                             for t in ["<think>", "<thought>", "<thinking>"]:
                                 if t in content_piece:
@@ -1236,6 +1243,7 @@ class SkillEngine:
                                 parts = content_piece.split(matched_tag, 1)
                                 if parts[0]:
                                     full_text += parts[0]
+                                    final_answer = full_text
                                     yield f"data: {json.dumps({'id': f'chatcmpl-{session_id}', 'object': 'chat.completion.chunk', 'created': 1700000000, 'model': model_name, 'choices': [{'index': 0, 'delta': {'content': parts[0]}, 'finish_reason': choice.finish_reason}]})}\n\n"
                                 content_piece = parts[1] if len(parts) > 1 else ""
 
