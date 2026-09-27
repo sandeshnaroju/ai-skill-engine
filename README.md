@@ -156,6 +156,12 @@ curl -N -X POST http://localhost:2704/api/v1/chat/completions \
   }'
 ```
 
+The streaming response delivers rich, real-time lifecycle deltas directly into your UI:
+- **`delta.status`**: Real-time orchestrator state (query analysis, tool dispatch, sandbox execution timings, turn synthesis).
+- **`delta.reasoning`**: Live chain-of-thought / model thinking traces.
+- **`delta.tool_call` & `delta.tool_result`**: Dispatched sandbox execution commands and live output logs.
+- **`delta.artifacts`**: Interactive Canvas documents, spreadsheets, slides, and 3D CAD files with signed HMAC embed URLs.
+
 ---
 
 ## 📚 Documentation Hub & In-App Browser

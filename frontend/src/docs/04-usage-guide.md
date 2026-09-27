@@ -37,7 +37,8 @@ The **Chat Playground** (`/playground`) is your primary testing ground:
 ### Key Features:
 - **Model Selector**: Switch seamlessly between registered models (Gemini, OpenAI, Claude, local Ollama).
 - **Skill Scoping**: Toggle specific skills on or off to test how your model behaves with different tool combinations.
-- **Agent Reasoning & Thought Traces**: Click the collapsible thought bubbles to inspect the model's intermediate planning steps before tool execution.
+- **Live Status Stepper & Progress**: Watch real-time engine lifecycle updates (query analysis, active tool dispatch, sandbox execution timings, and multi-turn response synthesis) as the agent orchestrates tools.
+- **Agent Reasoning & Thought Traces**: Click the collapsible thought bubbles to inspect the model's intermediate planning steps and chain-of-thought before tool execution.
 - **Tool Output Inspection**: Click on any tool pill (`run_python`, `call_api`, `write_file`) to expand the exact parameters sent to the sandbox and the raw stdout/stderr returned.
 - **Split-Screen Canvas**: When an artifact is created or edited, the right half of the screen expands into the Live Canvas automatically.
 

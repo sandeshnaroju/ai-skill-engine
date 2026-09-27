@@ -52,17 +52,22 @@ In addition to the primary `model`, AI Skill Engine allows routing specialized s
 When `"stream": true`, the endpoint streams JSON chunks prefixed with `data: `:
 
 ```text
-data: {"choices": [{"delta": {"content": "Planning calculations..."}}]}
+data: {"choices": [{"delta": {"status": "Analyzing query & active skills..."}}]}
+data: {"choices": [{"delta": {"status": "Analyzing conversation context & planning query execution..."}}]}
 data: {"choices": [{"delta": {"reasoning": "I need to import pandas and load the CSV."}}]}
-data: {"choices": [{"delta": {"tool_call": {"name": "run_python", "arguments": {"code": "import pandas as pd..."}}}}]}
-data: {"choices": [{"delta": {"tool_result": {"output": "Mean: 42.5\n", "generated_files": ["chart.png"]}}}]}
+data: {"choices": [{"delta": {"status": "Invoking Python Code Runner (Skill: Code Interpreter)...", "tool_call": {"name": "run_python", "arguments": {"code": "import pandas as pd..."}}}}]}
+data: {"choices": [{"delta": {"status": "Python Code Runner finished in 42ms.", "tool_result": {"output": "Mean: 42.5\n", "generated_files": ["chart.png"]}}}]}
+data: {"choices": [{"delta": {"status": "Processing tool outputs & synthesizing response..."}}]}
+data: {"choices": [{"delta": {"content": "Based on the calculation..."}}]}
 data: {"choices": [{"delta": {"artifacts": [{"artifact_id": "uuid", "title": "Report", "embed_url": "..."}]}}]}
+data: {"type": "done", "tools_called": ["run_python"]}
 data: [DONE]
 ```
 
 ### Delta Fields:
+- `delta.status`: Real-time orchestrator lifecycle updates and progress indicators (e.g., query analysis, tool execution dispatch, sandbox execution timings, and multi-turn planning transitions).
+- `delta.reasoning`: Live chain-of-thought (CoT) and thinking tokens streamed from reasoning models (e.g. Gemini Thinking, DeepSeek R1, Grok 3, OpenAI o1/o3-mini).
 - `delta.content`: Streamed text response tokens.
-- `delta.reasoning`: Live thought process and intermediate reasoning of the agent.
 - `delta.tool_call`: Tool invocation name and argument payloads dispatched to the sandbox.
 - `delta.tool_result`: Output captured from the sandbox (stdout, stderr, generated file paths).
 - `delta.artifacts`: Newly created or updated Canvas artifacts with signed HMAC embed URLs.
@@ -99,6 +104,16 @@ for chunk in response_stream:
         continue
     delta = chunk.choices[0].delta
     
+    # Real-Time Engine Lifecycle Status
+    status = getattr(delta, "status", None) or (delta.model_extra or {}).get("status")
+    if status:
+        print(f"\n[Status]: {status}")
+
+    # Model Reasoning / Thinking
+    reasoning = getattr(delta, "reasoning", None) or (delta.model_extra or {}).get("reasoning")
+    if reasoning:
+        print(f"\n[Reasoning]: {reasoning}", end="", flush=True)
+
     # Text token
     if delta.content:
         print(delta.content, end="", flush=True)
@@ -149,7 +164,10 @@ while (true) {
       const delta = data.choices?.[0]?.delta;
       if (!delta) continue;
 
+      if (delta.status) console.log(`\n[Status]: ${delta.status}`);
+      if (delta.reasoning) process.stdout.write(delta.reasoning);
       if (delta.content) process.stdout.write(delta.content);
+      if (delta.tool_call) console.log(`\n[Tool Call]: ${delta.tool_call.name}`, delta.tool_call.arguments);
       if (delta.artifacts && Array.isArray(delta.artifacts)) {
         delta.artifacts.forEach(art => {
           console.log("\n[Artifact Created]:", art.title, art.embed_url);
