@@ -176,8 +176,15 @@ class OpenRouterMediaProvider(BaseMediaProvider):
                 duration = 6
             else:
                 duration = 8
+        elif "hailuo-2" in model_name.lower():
+            req_d = int(duration_seconds) if str(duration_seconds).isdigit() else 6
+            duration = 6 if req_d <= 6 else 10
+        elif "wan-2.6" in model_name.lower():
+            req_d = int(duration_seconds) if str(duration_seconds).isdigit() else 5
+            duration = 5 if req_d <= 5 else 10
         else:
-            duration = 5 if duration_seconds in (5, "5") else 10
+            req_d = int(duration_seconds) if str(duration_seconds).isdigit() else 5
+            duration = req_d if 2 <= req_d <= 15 else 5
 
         payload = {
             "model": model_name,
@@ -187,10 +194,31 @@ class OpenRouterMediaProvider(BaseMediaProvider):
         }
 
         if source_image_path:
-            from engine.subagents import resolve_media_to_data_uri
-            src_uri, _, _ = resolve_media_to_data_uri(source_image_path, tenant_id=tenant_id)
-            if src_uri:
-                payload["frame_images"] = [src_uri]
+            img_url = None
+            if isinstance(source_image_path, str) and (
+                source_image_path.startswith("http://")
+                or source_image_path.startswith("https://")
+                or source_image_path.startswith("data:")
+            ):
+                img_url = source_image_path.strip()
+                if " " in img_url:
+                    img_url = img_url.replace(" ", "%20")
+            else:
+                from engine.subagents import resolve_media_to_data_uri
+                src_uri, _, _ = resolve_media_to_data_uri(source_image_path, tenant_id=tenant_id)
+                if src_uri:
+                    img_url = src_uri
+
+            if img_url:
+                payload["frame_images"] = [
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": img_url
+                        },
+                        "frame_type": "first_frame"
+                    }
+                ]
 
         try:
             # 1. Initiate video generation
@@ -216,6 +244,8 @@ class OpenRouterMediaProvider(BaseMediaProvider):
                                 video_url = None
                                 if isinstance(unsigned_list, list) and len(unsigned_list) > 0:
                                     video_url = unsigned_list[0]
+                                if not video_url and job_id:
+                                    video_url = f"https://openrouter.ai/api/v1/videos/{job_id}/content?index=0"
                                 if not video_url:
                                     video_url = (
                                         p_data.get("video_url")
@@ -224,7 +254,10 @@ class OpenRouterMediaProvider(BaseMediaProvider):
                                         or (p_data.get("assets", {}) if isinstance(p_data.get("assets"), dict) else {}).get("video")
                                     )
                                 if video_url:
-                                    dl = requests.get(video_url, headers=headers, timeout=60)
+                                    dl_headers = {"User-Agent": "AI-Skill-Engine/1.0"}
+                                    if "openrouter.ai" in video_url:
+                                        dl_headers.update(headers)
+                                    dl = requests.get(video_url, headers=dl_headers, timeout=60)
                                     if dl.status_code == 200 and len(dl.content) > 1000:
                                         return MediaGenerationResult(
                                             bytes_data=dl.content,
@@ -234,15 +267,18 @@ class OpenRouterMediaProvider(BaseMediaProvider):
                                             duration_seconds=duration,
                                             aspect_ratio=ratio
                                         )
-                            elif status in ("failed", "error", "rejected"):
+                            elif status in ("failed", "error", "rejected", "cancelled", "expired"):
                                 import logging
                                 logging.getLogger("openrouter_media").warning(
                                     f"[OpenRouter Video] Job failed: {p_data}"
                                 )
-                                break
+                                err_detail = p_data.get("error") or p_data.get("message") or f"Job status: {status}"
+                                raise RuntimeError(f"OpenRouter Video generation job failed: {err_detail}")
+                    else:
+                        raise RuntimeError(f"OpenRouter Video generation timed out waiting for job completion ({job_id})")
             else:
                 import logging
-                err_msg = resp.text[:300]
+                err_msg = resp.text[:500]
                 logging.getLogger("openrouter_media").warning(
                     f"[OpenRouter Video] HTTP {resp.status_code}: {err_msg}"
                 )
@@ -257,5 +293,5 @@ class OpenRouterMediaProvider(BaseMediaProvider):
         except Exception as e:
             import logging
             logging.getLogger("openrouter_media").error(f"[OpenRouter Video Exception] {e}")
-            pass
+            raise RuntimeError(f"OpenRouter Video generation failed: {e}")
         return None
