@@ -140,6 +140,8 @@ function ReasoningSection({
     const lastStep = groupedSteps[groupedSteps.length - 1];
     if (lastStep?.type === 'tool_execution' && !lastStep.isCompleted) {
       headerText = `Thinking · Running ${lastStep.name}…`;
+    } else if (lastStep?.type === 'status' || lastStep?.type === 'phase_notice') {
+      headerText = lastStep.content;
     } else {
       headerText = 'Thinking…';
     }
@@ -231,7 +233,9 @@ function ReasoningSection({
           `}</style>
 
           {groupedSteps.map((step, sidx) => {
-            if (step.type === 'phase_notice') {
+            if (step.type === 'phase_notice' || step.type === 'status') {
+              const isLast = sidx === groupedSteps.length - 1;
+              const isActive = isLast && isStreaming;
               return (
                 <div key={sidx} style={{
                   display: 'inline-flex',
@@ -243,10 +247,20 @@ function ReasoningSection({
                   background: 'var(--bg-card)',
                   border: '1px solid var(--border-subtle)',
                   borderRadius: '6px',
-                  padding: '3px 8px',
+                  padding: '4px 10px',
                   alignSelf: 'flex-start'
                 }}>
-                  <Sparkles size={12} color="var(--primary-indigo)" />
+                  {isActive ? (
+                    <span style={{
+                      width: '6px',
+                      height: '6px',
+                      borderRadius: '50%',
+                      background: 'var(--primary-indigo)',
+                      animation: 'pulse-dot 1.2s ease-in-out infinite'
+                    }} />
+                  ) : (
+                    <Sparkles size={12} color="var(--primary-indigo)" />
+                  )}
                   <span>{step.content}</span>
                 </div>
               );
@@ -862,6 +876,34 @@ export default function MessageList({
                         onToggle={() => setExpandedReasoning(prev => ({ ...prev, [idx]: !isReasoningOpen }))}
                         onCopy={copyText ? (text, key) => copyText(text, key) : null}
                       />
+                    )}
+
+                    {/* Live streaming status indicator when there is no reasoning or content yet */}
+                    {m.isStreaming && !hasReasoning && !m.content && (
+                      <div style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        fontSize: '0.82rem',
+                        color: 'var(--primary-violet)',
+                        padding: '4px 0'
+                      }}>
+                        <div style={{ display: 'flex', gap: '3px', alignItems: 'center' }}>
+                          {[0, 1, 2].map(i => (
+                            <span
+                              key={i}
+                              style={{
+                                width: '5px',
+                                height: '5px',
+                                borderRadius: '50%',
+                                background: 'var(--primary-violet)',
+                                animation: `bounce-dot 1.2s ease-in-out ${i * 0.2}s infinite`
+                              }}
+                            />
+                          ))}
+                        </div>
+                        <span>{m.status || 'Thinking…'}</span>
+                      </div>
                     )}
 
                     {/* Main Assistant Markdown Body */}
