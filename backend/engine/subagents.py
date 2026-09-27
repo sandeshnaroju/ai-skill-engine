@@ -620,8 +620,12 @@ def run_video_generation_subagent(
     if not clean_prompt:
         raise ValueError("A video prompt is required. Please describe the scene, motion, or content you want to generate.")
 
-    duration = 10 if duration_seconds in (10, "10") else 5
-    ratio = aspect_ratio if aspect_ratio in ("16:9", "9:16", "1:1") else "16:9"
+    try:
+        dur_val = int(duration_seconds)
+    except Exception:
+        dur_val = 5
+    duration = dur_val if 2 <= dur_val <= 15 else 5
+    ratio = aspect_ratio if aspect_ratio in ("16:9", "9:16", "1:1", "4:3", "3:4", "21:9", "9:21") else "16:9"
 
     try:
         provider = resolve_media_provider(
