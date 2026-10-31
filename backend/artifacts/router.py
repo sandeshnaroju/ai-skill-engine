@@ -380,6 +380,19 @@ def get_artifact_details(
     summary = serialize_artifact_summary(artifact)
     full_content = assemble_full_content(artifact)
     summary["full_content"] = full_content
+    summary["blocks"] = [
+        {
+            "id": b.id,
+            "artifact_id": b.artifact_id,
+            "block_key": b.block_key,
+            "order_index": b.order_index,
+            "title": b.title,
+            "content": b.content,
+            "version": b.version,
+            "updated_at": b.updated_at.isoformat() if b.updated_at else None
+        }
+        for b in sorted(artifact.blocks, key=lambda x: x.order_index)
+    ] if artifact.blocks else []
     return summary
 
 

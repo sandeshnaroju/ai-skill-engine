@@ -617,3 +617,45 @@ def run_multimodal_subagent_tool(
         flat_request_model=flat_model
     )
 
+
+def run_get_datetime_tool(args: dict = None, tenant = None) -> dict:
+    """
+    In-memory instantaneous datetime tool execution (< 1ms).
+    Bypasses Docker, Azure ACA, and process sandboxes.
+    """
+    import json
+    import time
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    start_t = time.time()
+    args = args or {}
+
+    # Priority: explicit tool argument -> tenant timezone -> UTC fallback
+    tz_str = args.get("timezone") or (getattr(tenant, "timezone", None) if tenant else None) or "UTC"
+    try:
+        tz = ZoneInfo(tz_str)
+    except Exception:
+        tz = ZoneInfo("UTC")
+        tz_str = "UTC"
+
+    now = datetime.now(tz)
+    result = {
+        "timezone": tz_str,
+        "current_time": now.strftime("%I:%M:%S %p"),
+        "current_date": now.strftime("%Y-%m-%d"),
+        "day_of_week": now.strftime("%A"),
+        "formatted": now.strftime("%A, %B %d, %Y at %I:%M:%S %p %Z"),
+        "iso_timestamp": now.isoformat(),
+        "unix_epoch": int(now.timestamp())
+    }
+
+    elapsed_ms = max(0, int((time.time() - start_t) * 1000))
+    return {
+        "stdout": json.dumps(result, indent=2),
+        "stderr": "",
+        "exit_code": 0,
+        "execution_time_ms": elapsed_ms,
+        "sandbox_type": "in_memory"
+    }
+

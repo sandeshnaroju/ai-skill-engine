@@ -19,6 +19,7 @@ from engine.tools_builtin import (
     run_send_email_tool,
     map_local_generated_files_to_tenant,
     run_multimodal_subagent_tool,
+    run_get_datetime_tool,
 )
 from artifacts.tools import (
     run_open_or_update_artifact,
@@ -84,6 +85,21 @@ def execute_tool(fn_name: str, args: dict, tool_def: dict, user_data: dict,
 
     exec_tool_def = resolve_user_data_placeholders(copy.deepcopy(tool_def), user_data)
     exec_args = resolve_user_data_placeholders(copy.deepcopy(args), user_data)
+
+    # ── Fast in-memory interception for datetime tools (< 1ms) ───────────────
+    datetime_matches = ("get_current_datetime", "get_current_time", "get_kolkata_time", "get_time", "get_datetime")
+    if (
+        fn_name in datetime_matches
+        or any(fn_name.endswith(f"__{t}") for t in datetime_matches)
+        or fn_name.startswith("get_current_time__")
+        or fn_name.startswith("datetime_fetcher__")
+        or fn_name.startswith("current_datetime__")
+    ):
+        exec_res = run_get_datetime_tool(args=exec_args, tenant=tenant)
+        command = f"in_memory get_current_datetime({json.dumps(exec_args)})"
+        tool_result = exec_res.get("stdout") or "Execution completed cleanly."
+        return command, exec_res, tool_result
+
     tool_type = tool_def.get("type", "shell")
 
     if tool_type in ("http", "rest_api", "api"):

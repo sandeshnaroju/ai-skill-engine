@@ -30,10 +30,11 @@ def list_apps(
     query = query.order_by(AppModel.created_at.desc())
     
     def serialize(a):
-        skill_list = [s.skill_name for s in a.skills]
+        active_skills_dict = skill_registry.get_skills_dict(tenant_id=target_tenant_id or current_tenant.id)
+        valid_skill_names = [s.skill_name for s in a.skills if s.skill_name in active_skills_dict]
         total_tools = 0
-        for sk_name in skill_list:
-            sk_data = skill_registry.get_skills_dict(tenant_id=target_tenant_id or current_tenant.id).get(sk_name)
+        for sk_name in valid_skill_names:
+            sk_data = active_skills_dict.get(sk_name)
             if sk_data:
                 total_tools += len(sk_data.get("tools", []))
         return {
@@ -43,8 +44,8 @@ def list_apps(
             "icon": a.icon,
             "tenant_id": a.tenant_id,
             "tenant_name": a.tenant.name if a.tenant else "Global",
-            "skill_names": skill_list,
-            "skills_count": len(skill_list),
+            "skill_names": valid_skill_names,
+            "skills_count": len(valid_skill_names),
             "tools_count": total_tools,
             "created_at": a.created_at.isoformat() if a.created_at else None
         }

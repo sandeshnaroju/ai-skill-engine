@@ -1,5 +1,5 @@
 import React from 'react';
-import { Play, ToggleRight, ToggleLeft, X, Sliders, ChevronDown, ChevronUp, Sparkles, Info } from 'lucide-react';
+import { Play, ToggleRight, ToggleLeft, X, Sliders, ChevronDown, ChevronUp, Sparkles, Info, RotateCcw } from 'lucide-react';
 import AsyncSearchableDropdown from '../AsyncSearchableDropdown';
 import { userDataApi, tenantsApi, appsApi, skillsApi } from '../../api';
 
@@ -55,6 +55,8 @@ export default function RequestBuilder({
   selectedTenantKey,
   isPaused,
   togglePause,
+  onClearChat,
+  messageHistory = [],
   // Completion Options Props
   paramsOpen,
   setParamsOpen,
@@ -121,22 +123,15 @@ export default function RequestBuilder({
             value={selectedTenantId}
             onChange={(val) => {
               setSelectedTenantId(val);
-              const foundTenant = tenants.find(t => t.id === val);
-              if (foundTenant && fetchTenantModels) {
-                fetchTenantModels(foundTenant.api_key, foundTenant.id);
-              }
             }}
-            initialLabel={tenants.find(t => t.id === selectedTenantId)?.name ? `${tenants.find(t => t.id === selectedTenantId).name} (••••${(tenants.find(t => t.id === selectedTenantId).api_key || '').slice(-4)})` : ''}
+            initialLabel={(() => {
+              const t = tenants.find(t => t.id === selectedTenantId);
+              if (t) return `${t.name} (••••${(t.api_key || '').slice(-4)})`;
+              return selectedTenantId ? `Workspace (${selectedTenantId.slice(0, 8)}...)` : '';
+            })()}
             fetchOptions={async (searchTerm) => {
               const data = await tenantsApi.list({ search: searchTerm || '', page_size: 50, page: 1 });
               const items = data.items || Array.isArray(data) ? (data.items || data) : [];
-              setTenants(prev => {
-                const newTs = [...prev];
-                items.forEach(t => {
-                  if (!newTs.find(existing => existing.id === t.id)) newTs.push(t);
-                });
-                return newTs;
-              });
               return items.map(t => ({
                 value: t.id,
                 label: `${t.name} (••••${(t.api_key || '').slice(-4)})`
@@ -1078,9 +1073,30 @@ export default function RequestBuilder({
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '6px' }}>
           <label style={{ fontSize: '0.76rem', color: 'var(--text-sub)', fontWeight: '600' }}>User Message</label>
-          <div style={{ display: 'flex', gap: '6px' }}>
+          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+            {messageHistory && messageHistory.length > 0 && (
+              <button
+                type="button"
+                className="btn-outline"
+                style={{
+                  fontSize: '0.7rem',
+                  padding: '2px 8px',
+                  color: '#f87171',
+                  borderColor: 'rgba(239, 68, 68, 0.35)',
+                  background: 'rgba(239, 68, 68, 0.08)',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px'
+                }}
+                onClick={onClearChat}
+                title="Clear conversation context and start a new chat"
+              >
+                <RotateCcw size={11} />
+                New Chat ({messageHistory.length} turns)
+              </button>
+            )}
             <button
               type="button"
               className="btn-outline"
