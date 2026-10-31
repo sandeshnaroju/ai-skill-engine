@@ -66,6 +66,8 @@ function CanvasInner({ isEmbed = false, artifactId: propArtifactId, token: propT
   const [showDownloadMenu, setShowDownloadMenu] = useState(false);
   const canvasRootRef = useRef(null);
   const downloadMenuRef = useRef(null);
+  const loadedArtifactIdRef = useRef(null);
+  const connectedSseIdRef = useRef(null);
 
   // Compute available download formats based on artifact type & filename
   const downloadFormats = useMemo(() => {
@@ -439,19 +441,29 @@ function CanvasInner({ isEmbed = false, artifactId: propArtifactId, token: propT
         throw new Error('Could not load artifact: received empty response');
       }
       setArtifact(data);
-      // Fetch full content of all blocks if outline provided
-      const blockPromises = (data?.outline || []).map((b) =>
-        artifactsApi.getBlock(effectiveId, b.block_key, tok).catch(() => ({
-          block_key: b.block_key,
-          title: b.title,
-          content: '',
-          version: b.version
-        }))
-      );
-      const loadedBlocks = await Promise.all(blockPromises);
-      setBlocks(loadedBlocks);
-      if (loadedBlocks.length > 0) {
-        setActiveBlockKey(loadedBlocks[0].block_key);
+      // If backend returns all blocks directly, use them to avoid N roundtrips
+      if (data?.blocks && Array.isArray(data.blocks) && data.blocks.length > 0) {
+        setBlocks(data.blocks);
+        if (!activeBlockKey && data.blocks.length > 0) {
+          setActiveBlockKey(data.blocks[0].block_key);
+        }
+      } else if (data?.outline && data.outline.length > 0) {
+        // Fallback for older backend versions
+        const blockPromises = (data?.outline || []).map((b) =>
+          artifactsApi.getBlock(effectiveId, b.block_key, tok).catch(() => ({
+            block_key: b.block_key,
+            title: b.title,
+            content: '',
+            version: b.version
+          }))
+        );
+        const loadedBlocks = await Promise.all(blockPromises);
+        setBlocks(loadedBlocks);
+        if (loadedBlocks.length > 0 && !activeBlockKey) {
+          setActiveBlockKey(loadedBlocks[0].block_key);
+        }
+      } else {
+        setBlocks([]);
       }
     } catch (err) {
       setError(err.message || 'Failed to load document');
@@ -461,7 +473,23 @@ function CanvasInner({ isEmbed = false, artifactId: propArtifactId, token: propT
   };
 
   useEffect(() => {
-    loadArtifact(artifactId, currentToken);
+    let effectiveId = artifactId;
+    if (!effectiveId && currentToken && currentToken.includes('.')) {
+      try {
+        const rawB64 = currentToken.split('.')[0].replace(/-/g, '+').replace(/_/g, '/');
+        const padded = rawB64.padEnd(rawB64.length + ((4 - (rawB64.length % 4)) % 4), '=');
+        const payload = JSON.parse(atob(padded));
+        effectiveId = payload?.art;
+      } catch {}
+    }
+
+    if (!effectiveId && !currentToken) return;
+
+    // Load if we haven't loaded this artifact ID yet, or on initial mount
+    if (effectiveId !== loadedArtifactIdRef.current) {
+      loadedArtifactIdRef.current = effectiveId;
+      loadArtifact(effectiveId, currentToken);
+    }
   }, [artifactId, currentToken]);
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -494,6 +522,10 @@ function CanvasInner({ isEmbed = false, artifactId: propArtifactId, token: propT
   useEffect(() => {
     const targetId = artifact?.id || artifactId;
     if (!targetId) return;
+
+    // Do not reconnect EventSource if already connected to this targetId
+    if (connectedSseIdRef.current === targetId) return;
+    connectedSseIdRef.current = targetId;
 
     const streamUrl = artifactsApi.getStreamUrl(targetId, currentToken);
     const es = new EventSource(streamUrl);
@@ -549,6 +581,9 @@ function CanvasInner({ isEmbed = false, artifactId: propArtifactId, token: propT
 
     return () => {
       es.close();
+      if (connectedSseIdRef.current === targetId) {
+        connectedSseIdRef.current = null;
+      }
     };
   }, [artifact?.id, artifactId, currentToken]);
 

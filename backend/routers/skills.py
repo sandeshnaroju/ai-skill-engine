@@ -171,6 +171,20 @@ def delete_skill(
         (CustomSkill.tenant_id == target_tenant_id) | (CustomSkill.tenant_id == None)
     ).first()
     if existing:
+        from models import AppModel, AppSkillMapping
+        # Cascade cleanup: remove this skill from any apps where it was mapped
+        if existing.tenant_id:
+            tenant_app_ids = [a[0] for a in db.query(AppModel.id).filter(AppModel.tenant_id == existing.tenant_id).all()]
+            if tenant_app_ids:
+                db.query(AppSkillMapping).filter(
+                    AppSkillMapping.skill_name == clean_name,
+                    AppSkillMapping.app_id.in_(tenant_app_ids)
+                ).delete(synchronize_session=False)
+        else:
+            db.query(AppSkillMapping).filter(
+                AppSkillMapping.skill_name == clean_name
+            ).delete(synchronize_session=False)
+
         db.delete(existing)
         db.commit()
         skill_registry.reload_skills(tenant_id=target_tenant_id, db=db)

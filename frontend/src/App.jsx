@@ -986,6 +986,17 @@ function AppContent() {
 }
 
 export default function App() {
+  const location = useLocation();
+
+  // If iframe embed canvas view, render directly without mounting dashboard shell & admin hooks
+  if (location.pathname.startsWith('/embed/canvas')) {
+    return (
+      <ToastProvider>
+        <Canvas isEmbed={true} />
+      </ToastProvider>
+    );
+  }
+
   return (
     <ToastProvider>
       <ApiErrorListenerBridge />

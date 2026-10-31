@@ -91,19 +91,20 @@ def resolve_allowed_skills(db: DbSession, tenant, app_id: str = None, skill_name
     """
     from skill_registry import skill_registry
 
+    tenant_id = tenant.id if tenant else None
+    known = set(skill_registry.get_skills_dict(tenant_id=tenant_id).keys())
+
     if app_id:
         from models import AppModel
         app_obj = db.query(AppModel).filter(AppModel.id == app_id).first()
         if app_obj:
-            app_skills = [m.skill_name for m in app_obj.skills]
+            app_skills = [m.skill_name for m in app_obj.skills if m.skill_name in known]
             if skill_names:
                 return [s for s in skill_names if s in app_skills]
             return app_skills
         return []
 
     if skill_names:
-        tenant_id = tenant.id if tenant else None
-        known = set(skill_registry.get_skills_dict(tenant_id=tenant_id).keys())
         return [s for s in skill_names if s in known]
 
     return None

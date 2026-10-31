@@ -116,7 +116,7 @@ def stream_prochat_ui(db: Session, tenant, full_text: str, prochat_model: str,
         loading = {
             "id": f"chatcmpl-{session_id}", "object": "chat.completion.chunk",
             "created": 1700000000, "model": model_name,
-            "choices": [{"index": 0, "delta": {"reasoning": "Generating dynamic user interface components..."}, "finish_reason": None}]
+            "choices": [{"index": 0, "delta": {"status": "Generating dynamic user interface components..."}, "finish_reason": None}]
         }
         yield f"data: {json.dumps(loading)}\n\n"
 

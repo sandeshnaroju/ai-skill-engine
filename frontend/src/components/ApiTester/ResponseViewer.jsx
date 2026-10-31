@@ -1,7 +1,7 @@
 import React from 'react';
 import {
   Check, FileText, Sparkles, ExternalLink, ArrowRight,
-  Code, Table, Presentation, Image, Music, Video, Globe
+  Code, Table, Presentation, Image, Music, Video, Globe, RotateCcw
 } from 'lucide-react';
 import ProChat from 'prochat';
 
@@ -9,6 +9,8 @@ export default function ResponseViewer({
   activeTab,
   setActiveTab,
   messageHistory,
+  onClearChat,
+  hasChatHistory,
   renderMarkdown,
   consoleViewMode,
   setConsoleViewMode,
@@ -217,6 +219,33 @@ export default function ResponseViewer({
           }}
         >
           Request cURL / Body
+        </button>
+
+        {/* Clear Chat Button */}
+        <button
+          type="button"
+          onClick={onClearChat}
+          disabled={!hasChatHistory}
+          title={hasChatHistory ? "Clear conversation context and start a new chat" : "No conversation history to clear"}
+          style={{
+            marginLeft: 'auto',
+            background: hasChatHistory ? 'rgba(239, 68, 68, 0.1)' : 'transparent',
+            border: hasChatHistory ? '1px solid rgba(239, 68, 68, 0.25)' : '1px solid var(--border-subtle)',
+            color: hasChatHistory ? '#f87171' : 'var(--text-muted)',
+            borderRadius: '6px',
+            padding: '5px 10px',
+            fontSize: '0.8rem',
+            fontWeight: '500',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '6px',
+            cursor: hasChatHistory ? 'pointer' : 'not-allowed',
+            opacity: hasChatHistory ? 1 : 0.45,
+            transition: 'all 0.15s ease'
+          }}
+        >
+          <RotateCcw size={13} />
+          Clear Chat{messageHistory?.length > 0 ? ` (${messageHistory.length})` : ''}
         </button>
       </div>
 

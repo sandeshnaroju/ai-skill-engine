@@ -16,12 +16,18 @@ export default function ApiTester() {
   const [apps, setApps] = useState([]);
   const selectedTenantId = searchParams.get('tenant') || '';
   const setSelectedTenantId = (val) => {
-    const nextParams = new URLSearchParams(searchParams);
-    if (val) nextParams.set('tenant', val);
-    else nextParams.delete('tenant');
-    setSearchParams(nextParams);
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      if (val) next.set('tenant', val);
+      else next.delete('tenant');
+      next.delete('app_id');
+      next.delete('model');
+      return next;
+    }, { replace: true });
   };
-  const activeTenant = tenants.find(t => t.id === selectedTenantId) || tenants[0];
+  const activeTenant = selectedTenantId
+    ? (tenants.find(t => t.id === selectedTenantId) || null)
+    : (tenants[0] || null);
   const selectedTenantKey = activeTenant ? activeTenant.api_key : '';
 
   // URL State Sync
@@ -39,66 +45,83 @@ export default function ApiTester() {
   const stream = searchParams.get('stream') !== 'false';
 
   const setModel = (val) => {
-    const nextParams = new URLSearchParams(searchParams);
-    if (val) nextParams.set('model', val);
-    else nextParams.delete('model');
-    setSearchParams(nextParams);
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      if (val) next.set('model', val);
+      else next.delete('model');
+      return next;
+    }, { replace: true });
   };
 
   const setAppId = (val) => {
-    const nextParams = new URLSearchParams(searchParams);
-    if (val) nextParams.set('app_id', val);
-    else nextParams.delete('app_id');
-    setSearchParams(nextParams);
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      if (val) next.set('app_id', val);
+      else next.delete('app_id');
+      return next;
+    }, { replace: true });
   };
 
   const setProchatModel = (val) => {
-    const nextParams = new URLSearchParams(searchParams);
-    if (val) nextParams.set('prochat_model', val);
-    else nextParams.delete('prochat_model');
-    setSearchParams(nextParams);
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      if (val) next.set('prochat_model', val);
+      else next.delete('prochat_model');
+      return next;
+    }, { replace: true });
   };
 
   const setImageModel = (val) => {
-    const nextParams = new URLSearchParams(searchParams);
-    if (val) nextParams.set('image_model', val);
-    else nextParams.delete('image_model');
-    setSearchParams(nextParams);
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      if (val) next.set('image_model', val);
+      else next.delete('image_model');
+      return next;
+    }, { replace: true });
   };
 
   const setImageGenModel = (val) => {
-    const nextParams = new URLSearchParams(searchParams);
-    if (val) nextParams.set('image_gen_model', val);
-    else nextParams.delete('image_gen_model');
-    setSearchParams(nextParams);
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      if (val) next.set('image_gen_model', val);
+      else next.delete('image_gen_model');
+      return next;
+    }, { replace: true });
   };
 
   const setAudioModel = (val) => {
-    const nextParams = new URLSearchParams(searchParams);
-    if (val) nextParams.set('audio_model', val);
-    else nextParams.delete('audio_model');
-    setSearchParams(nextParams);
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      if (val) next.set('audio_model', val);
+      else next.delete('audio_model');
+      return next;
+    }, { replace: true });
   };
 
   const setVideoModel = (val) => {
-    const nextParams = new URLSearchParams(searchParams);
-    if (val) nextParams.set('video_model', val);
-    else nextParams.delete('video_model');
-    setSearchParams(nextParams);
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      if (val) next.set('video_model', val);
+      else next.delete('video_model');
+      return next;
+    }, { replace: true });
   };
 
   const setVideoGenModel = (val) => {
-    const nextParams = new URLSearchParams(searchParams);
-    if (val) nextParams.set('video_gen_model', val);
-    else nextParams.delete('video_gen_model');
-    setSearchParams(nextParams);
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      if (val) next.set('video_gen_model', val);
+      else next.delete('video_gen_model');
+      return next;
+    }, { replace: true });
   };
 
-
   const setStream = (val) => {
-    const nextParams = new URLSearchParams(searchParams);
-    nextParams.set('stream', val ? 'true' : 'false');
-    setSearchParams(nextParams);
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      next.set('stream', val ? 'true' : 'false');
+      return next;
+    }, { replace: true });
   };
 
   const [userDataPairs, setUserDataPairs] = useState([{ key: 'api_key', value: 'example_secret_key' }]);
@@ -260,6 +283,28 @@ export default function ApiTester() {
 
   const renderMarkdown = (src) => parseMarkdownToHtml(src, { linkColor: 'var(--primary-cyan)' });
 
+  const handleClearChat = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    setLoading(false);
+    setMessageHistory([]);
+    setStreamContent('');
+    setStreamReasoning([]);
+    setStreamTools([]);
+    setStreamStatus('');
+    setStreamStatuses([]);
+    setProchatUiJson(null);
+    setProchatUiCode('');
+    setStreamArtifacts([]);
+    setCanvasArtifact(null);
+    setIsCanvasOpen(false);
+    setUploadedFile(null);
+    logText('Conversation cleared. Started a fresh chat session.');
+  };
+
+  const hasChatHistory = messageHistory.length > 0 || Boolean(streamContent) || streamTools.length > 0 || Boolean(streamStatus);
+
   const handleFileUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -300,9 +345,10 @@ export default function ApiTester() {
 
   const loadMetaData = async () => {
     try {
+      const currentParamTenant = new URLSearchParams(window.location.search).get('tenant');
       const [tenantsData, appsData] = await Promise.all([
         tenantsApi.list({ page_size: 100 }),
-        appsApi.list({ page_size: 100 })
+        appsApi.list({ page_size: 100, tenant_id: currentParamTenant || undefined })
       ]);
 
       const tenantsList = Array.isArray(tenantsData) ? tenantsData : (tenantsData.items || tenantsData.data || []);
@@ -310,33 +356,16 @@ export default function ApiTester() {
       setTenants(tenantsList);
       setApps(appsList);
 
-      // Determine which tenant + app to auto-select (only when not already in URL)
-      let tenantIdToUse = selectedTenantId;
-      let needsTenantSet = false;
-      if (!tenantIdToUse && tenantsList.length > 0) {
+      const effectiveParamTenant = new URLSearchParams(window.location.search).get('tenant');
+      if (!effectiveParamTenant && tenantsList.length > 0) {
         const preferredTenant = tenantsList.find(t => (t.models_count && t.models_count > 0) || t.name === 'Default Workspace') || tenantsList[0];
-        tenantIdToUse = preferredTenant.id;
-        needsTenantSet = true;
-      }
-
-      const needsAppSet = appsList.length > 0 && !appId;
-      const firstAppId  = needsAppSet ? appsList[0].id : null;
-
-      // Batch tenant + app_id into ONE setSearchParams call to avoid multiple URL pushes
-      if (needsTenantSet || needsAppSet) {
         setSearchParams(prev => {
           const next = new URLSearchParams(prev);
-          if (needsTenantSet) next.set('tenant', tenantIdToUse);
-          if (needsAppSet)    next.set('app_id', firstAppId);
+          if (!next.get('tenant')) {
+            next.set('tenant', preferredTenant.id);
+          }
           return next;
-        });
-      }
-
-      // Resolve key and fetch models (issues its own single batched setSearchParams)
-      const activeT = tenantsList.find(t => t.id === tenantIdToUse) || tenantsList[0];
-      const keyToUse = activeT ? activeT.api_key : '';
-      if (keyToUse || tenantIdToUse) {
-        fetchTenantModels(keyToUse, tenantIdToUse);
+        }, { replace: true });
       }
     } catch (e) {
       console.error('Failed to load metadata:', e);
@@ -347,12 +376,20 @@ export default function ApiTester() {
     loadMetaData();
   }, []);
 
+  const inFlightTenantRef = React.useRef(null);
+
   const fetchTenantModels = async (key, tenantId) => {
-    const targetKey = key || selectedTenantKey;
     const targetId = tenantId || selectedTenantId;
-    if (!targetKey && !targetId) return;
+    if (!targetId) return;
+    inFlightTenantRef.current = targetId;
+
+    const targetTenant = tenants.find(t => t.id === targetId);
+    const targetKey = key || targetTenant?.api_key || null;
+
     try {
-      const data = await tenantsApi.listLlms(targetKey || null, { tenant_id: targetId || undefined, page_size: 100 });
+      const data = await tenantsApi.listLlms(targetKey || null, { tenant_id: targetId, page_size: 100 });
+      if (inFlightTenantRef.current !== targetId) return;
+
       const items = Array.isArray(data) ? data : (data.items || []);
       setTenantModels(items || []);
 
@@ -373,37 +410,43 @@ export default function ApiTester() {
       const firstVision    = visionModels[0]?.model_name || '';
       const firstImageGen  = (imageGenModels.length > 0 ? imageGenModels[0] : visionModels[0])?.model_name || '';
       const firstVideoGen  = (videoGenModels.length > 0 ? videoGenModels[0] : visionModels[0])?.model_name || '';
-      const urlModelExists = model && textModels.some(m => m.model_name === model);
-      const newModel       = !urlModelExists ? (textModels[0]?.model_name || '') : null;
+      
+      const currentUrlParams = new URLSearchParams(window.location.search);
+      const currentUrlModel = currentUrlParams.get('model');
+      const urlModelExists = currentUrlModel && textModels.some(m => m.model_name === currentUrlModel);
+      const newModel = !urlModelExists ? (textModels[0]?.model_name || '') : null;
 
-      // --- Batch ALL url-param updates into ONE setSearchParams call ---
-      // Each individual setter creates its own URLSearchParams from the stale
-      // searchParams closure, causing N separate history pushes and N re-renders.
       setSearchParams(prev => {
         const next = new URLSearchParams(prev);
+        if (targetId) next.set('tenant', targetId);
         if (newModel !== null) {
           if (newModel) next.set('model', newModel);
           else next.delete('model');
         }
-        if (!prev.get('image_model')    && firstVision)   next.set('image_model',   firstVision);
-        if (!prev.get('image_gen_model') && firstImageGen) next.set('image_gen_model', firstImageGen);
-        if (!prev.get('audio_model')    && firstVision)   next.set('audio_model',   firstVision);
-        if (!prev.get('video_model')    && firstVision)   next.set('video_model',   firstVision);
-        if (!prev.get('video_gen_model') && firstVideoGen) next.set('video_gen_model', firstVideoGen);
+        if (!next.get('image_model')    && firstVision)   next.set('image_model',   firstVision);
+        if (!next.get('image_gen_model') && firstImageGen) next.set('image_gen_model', firstImageGen);
+        if (!next.get('audio_model')    && firstVision)   next.set('audio_model',   firstVision);
+        if (!next.get('video_model')    && firstVision)   next.set('video_model',   firstVision);
+        if (!next.get('video_gen_model') && firstVideoGen) next.set('video_gen_model', firstVideoGen);
         return next;
-      });
+      }, { replace: true });
     } catch (e) {
       console.error('Failed to fetch tenant models:', e);
     }
   };
 
   useEffect(() => {
-    // Effect fires only when the user actually selects a different tenant.
-    // loadMetaData() already calls fetchTenantModels directly on initial load,
-    // so we do NOT include `tenants` here to avoid a double-fire on mount.
     if (selectedTenantId) {
-      const key = tenants.find(t => t.id === selectedTenantId)?.api_key || '';
+      const activeT = tenants.find(t => t.id === selectedTenantId);
+      const key = activeT?.api_key || '';
       fetchTenantModels(key, selectedTenantId);
+
+      appsApi.list({ page_size: 100, tenant_id: selectedTenantId })
+        .then(appsData => {
+          const appsList = appsData?.items || appsData || [];
+          setApps(appsList);
+        })
+        .catch(err => console.error('Failed to reload apps for tenant:', err));
     }
   }, [selectedTenantId]);
 
@@ -1047,6 +1090,8 @@ export default function ApiTester() {
           setOpenrouterModels={setOpenrouterModels}
           extraBodyJson={extraBodyJson}
           setExtraBodyJson={setExtraBodyJson}
+          onClearChat={handleClearChat}
+          messageHistory={messageHistory}
         />
 
         {/* Column 2: Request & Response Tabs */}
@@ -1054,6 +1099,8 @@ export default function ApiTester() {
           activeTab={activeTab}
           setActiveTab={setActiveTab}
           messageHistory={messageHistory}
+          onClearChat={handleClearChat}
+          hasChatHistory={hasChatHistory}
           renderMarkdown={renderMarkdown}
           consoleViewMode={consoleViewMode}
           setConsoleViewMode={setConsoleViewMode}
