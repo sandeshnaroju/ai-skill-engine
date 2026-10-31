@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Cpu,
   Calendar,
@@ -93,7 +93,7 @@ export default function LogicViewer({ fullContent, artifact, filename = 'program
   });
 
   useEffect(() => {
-    if (propTheme && propTheme !== theme) {
+    if (propTheme) {
       setTheme(propTheme);
     }
   }, [propTheme]);

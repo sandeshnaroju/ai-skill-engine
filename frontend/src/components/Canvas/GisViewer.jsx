@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   MapPin,
   Layers,
@@ -88,7 +88,7 @@ export default function GisViewer({ fullContent, artifact, filename = 'map.geojs
   });
 
   useEffect(() => {
-    if (propTheme && propTheme !== theme) {
+    if (propTheme) {
       setTheme(propTheme);
     }
   }, [propTheme]);
@@ -102,12 +102,19 @@ export default function GisViewer({ fullContent, artifact, filename = 'map.geojs
     window.addEventListener('app-theme-change', handleAppTheme);
     return () => window.removeEventListener('app-theme-change', handleAppTheme);
   }, []);
+
   const [selectedFeature, setSelectedFeature] = useState(null);
   const [showTable, setShowTable] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
   const startPanRef = useRef({ x: 0, y: 0 });
+
+  useEffect(() => {
+    setSelectedFeature(null);
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+  }, [fullContent, filename]);
 
   const geojson = useMemo(() => parseGeoData(fullContent, filename), [fullContent, filename]);
 
