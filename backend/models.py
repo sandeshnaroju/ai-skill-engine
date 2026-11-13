@@ -63,6 +63,9 @@ class Tenant(Base):
     default_video_model = Column(String, nullable=True, default="gemini-2.5-flash")
     default_video_gen_model = Column(String, nullable=True, default="veo-3.1-fast-generate-preview")
 
+    # Default Webhook
+    default_webhook_url = Column(String, nullable=True)
+
     # Relationships
     user = relationship("User", back_populates="tenants")
     sessions = relationship("ConversationSession", back_populates="tenant", cascade="all, delete-orphan")
@@ -78,6 +81,7 @@ class Tenant(Base):
     sandbox_configs = relationship("SandboxConfig", back_populates="tenant", cascade="all, delete-orphan")
     artifacts = relationship("SessionArtifact", back_populates="tenant", cascade="all, delete-orphan")
     session_files = relationship("SessionFile", back_populates="tenant", cascade="all, delete-orphan")
+    scheduled_jobs = relationship("ScheduledJob", back_populates="tenant", cascade="all, delete-orphan")
 
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -425,3 +429,44 @@ class SessionFile(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     tenant = relationship("Tenant", back_populates="session_files")
+
+
+class ScheduledJob(Base):
+    """
+    Automated recurring or timed task executions.
+    Strictly scoped to a tenant and executed through the SkillEngine.
+    """
+    __tablename__ = "scheduled_jobs"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    tenant_id = Column(String, ForeignKey("tenants.id"), nullable=False, index=True)
+    session_id = Column(String, nullable=True, index=True)
+    name = Column(String, nullable=False)
+    prompt = Column(Text, nullable=False)
+    skill_names = Column(Text, nullable=True)  # JSON-encoded array of active skill names
+    model_name = Column(String, nullable=True)
+    user_data = Column(Text, nullable=True)  # JSON-encoded dictionary
+
+    # Triggers
+    trigger_type = Column(String, nullable=False, default="cron")  # cron, interval, date
+    cron_expression = Column(String, nullable=True)  # Standard 5-field cron (e.g. '0 10 * * *')
+    interval_seconds = Column(Integer, nullable=True)  # Seconds between ticks (e.g. 3600)
+    run_at = Column(DateTime, nullable=True)  # Exact one-shot date/time
+
+    # Multi-Channel Delivery
+    delivery_channels = Column(Text, nullable=True)  # JSON array of channel targets
+    notify_email = Column(String, nullable=True)
+    notify_webhook = Column(String, nullable=True)
+    store_in_session = Column(Boolean, default=True)
+
+    # State & Audit
+    is_active = Column(Boolean, default=True)
+    last_run_at = Column(DateTime, nullable=True)
+    next_run_at = Column(DateTime, nullable=True)
+    run_count = Column(Integer, default=0)
+    last_result = Column(Text, nullable=True)
+    last_error = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    tenant = relationship("Tenant", back_populates="scheduled_jobs")

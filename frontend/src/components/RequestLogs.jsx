@@ -12,7 +12,8 @@ const STATUS_STYLES = {
 
 const SOURCE_STYLES = {
   api: { label: 'API', bg: 'rgba(6, 182, 212, 0.12)', color: 'var(--primary-cyan)' },
-  dashboard: { label: 'Dashboard', bg: 'rgba(139, 92, 246, 0.12)', color: 'var(--primary-violet)' }
+  dashboard: { label: 'Dashboard', bg: 'rgba(139, 92, 246, 0.12)', color: 'var(--primary-violet)' },
+  scheduler: { label: 'Scheduler', bg: 'rgba(245, 158, 11, 0.12)', color: '#f59e0b' }
 };
 
 function StatusBadge({ status }) {
@@ -431,6 +432,7 @@ export default function RequestLogs() {
           <option value="">All Sources</option>
           <option value="api">API</option>
           <option value="dashboard">Dashboard</option>
+          <option value="scheduler">Scheduler</option>
         </select>
 
         {/* Status filter */}

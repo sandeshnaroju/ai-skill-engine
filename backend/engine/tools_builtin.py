@@ -55,12 +55,16 @@ def run_send_email_tool(db, args: dict, tenant) -> dict:
             }
             
     try:
+        from email.utils import formatdate, make_msgid
         msg = MIMEMultipart()
         msg['From'] = config.sender_email
         msg['To'] = to_email
         msg['Subject'] = subject
+        msg['Date'] = formatdate(localtime=True)
+        domain = config.sender_email.split("@")[-1] if "@" in (config.sender_email or "") else None
+        msg['Message-ID'] = make_msgid(domain=domain)
         is_html = any(tag in body.lower() for tag in ["<html", "<body", "<div", "<p", "<span", "<table", "<h1", "<h2", "<h3", "<ul", "<ol", "<li", "<br", "<a ", "<p>"])
-        msg.attach(MIMEText(body, "html" if is_html else "plain"))
+        msg.attach(MIMEText(body, "html" if is_html else "plain", "utf-8"))
         
         if config.use_ssl:
             server = smtplib.SMTP_SSL(config.smtp_host, config.smtp_port, timeout=12)
@@ -72,7 +76,8 @@ def run_send_email_tool(db, args: dict, tenant) -> dict:
         if config.smtp_username:
             server.login(config.smtp_username, password)
             
-        server.sendmail(config.sender_email, to_email, msg.as_string())
+        recipient_list = [r.strip() for r in str(to_email).split(",") if r.strip()]
+        server.sendmail(config.sender_email, recipient_list, msg.as_string())
         server.quit()
         
         return {
@@ -86,6 +91,84 @@ def run_send_email_tool(db, args: dict, tenant) -> dict:
         return {
             "stdout": "",
             "stderr": f"SMTP delivery failed: {str(e)}",
+            "exit_code": 1,
+            "execution_time_ms": int((time.time() - start_time) * 1000),
+            "sandbox_type": "host"
+        }
+
+
+def run_send_webhook_tool(db, args: dict, tenant, request_webhook_url: str = None) -> dict:
+    import time
+    start_time = time.time()
+    
+    url = (
+        args.get("url")
+        or args.get("webhook_url")
+        or args.get("target")
+        or request_webhook_url
+        or (getattr(tenant, "default_webhook_url", None) if tenant else None)
+    )
+    if not url:
+        return {
+            "stdout": "",
+            "stderr": "Error: url is a required parameter for send_webhook, and no default webhook URL is configured for this request or workspace.",
+            "exit_code": 1,
+            "execution_time_ms": int((time.time() - start_time) * 1000),
+            "sandbox_type": "host"
+        }
+        
+    payload = args.get("payload")
+    if payload is None:
+        payload = args.get("data") or args.get("body") or {}
+        
+    headers = args.get("headers") or {}
+    if not isinstance(headers, dict):
+        headers = {}
+        
+    method = str(args.get("method", "POST")).upper().strip()
+    
+    import httpx, json
+    try:
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except Exception:
+                pass
+                
+        req_headers = {"User-Agent": "AI-Skill-Engine-Webhook/1.0", **headers}
+        if "content-type" not in [k.lower() for k in req_headers]:
+            req_headers["Content-Type"] = "application/json"
+            
+        with httpx.Client(timeout=15.0) as client:
+            if isinstance(payload, (dict, list)):
+                resp = client.request(method, url, json=payload, headers=req_headers)
+            else:
+                resp = client.request(method, url, content=str(payload), headers=req_headers)
+                
+        status_code = resp.status_code
+        resp_text = resp.text[:500] if resp.text else ""
+        elapsed_ms = int((time.time() - start_time) * 1000)
+        
+        if resp.is_success:
+            return {
+                "stdout": f"Webhook successfully delivered to {url} [HTTP {status_code}]: {resp_text}",
+                "stderr": "",
+                "exit_code": 0,
+                "execution_time_ms": elapsed_ms,
+                "sandbox_type": "host"
+            }
+        else:
+            return {
+                "stdout": "",
+                "stderr": f"Webhook delivery returned HTTP error {status_code}: {resp_text}",
+                "exit_code": 1,
+                "execution_time_ms": elapsed_ms,
+                "sandbox_type": "host"
+            }
+    except Exception as e:
+        return {
+            "stdout": "",
+            "stderr": f"Webhook delivery failed: {str(e)}",
             "exit_code": 1,
             "execution_time_ms": int((time.time() - start_time) * 1000),
             "sandbox_type": "host"
@@ -658,4 +741,286 @@ def run_get_datetime_tool(args: dict = None, tenant = None) -> dict:
         "execution_time_ms": elapsed_ms,
         "sandbox_type": "in_memory"
     }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Scheduling & Automated Jobs Built-in Tools
+# ─────────────────────────────────────────────────────────────────────────────
+
+def run_create_schedule_tool(args: dict, tenant, db, session_id: str = None,
+                              model_name: str = None, request_webhook_url: str = None) -> dict:
+    import json
+    import time
+    from datetime import datetime
+    from models import ScheduledJob
+    from scheduler.manager import register_job, get_scheduler
+
+    start_t = time.time()
+    args = args or {}
+
+    name = args.get("name") or "Scheduled Task"
+    prompt = args.get("prompt")
+    if not prompt:
+        return {
+            "stdout": "",
+            "stderr": "Error: 'prompt' parameter is required for scheduling.",
+            "exit_code": 1,
+            "execution_time_ms": 0,
+            "sandbox_type": "in_memory"
+        }
+
+    trigger_type = (args.get("trigger_type") or "cron").lower().strip()
+    cron_expr = args.get("cron_expression")
+    interval_secs = args.get("interval_seconds")
+    if trigger_type == "interval" and interval_secs is not None:
+        try:
+            interval_secs = int(interval_secs)
+        except Exception:
+            interval_secs = 3600
+
+    run_at_val = None
+    if args.get("run_at"):
+        try:
+            run_at_val = datetime.fromisoformat(str(args["run_at"]))
+        except Exception:
+            run_at_val = None
+
+    # Webhook Resolution:
+    # 1. Explicit tool argument (notify_webhook or webhook_url)
+    # 2. Method 1: request-level webhook_url
+    # 3. Method 3: tenant.default_webhook_url
+    resolved_webhook = (
+        args.get("notify_webhook")
+        or args.get("webhook_url")
+        or request_webhook_url
+        or (getattr(tenant, "default_webhook_url", None) if tenant else None)
+    )
+
+    delivery_channels = args.get("delivery_channels")
+    delivery_channels_str = json.dumps(delivery_channels) if (delivery_channels and isinstance(delivery_channels, (list, dict))) else None
+
+    skill_names = args.get("skill_names")
+    skill_names_str = json.dumps(skill_names) if (skill_names and isinstance(skill_names, list)) else None
+
+    tenant_id = tenant.id if tenant else "default"
+
+    job = ScheduledJob(
+        tenant_id=tenant_id,
+        session_id=session_id,
+        name=name,
+        prompt=prompt,
+        trigger_type=trigger_type,
+        cron_expression=cron_expr,
+        interval_seconds=interval_secs,
+        run_at=run_at_val,
+        delivery_channels=delivery_channels_str,
+        notify_email=args.get("notify_email"),
+        notify_webhook=resolved_webhook,
+        skill_names=skill_names_str,
+        model_name=model_name,
+        is_active=True,
+    )
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+
+    # If scheduler is running in this worker, register in memory immediately
+    sched = get_scheduler()
+    if sched and sched.running:
+        try:
+            register_job(sched, job)
+        except Exception:
+            pass
+
+    trigger_desc = {
+        "cron": f"cron expression `{job.cron_expression}`",
+        "interval": f"every {job.interval_seconds} seconds",
+        "date": f"once at {job.run_at.isoformat() if job.run_at else ''}",
+    }.get(job.trigger_type, job.trigger_type)
+
+    delivery_desc = []
+    if job.notify_email:
+        delivery_desc.append(f"Email: {job.notify_email}")
+    if job.notify_webhook:
+        delivery_desc.append(f"Webhook: {job.notify_webhook}")
+    if job.delivery_channels:
+        delivery_desc.append("Multi-channel targets")
+    if not delivery_desc:
+        delivery_desc.append("In-app chat session")
+
+    elapsed_ms = int((time.time() - start_t) * 1000)
+    msg = (
+        f"Scheduled job created successfully! ✅\n"
+        f"• ID: {job.id}\n"
+        f"• Name: {job.name}\n"
+        f"• Schedule: {trigger_desc}\n"
+        f"• Delivery: {', '.join(delivery_desc)}\n"
+        f"• Timezone: {tenant.timezone if tenant and tenant.timezone else 'UTC'}"
+    )
+    return {
+        "stdout": msg,
+        "stderr": "",
+        "exit_code": 0,
+        "execution_time_ms": elapsed_ms,
+        "sandbox_type": "in_memory"
+    }
+
+
+def run_list_schedules_tool(tenant, db) -> dict:
+    from models import ScheduledJob
+    tenant_id = tenant.id if tenant else None
+    if not tenant_id:
+        return {"stdout": "No tenant context available.", "stderr": "", "exit_code": 0, "execution_time_ms": 0, "sandbox_type": "in_memory"}
+
+    jobs = db.query(ScheduledJob).filter(
+        ScheduledJob.tenant_id == tenant_id
+    ).order_by(ScheduledJob.created_at.desc()).all()
+
+    if not jobs:
+        return {
+            "stdout": "No scheduled jobs currently registered for this workspace.",
+            "stderr": "",
+            "exit_code": 0,
+            "execution_time_ms": 0,
+            "sandbox_type": "in_memory"
+        }
+
+    lines = ["**Active Schedules for this workspace:**\n"]
+    for j in jobs:
+        status_icon = "🟢 Active" if j.is_active else "⏸️ Paused"
+        trigger_val = j.cron_expression or (f"every {j.interval_seconds}s" if j.interval_seconds else str(j.run_at))
+        lines.append(f"• **{j.name}** (`{j.id}`)")
+        lines.append(f"  Status: {status_icon} | Schedule: {j.trigger_type} ({trigger_val})")
+        lines.append(f"  Task: {j.prompt[:80]}...")
+        if j.last_run_at:
+            lines.append(f"  Last Run: {j.last_run_at.strftime('%Y-%m-%d %H:%M:%S UTC')} (Runs: {j.run_count})")
+        lines.append("")
+
+    return {
+        "stdout": "\n".join(lines).strip(),
+        "stderr": "",
+        "exit_code": 0,
+        "execution_time_ms": 0,
+        "sandbox_type": "in_memory"
+    }
+
+
+def run_cancel_schedule_tool(args: dict, tenant, db) -> dict:
+    from models import ScheduledJob
+    from scheduler.manager import get_scheduler
+
+    args = args or {}
+    job_id = (args.get("job_id") or "").strip()
+    if not job_id:
+        return {"stdout": "", "stderr": "Error: 'job_id' parameter is required to cancel a schedule.", "exit_code": 1, "execution_time_ms": 0, "sandbox_type": "in_memory"}
+
+    tenant_id = tenant.id if tenant else None
+    query = db.query(ScheduledJob)
+    if tenant_id:
+        query = query.filter(ScheduledJob.tenant_id == tenant_id)
+
+    job = query.filter((ScheduledJob.id == job_id) | (ScheduledJob.name.ilike(job_id))).first()
+    if not job:
+        return {
+            "stdout": "",
+            "stderr": f"Error: Scheduled job '{job_id}' not found.",
+            "exit_code": 1,
+            "execution_time_ms": 0,
+            "sandbox_type": "in_memory"
+        }
+
+    target_id = job.id
+    target_name = job.name
+    db.delete(job)
+    db.commit()
+
+    sched = get_scheduler()
+    if sched and sched.running:
+        try:
+            sched.remove_job(target_id)
+        except Exception:
+            pass
+
+    return {
+        "stdout": f"Scheduled job '{target_name}' (ID: `{target_id}`) was cancelled and permanently removed. 🗑️",
+        "stderr": "",
+        "exit_code": 0,
+        "execution_time_ms": 0,
+        "sandbox_type": "in_memory"
+    }
+
+
+def run_pause_schedule_tool(args: dict, tenant, db) -> dict:
+    from models import ScheduledJob
+    from scheduler.manager import get_scheduler
+
+    args = args or {}
+    job_id = (args.get("job_id") or "").strip()
+    if not job_id:
+        return {"stdout": "", "stderr": "Error: 'job_id' parameter is required.", "exit_code": 1, "execution_time_ms": 0, "sandbox_type": "in_memory"}
+
+    tenant_id = tenant.id if tenant else None
+    query = db.query(ScheduledJob)
+    if tenant_id:
+        query = query.filter(ScheduledJob.tenant_id == tenant_id)
+
+    job = query.filter((ScheduledJob.id == job_id) | (ScheduledJob.name.ilike(job_id))).first()
+    if not job:
+        return {"stdout": "", "stderr": f"Error: Scheduled job '{job_id}' not found.", "exit_code": 1, "execution_time_ms": 0, "sandbox_type": "in_memory"}
+
+    job.is_active = False
+    db.commit()
+
+    sched = get_scheduler()
+    if sched and sched.running:
+        try:
+            sched.pause_job(job.id)
+        except Exception:
+            pass
+
+    return {
+        "stdout": f"Scheduled job '{job.name}' (ID: `{job.id}`) has been paused. ⏸️",
+        "stderr": "",
+        "exit_code": 0,
+        "execution_time_ms": 0,
+        "sandbox_type": "in_memory"
+    }
+
+
+def run_resume_schedule_tool(args: dict, tenant, db) -> dict:
+    from models import ScheduledJob
+    from scheduler.manager import register_job, get_scheduler
+
+    args = args or {}
+    job_id = (args.get("job_id") or "").strip()
+    if not job_id:
+        return {"stdout": "", "stderr": "Error: 'job_id' parameter is required.", "exit_code": 1, "execution_time_ms": 0, "sandbox_type": "in_memory"}
+
+    tenant_id = tenant.id if tenant else None
+    query = db.query(ScheduledJob)
+    if tenant_id:
+        query = query.filter(ScheduledJob.tenant_id == tenant_id)
+
+    job = query.filter((ScheduledJob.id == job_id) | (ScheduledJob.name.ilike(job_id))).first()
+    if not job:
+        return {"stdout": "", "stderr": f"Error: Scheduled job '{job_id}' not found.", "exit_code": 1, "execution_time_ms": 0, "sandbox_type": "in_memory"}
+
+    job.is_active = True
+    db.commit()
+
+    sched = get_scheduler()
+    if sched and sched.running:
+        try:
+            register_job(sched, job)
+        except Exception:
+            pass
+
+    return {
+        "stdout": f"Scheduled job '{job.name}' (ID: `{job.id}`) has been resumed. 🟢",
+        "stderr": "",
+        "exit_code": 0,
+        "execution_time_ms": 0,
+        "sandbox_type": "in_memory"
+    }
+
 

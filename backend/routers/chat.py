@@ -38,7 +38,8 @@ def interact(
         video_model=req.video_model,
         video_gen_model=req.video_gen_model,
         user_data=req.user_data,
-        skill_names=req.skill_names
+        skill_names=req.skill_names,
+        webhook_url=req.webhook_url
     )
     return result
 
@@ -89,6 +90,7 @@ def stream_interact(
             prompt_cache_key=req.prompt_cache_key,
             prompt_cache_options=req.prompt_cache_options,
             verbosity=req.verbosity,
+            webhook_url=req.webhook_url,
         ),
         media_type="text/event-stream"
     )
@@ -157,6 +159,7 @@ def openai_chat_completions(
                     prompt_cache_key=req.prompt_cache_key,
                     prompt_cache_options=req.prompt_cache_options,
                     verbosity=req.verbosity,
+                    webhook_url=req.webhook_url,
                 ),
                 media_type="text/event-stream"
             )
@@ -178,6 +181,7 @@ def openai_chat_completions(
             user_data=req.user_data,
             skill_names=req.skill_names,
             client_messages=client_messages,
+            webhook_url=req.webhook_url,
             temperature=req.temperature,
             top_p=req.top_p,
             top_k=req.top_k,

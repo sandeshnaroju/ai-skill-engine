@@ -208,7 +208,7 @@ def _normalize_multimodal_content(content):
     return normalized
 
 
-def _build_messages(db, persist, session_obj, user_message, allowed_skills, user_data, client_messages, tenant_id=None, raw_session_id=None):
+def _build_messages(db, persist, session_obj, user_message, allowed_skills, user_data, client_messages, tenant_id=None, raw_session_id=None, request_source: str = None, webhook_url: str = None):
     """Build the messages list for the LLM call."""
     sys_content = skill_registry.get_system_instructions(allowed_skills=allowed_skills, tenant_id=tenant_id)
     if user_data:
@@ -301,6 +301,17 @@ def _build_messages(db, persist, session_obj, user_message, allowed_skills, user
                     "if you need to find specific sections or concepts. Never regenerate the entire document if only a section needs editing."
                 )
                 msgs[0]["content"] += artifact_context
+
+    if request_source == "scheduler":
+        msgs[0]["content"] += (
+            "\n\n[AUTOMATED SCHEDULED TASK CONTEXT]\n"
+            "- You are running as an automated background scheduled task.\n"
+            "- Execute the task thoroughly according to the prompt.\n"
+            "- If the task requires sending an email, notification, or webhook, use your available tools (such as 'email__send_email' or 'webhook__send_webhook') to craft and deliver the update directly with an engaging subject and appropriate formatting/payload.\n"
+            "- Do NOT call 'scheduler' tools to recursively create, reschedule, or cancel jobs.\n"
+        )
+        if webhook_url:
+            msgs[0]["content"] += f"- The destination webhook URL configured for this task is: {webhook_url}\n"
 
     return msgs
 
@@ -728,6 +739,7 @@ class SkillEngine:
         temperature: float = None,
         top_p: float = None,
         top_k: int = None,
+        webhook_url: str = None,
         max_tokens: int = None,
         max_completion_tokens: int = None,
         presence_penalty: float = None,
@@ -749,9 +761,11 @@ class SkillEngine:
         prompt_cache_key: str = None,
         prompt_cache_options: dict = None,
         verbosity: str = None,
+        persist: bool = None,
     ) -> dict:
         start_time = time.time()
-        persist = (request_source == "dashboard")
+        if persist is None:
+            persist = (request_source == "dashboard")
 
         user_message_db = json.dumps(user_message) if not isinstance(user_message, str) else user_message
         chat_req = create_chat_request(db, tenant, session_id, app_id, model_name, request_source, user_message_db)
@@ -764,7 +778,7 @@ class SkillEngine:
                 save_message(db, session_obj, "user", content=user_message_db)
 
             allowed_skills = resolve_allowed_skills(db, tenant, app_id, skill_names)
-            messages = _build_messages(db, persist, session_obj, user_message, allowed_skills, user_data, client_messages, tenant_id=tenant.id, raw_session_id=session_id)
+            messages = _build_messages(db, persist, session_obj, user_message, allowed_skills, user_data, client_messages, tenant_id=tenant.id, raw_session_id=session_id, request_source=request_source, webhook_url=webhook_url)
             model_name = _resolve_model(db, tenant, model_name)
             chat_req.model_name = model_name
             db.commit()
@@ -884,7 +898,9 @@ class SkillEngine:
                                 fn, args, tool_def, user_data, tenant, session_id, worker_db, mcp_servers,
                                 image_model=image_model, image_gen_model=image_gen_model,
                                 audio_model=audio_model, video_model=video_model,
-                                video_gen_model=video_gen_model
+                                video_gen_model=video_gen_model,
+                                model_name=model_name,
+                                request_webhook_url=webhook_url
                             )
                             worker_db.commit()
                         except Exception as e:
@@ -1019,6 +1035,7 @@ class SkillEngine:
         temperature: float = None,
         top_p: float = None,
         top_k: int = None,
+        webhook_url: str = None,
         max_tokens: int = None,
         max_completion_tokens: int = None,
         presence_penalty: float = None,
@@ -1070,7 +1087,7 @@ class SkillEngine:
 
             yield _chunk(session_id, model_name, status="Analyzing query & active skills...")
 
-            messages = _build_messages(db, persist, session_obj, user_message, allowed_skills, user_data, client_messages, tenant_id=tenant.id, raw_session_id=session_id)
+            messages = _build_messages(db, persist, session_obj, user_message, allowed_skills, user_data, client_messages, tenant_id=tenant.id, raw_session_id=session_id, request_source=request_source, webhook_url=webhook_url)
             model_name = _resolve_model(db, tenant, model_name)
             chat_req.model_name = model_name
             db.commit()
@@ -1376,7 +1393,9 @@ class SkillEngine:
                                 fn, args, tool_def, user_data, tenant, session_id, worker_db, mcp_servers,
                                 image_model=image_model, image_gen_model=image_gen_model,
                                 audio_model=audio_model, video_model=video_model,
-                                video_gen_model=video_gen_model
+                                video_gen_model=video_gen_model,
+                                model_name=model_name,
+                                request_webhook_url=webhook_url
                             )
                             worker_db.commit()
                         except Exception as e:

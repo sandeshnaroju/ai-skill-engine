@@ -20,6 +20,11 @@ from engine.tools_builtin import (
     map_local_generated_files_to_tenant,
     run_multimodal_subagent_tool,
     run_get_datetime_tool,
+    run_create_schedule_tool,
+    run_list_schedules_tool,
+    run_cancel_schedule_tool,
+    run_pause_schedule_tool,
+    run_resume_schedule_tool,
 )
 from artifacts.tools import (
     run_open_or_update_artifact,
@@ -66,7 +71,8 @@ def execute_tool(fn_name: str, args: dict, tool_def: dict, user_data: dict,
                  tenant, session_id: str, db: Session, mcp_servers: dict,
                  image_model: str = None, image_gen_model: str = None,
                  audio_model: str = None, video_model: str = None,
-                 video_gen_model: str = None) -> tuple:
+                 video_gen_model: str = None, model_name: str = None,
+                 request_webhook_url: str = None) -> tuple:
     """
     Dispatch a single tool call and return (command, exec_res, tool_result).
 
@@ -153,6 +159,26 @@ def execute_tool(fn_name: str, args: dict, tool_def: dict, user_data: dict,
             exec_res = run_download_public_file_tool(db, args=exec_args, tenant=tenant)
         elif fn_name in ("send_email", "email__send_email"):
             exec_res = run_send_email_tool(db, args=exec_args, tenant=tenant)
+        elif fn_name in ("send_webhook", "webhook__send_webhook"):
+            from engine.tools_builtin import run_send_webhook_tool
+            exec_res = run_send_webhook_tool(db, args=exec_args, tenant=tenant, request_webhook_url=request_webhook_url)
+        elif fn_name in ("create_schedule", "scheduler__create_schedule"):
+            exec_res = run_create_schedule_tool(
+                args=exec_args,
+                tenant=tenant,
+                db=db,
+                session_id=session_id,
+                model_name=model_name,
+                request_webhook_url=request_webhook_url
+            )
+        elif fn_name in ("list_schedules", "scheduler__list_schedules"):
+            exec_res = run_list_schedules_tool(tenant=tenant, db=db)
+        elif fn_name in ("cancel_schedule", "scheduler__cancel_schedule"):
+            exec_res = run_cancel_schedule_tool(args=exec_args, tenant=tenant, db=db)
+        elif fn_name in ("pause_schedule", "scheduler__pause_schedule"):
+            exec_res = run_pause_schedule_tool(args=exec_args, tenant=tenant, db=db)
+        elif fn_name in ("resume_schedule", "scheduler__resume_schedule"):
+            exec_res = run_resume_schedule_tool(args=exec_args, tenant=tenant, db=db)
         elif fn_name in ("artifact_editor__open_or_update_artifact", "open_or_update_artifact"):
             exec_res = run_open_or_update_artifact(db, exec_args, tenant, session_id=session_id)
         elif fn_name in ("pcb_designer__design_pcb_board", "design_pcb_board"):

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate, Routes, Route, Navigate } from 'react-router-dom';
-import { Key, Layers, MessageSquare, Database, ShieldCheck, Cpu, BookOpen, Sun, Moon, Activity, Box, PanelLeftClose, PanelLeftOpen, Zap, Terminal, FileText, DollarSign, LogOut, User as UserIcon, HardDrive, Mail, ChevronDown, ChevronUp, ExternalLink, FolderArchive } from 'lucide-react';
+import { Key, Layers, MessageSquare, Database, ShieldCheck, Cpu, BookOpen, Sun, Moon, Activity, Box, PanelLeftClose, PanelLeftOpen, Zap, Terminal, FileText, DollarSign, LogOut, User as UserIcon, HardDrive, Mail, ChevronDown, ChevronUp, ExternalLink, FolderArchive, Clock } from 'lucide-react';
 import TenantManager from './components/TenantManager';
 import SkillCatalog from './components/SkillCatalog';
 import ChatPlayground from './components/ChatPlayground';
@@ -20,6 +20,7 @@ import EmailSettings from './components/EmailSettings';
 import Canvas from './components/Canvas';
 import ArtifactManager from './components/ArtifactManager';
 import SessionFileManager from './components/SessionFileManager';
+import SchedulerManager from './components/SchedulerManager';
 import { authApi, skillsApi, tenantsApi, logsApi, apiClient } from './api';
 import { ToastProvider, useToast } from './context/ToastContext';
 
@@ -54,6 +55,7 @@ function AppContent() {
     { id: 'tester', label: 'API Tester', icon: Terminal, order: 20 },
     { id: 'apps', label: 'Apps & Groups', icon: Box, order: 30 },
     { id: 'skills', label: 'Skills Catalog', icon: Layers, order: 40 },
+    { id: 'schedules', label: 'Scheduled Jobs', icon: Clock, order: 42 },
     { id: 'artifacts', label: 'Artifacts', icon: FileText, order: 45 },
     { id: 'mcp', label: 'MCP Servers', icon: Cpu, order: 50 },
     { id: 'user-data', label: 'User Data Profiles', icon: Layers, order: 60 },
@@ -86,6 +88,7 @@ function AppContent() {
       items: [
         { id: 'apps', label: 'Apps & Groups', icon: Box, order: 10 },
         { id: 'skills', label: 'Skills Catalog', icon: Layers, order: 20 },
+        { id: 'schedules', label: 'Scheduled Jobs', icon: Clock, order: 22 },
         { id: 'artifacts', label: 'Artifacts', icon: FileText, order: 25 },
         { id: 'mcp', label: 'MCP Servers', icon: Cpu, order: 30 },
         { id: 'user-data', label: 'User Data Profiles', icon: Layers, order: 40 },
@@ -945,6 +948,7 @@ function AppContent() {
             <Route path="/playground" element={<ChatPlayground isSidebarOpen={isSidebarOpen} toggleSidebar={toggleSidebar} />} />
             <Route path="/apps" element={<AppManager />} />
             <Route path="/skills" element={<SkillCatalog />} />
+            <Route path="/schedules" element={<SchedulerManager />} />
             <Route path="/artifacts" element={<ArtifactManager />} />
             <Route path="/mcp" element={<McpServerManager />} />
             <Route path="/user-data" element={<UserDataTemplates />} />

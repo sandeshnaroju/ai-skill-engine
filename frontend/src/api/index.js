@@ -10,4 +10,5 @@ export { logsApi } from './logs';
 export { chatApi } from './chat';
 export { artifactsApi } from './artifacts';
 export { filesApi } from './files';
+export { schedulerApi } from './scheduler';
 
