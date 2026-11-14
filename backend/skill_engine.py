@@ -307,11 +307,9 @@ def _build_messages(db, persist, session_obj, user_message, allowed_skills, user
             "\n\n[AUTOMATED SCHEDULED TASK CONTEXT]\n"
             "- You are running as an automated background scheduled task.\n"
             "- Execute the task thoroughly according to the prompt.\n"
-            "- If the task requires sending an email, notification, or webhook, use your available tools (such as 'email__send_email' or 'webhook__send_webhook') to craft and deliver the update directly with an engaging subject and appropriate formatting/payload.\n"
+            "- If the task requires sending an email or external API update, use your available tools (such as 'email__send_email' or relevant skill API tools) to craft and deliver the update directly.\n"
             "- Do NOT call 'scheduler' tools to recursively create, reschedule, or cancel jobs.\n"
         )
-        if webhook_url:
-            msgs[0]["content"] += f"- The destination webhook URL configured for this task is: {webhook_url}\n"
 
     return msgs
 

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   Clock, Play, Pause, Trash2, RefreshCw, Plus, CheckCircle2,
   AlertTriangle, X, Search, Filter, Mail, Globe, Calendar,
-  Zap, Copy, Check, ExternalLink, FileText, ChevronRight, Layers, Key
+  Zap, Copy, Check, ExternalLink, FileText, ChevronRight, ChevronLeft, Layers, Key
 } from 'lucide-react';
 import AsyncSearchableDropdown from './AsyncSearchableDropdown';
 import { schedulerApi, tenantsApi } from '../api';
@@ -27,12 +27,37 @@ export default function SchedulerManager() {
   const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(false);
 
-  // Filters
+  // Filters & Pagination
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all'); // all | active | paused
   const [triggerFilter, setTriggerFilter] = useState('all'); // all | cron | interval | date
   const [page, setPage] = useState(1);
-  const pageSize = 50;
+  const [pageSize, setPageSize] = useState(15);
+  const [totalPages, setTotalPages] = useState(1);
+  const [stats, setStats] = useState({ total: 0, active: 0, paused: 0, total_runs: 0 });
+
+  // Debounce search input and reset to page 1
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchTerm);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch]);
+
+  const handleStatusFilterChange = (status) => {
+    setStatusFilter(status);
+    setPage(1);
+  };
+
+  const handleTriggerFilterChange = (trigger) => {
+    setTriggerFilter(trigger);
+    setPage(1);
+  };
 
   // Action states
   const [runningJobId, setRunningJobId] = useState(null);
@@ -103,25 +128,38 @@ export default function SchedulerManager() {
       if (selectedTenantId && selectedTenantId !== 'all') {
         params.tenant_id = selectedTenantId;
       }
-      if (searchTerm) {
-        params.search = searchTerm;
+      if (debouncedSearch && debouncedSearch.trim()) {
+        params.search = debouncedSearch.trim();
       }
-      if (statusFilter === 'active') {
-        params.is_active = true;
-      } else if (statusFilter === 'paused') {
-        params.is_active = false;
+      if (statusFilter !== 'all') {
+        params.status = statusFilter;
+      }
+      if (triggerFilter !== 'all') {
+        params.trigger_type = triggerFilter;
       }
 
       const res = await schedulerApi.getJobs(params);
       const items = res.items || (Array.isArray(res) ? res : []);
       setJobs(items);
-      setTotalCount(res.total ?? items.length);
+      const total = res.total ?? items.length;
+      setTotalCount(total);
+      setTotalPages(res.pages ?? Math.max(1, Math.ceil(total / pageSize)));
+      if (res.stats) {
+        setStats(res.stats);
+      } else {
+        setStats({
+          total: total,
+          active: items.filter(j => j.is_active).length,
+          paused: items.filter(j => !j.is_active).length,
+          total_runs: items.reduce((acc, j) => acc + (j.run_count || 0), 0),
+        });
+      }
     } catch (err) {
       showError(err.message || 'Failed to load scheduled jobs');
     } finally {
       setLoading(false);
     }
-  }, [selectedTenantId, searchTerm, statusFilter, page, showError]);
+  }, [selectedTenantId, debouncedSearch, statusFilter, triggerFilter, page, pageSize, showError]);
 
   useEffect(() => {
     fetchJobs();
@@ -243,18 +281,10 @@ export default function SchedulerManager() {
     }
   };
 
-  // Compute stats
-  const activeCount = jobs.filter(j => j.is_active).length;
-  const pausedCount = jobs.filter(j => !j.is_active).length;
-  const totalRuns = jobs.reduce((acc, j) => acc + (j.run_count || 0), 0);
-
-  // Filter jobs by trigger type locally if set
-  const filteredJobs = jobs.filter(job => {
-    if (triggerFilter !== 'all' && job.trigger_type !== triggerFilter) {
-      return false;
-    }
-    return true;
-  });
+  // Stats from backend scope (or fallback)
+  const activeCount = stats.active ?? jobs.filter(j => j.is_active).length;
+  const pausedCount = stats.paused ?? jobs.filter(j => !j.is_active).length;
+  const totalRuns = stats.total_runs ?? jobs.reduce((acc, j) => acc + (j.run_count || 0), 0);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', width: '100%', minWidth: 0, boxSizing: 'border-box' }}>
@@ -339,7 +369,7 @@ export default function SchedulerManager() {
             Total Registered
           </div>
           <div style={{ fontSize: '1.5rem', fontWeight: '800', color: 'var(--text-main)', marginTop: '2px' }}>
-            {totalCount}
+            {stats.total ?? totalCount}
           </div>
         </div>
 
@@ -391,8 +421,29 @@ export default function SchedulerManager() {
               placeholder="Search by job name, prompt..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              style={{ paddingLeft: '32px', height: '34px', fontSize: '0.82rem', width: '100%' }}
+              style={{ paddingLeft: '32px', paddingRight: searchTerm ? '28px' : '10px', height: '34px', fontSize: '0.82rem', width: '100%' }}
             />
+            {searchTerm && (
+              <button
+                type="button"
+                onClick={() => setSearchTerm('')}
+                style={{
+                  position: 'absolute',
+                  right: '8px',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  background: 'transparent',
+                  border: 'none',
+                  cursor: 'pointer',
+                  color: 'var(--text-muted)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  padding: '2px'
+                }}
+              >
+                <X size={12} />
+              </button>
+            )}
           </div>
 
           {/* Status Filter */}
@@ -405,7 +456,7 @@ export default function SchedulerManager() {
               <button
                 key={tab.id}
                 type="button"
-                onClick={() => setStatusFilter(tab.id)}
+                onClick={() => handleStatusFilterChange(tab.id)}
                 style={{
                   padding: '4px 10px',
                   borderRadius: '6px',
@@ -427,7 +478,7 @@ export default function SchedulerManager() {
           <select
             className="input-field"
             value={triggerFilter}
-            onChange={(e) => setTriggerFilter(e.target.value)}
+            onChange={(e) => handleTriggerFilterChange(e.target.value)}
             style={{ height: '34px', fontSize: '0.82rem', width: '140px' }}
           >
             <option value="all">All Triggers</option>
@@ -438,7 +489,13 @@ export default function SchedulerManager() {
         </div>
 
         <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-          Showing <strong>{filteredJobs.length}</strong> of <strong>{totalCount}</strong> schedules
+          {totalCount === 0 ? (
+            <span>0 schedules</span>
+          ) : (
+            <span>
+              Showing <strong>{Math.min((page - 1) * pageSize + 1, totalCount)}</strong>–<strong>{Math.min(page * pageSize, totalCount)}</strong> of <strong>{totalCount}</strong> schedules
+            </span>
+          )}
         </div>
       </div>
 
@@ -450,7 +507,7 @@ export default function SchedulerManager() {
           <RefreshCw size={28} className="animate-spin" style={{ color: 'var(--primary-violet)', margin: '0 auto 10px auto' }} />
           <div style={{ fontSize: '0.9rem', color: 'var(--text-main)', fontWeight: '600' }}>Loading scheduled jobs...</div>
         </div>
-      ) : filteredJobs.length === 0 ? (
+      ) : jobs.length === 0 ? (
         <div className="glass-box" style={{ padding: '50px 20px', textAlign: 'center' }}>
           <Clock size={36} style={{ color: 'var(--text-muted)', margin: '0 auto 12px auto', opacity: 0.5 }} />
           <h3 style={{ fontSize: '1.05rem', fontWeight: '700', color: 'var(--text-main)', margin: '0 0 6px 0' }}>
@@ -461,15 +518,32 @@ export default function SchedulerManager() {
               ? 'No schedules match the selected filters.'
               : 'You can create scheduled jobs in Chat Playground or by clicking New Schedule.'}
           </p>
-          <button
-            type="button"
-            className="btn-primary"
-            onClick={openCreateModal}
-            style={{ padding: '8px 16px', borderRadius: '8px', display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '0.84rem' }}
-          >
-            <Plus size={15} />
-            <span>Create First Schedule</span>
-          </button>
+          <div style={{ display: 'flex', justifyContent: 'center', gap: '8px', flexWrap: 'wrap' }}>
+            {(searchTerm || statusFilter !== 'all' || triggerFilter !== 'all') && (
+              <button
+                type="button"
+                className="btn-outline"
+                onClick={() => {
+                  setSearchTerm('');
+                  setStatusFilter('all');
+                  setTriggerFilter('all');
+                  setPage(1);
+                }}
+                style={{ padding: '8px 16px', borderRadius: '8px', fontSize: '0.84rem' }}
+              >
+                Clear Filters
+              </button>
+            )}
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={openCreateModal}
+              style={{ padding: '8px 16px', borderRadius: '8px', display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '0.84rem' }}
+            >
+              <Plus size={15} />
+              <span>Create Schedule</span>
+            </button>
+          </div>
         </div>
       ) : (
         <div className="glass-box" style={{ padding: '0', overflow: 'hidden' }}>
@@ -487,7 +561,7 @@ export default function SchedulerManager() {
                 </tr>
               </thead>
               <tbody>
-                {filteredJobs.map((job) => {
+                {jobs.map((job) => {
                   const isRunning = runningJobId === job.id;
                   const isToggling = togglingJobId === job.id;
                   const tenantName = job.tenant?.name || job.tenant_id;
@@ -710,6 +784,73 @@ export default function SchedulerManager() {
               </tbody>
             </table>
           </div>
+
+          {/* Pagination Controls */}
+          {totalCount > 0 && (
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              padding: '12px 20px',
+              borderTop: '1px solid var(--border-subtle)',
+              flexWrap: 'wrap',
+              gap: '12px',
+              background: 'rgba(255,255,255,0.01)'
+            }}>
+              <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                Showing <strong style={{ color: 'var(--text-main)' }}>{Math.min((page - 1) * pageSize + 1, totalCount)}</strong>–<strong style={{ color: 'var(--text-main)' }}>{Math.min(page * pageSize, totalCount)}</strong> of <strong style={{ color: 'var(--text-main)' }}>{totalCount}</strong> schedules
+                {totalPages > 1 && (
+                  <span> &nbsp;·&nbsp; Page <strong style={{ color: 'var(--text-sub)' }}>{page}</strong> of <strong style={{ color: 'var(--text-sub)' }}>{totalPages}</strong></span>
+                )}
+              </span>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Rows:</span>
+                  <select
+                    value={pageSize}
+                    onChange={(e) => {
+                      setPageSize(Number(e.target.value));
+                      setPage(1);
+                    }}
+                    className="input-field"
+                    style={{ height: '30px', fontSize: '0.78rem', padding: '2px 8px', width: '70px' }}
+                  >
+                    <option value={10}>10</option>
+                    <option value={15}>15</option>
+                    <option value={25}>25</option>
+                    <option value={50}>50</option>
+                  </select>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <button
+                    type="button"
+                    className="btn-outline"
+                    onClick={() => setPage(p => Math.max(1, p - 1))}
+                    disabled={page <= 1 || loading}
+                    style={{ padding: '5px 12px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '4px' }}
+                  >
+                    <ChevronLeft size={13} /> Prev
+                  </button>
+
+                  <span style={{ fontSize: '0.8rem', color: 'var(--text-sub)', padding: '0 4px', fontWeight: '600' }}>
+                    {page} / {totalPages || 1}
+                  </span>
+
+                  <button
+                    type="button"
+                    className="btn-outline"
+                    onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                    disabled={page >= totalPages || loading}
+                    style={{ padding: '5px 12px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '4px' }}
+                  >
+                    Next <ChevronRight size={13} />
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

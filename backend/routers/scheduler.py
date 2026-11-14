@@ -8,6 +8,7 @@ from datetime import datetime
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Query, Header, Cookie, BackgroundTasks
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 from database import get_db
 from models import ScheduledJob, Tenant, User
@@ -104,6 +105,8 @@ def _serialize_job(j: ScheduledJob) -> dict:
 def list_jobs(
     tenant_id: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
+    is_active: Optional[bool] = Query(None),
+    trigger_type: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
     page: Optional[int] = Query(1),
     page_size: int = Query(15),
@@ -127,11 +130,23 @@ def list_jobs(
     if tenant_id and tenant_id.strip() and tenant_id.strip().lower() != "all":
         query = query.filter(ScheduledJob.tenant_id == tenant_id.strip())
 
-    # Optional status filter
-    if status == "active":
+    # Calculate overall stats for this tenant scope before applying status/trigger/search filters
+    base_query = query
+    total_all = base_query.count()
+    total_active = base_query.filter(ScheduledJob.is_active == True).count()
+    total_paused = base_query.filter(ScheduledJob.is_active == False).count()
+    sub = base_query.subquery()
+    total_runs_val = db.query(func.coalesce(func.sum(sub.c.run_count), 0)).scalar() or 0
+
+    # Optional status filter (support both status="active"|"paused" and is_active=True|False)
+    if status == "active" or is_active is True:
         query = query.filter(ScheduledJob.is_active == True)
-    elif status == "paused":
+    elif status == "paused" or is_active is False:
         query = query.filter(ScheduledJob.is_active == False)
+
+    # Optional trigger_type filter (cron, interval, date)
+    if trigger_type and trigger_type.strip() and trigger_type.strip().lower() != "all":
+        query = query.filter(ScheduledJob.trigger_type == trigger_type.strip().lower())
 
     # Optional search by job name or prompt
     if search and search.strip():
@@ -139,7 +154,14 @@ def list_jobs(
         query = query.filter(ScheduledJob.name.ilike(term) | ScheduledJob.prompt.ilike(term))
 
     query = query.order_by(ScheduledJob.created_at.desc())
-    return get_paginated_response(query, page, page_size, _serialize_job)
+    resp = get_paginated_response(query, page, page_size, _serialize_job)
+    resp["stats"] = {
+        "total": total_all,
+        "active": total_active,
+        "paused": total_paused,
+        "total_runs": int(total_runs_val)
+    }
+    return resp
 
 
 @router.post("/jobs")

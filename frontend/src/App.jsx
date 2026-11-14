@@ -52,10 +52,10 @@ function ApiErrorListenerBridge() {
 function AppContent() {
   const navItems = [
     { id: 'playground', label: 'Chat Playground', icon: MessageSquare, order: 10 },
+    { id: 'schedules', label: 'Scheduled Jobs', icon: Clock, order: 15 },
     { id: 'tester', label: 'API Tester', icon: Terminal, order: 20 },
     { id: 'apps', label: 'Apps & Groups', icon: Box, order: 30 },
     { id: 'skills', label: 'Skills Catalog', icon: Layers, order: 40 },
-    { id: 'schedules', label: 'Scheduled Jobs', icon: Clock, order: 42 },
     { id: 'artifacts', label: 'Artifacts', icon: FileText, order: 45 },
     { id: 'mcp', label: 'MCP Servers', icon: Cpu, order: 50 },
     { id: 'user-data', label: 'User Data Profiles', icon: Layers, order: 60 },
@@ -73,6 +73,7 @@ function AppContent() {
 
   const topNavItems = [
     { id: 'playground', label: 'Chat Playground', icon: MessageSquare, order: 10 },
+    { id: 'schedules', label: 'Scheduled Jobs', icon: Clock, order: 20 },
   ];
 
   const bottomNavItems = [
@@ -88,7 +89,6 @@ function AppContent() {
       items: [
         { id: 'apps', label: 'Apps & Groups', icon: Box, order: 10 },
         { id: 'skills', label: 'Skills Catalog', icon: Layers, order: 20 },
-        { id: 'schedules', label: 'Scheduled Jobs', icon: Clock, order: 22 },
         { id: 'artifacts', label: 'Artifacts', icon: FileText, order: 25 },
         { id: 'mcp', label: 'MCP Servers', icon: Cpu, order: 30 },
         { id: 'user-data', label: 'User Data Profiles', icon: Layers, order: 40 },

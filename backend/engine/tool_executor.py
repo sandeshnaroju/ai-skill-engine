@@ -159,9 +159,6 @@ def execute_tool(fn_name: str, args: dict, tool_def: dict, user_data: dict,
             exec_res = run_download_public_file_tool(db, args=exec_args, tenant=tenant)
         elif fn_name in ("send_email", "email__send_email"):
             exec_res = run_send_email_tool(db, args=exec_args, tenant=tenant)
-        elif fn_name in ("send_webhook", "webhook__send_webhook"):
-            from engine.tools_builtin import run_send_webhook_tool
-            exec_res = run_send_webhook_tool(db, args=exec_args, tenant=tenant, request_webhook_url=request_webhook_url)
         elif fn_name in ("create_schedule", "scheduler__create_schedule"):
             exec_res = run_create_schedule_tool(
                 args=exec_args,
