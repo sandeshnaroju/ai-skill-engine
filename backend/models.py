@@ -125,6 +125,7 @@ class ChatMessage(Base):
     session_id = Column(String, ForeignKey("conversation_sessions.id"), nullable=False)
     role = Column(String, nullable=False)  # user, assistant, system, tool
     content = Column(Text, nullable=True)
+    reasoning = Column(Text, nullable=True)  # Model reasoning / chain-of-thought traces
     tool_calls = Column(Text, nullable=True)  # JSON string if any
     tool_call_id = Column(String, nullable=True)
     json = Column(Text, nullable=True)        # Saved ProChat UI component structure

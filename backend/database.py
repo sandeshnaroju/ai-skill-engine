@@ -263,6 +263,9 @@ def init_db():
             if "artifact_data" not in columns:
                 db.execute(text("ALTER TABLE chat_messages ADD COLUMN artifact_data TEXT"))
                 print("Migration: Added artifact_data column to chat_messages table")
+            if "reasoning" not in columns:
+                db.execute(text("ALTER TABLE chat_messages ADD COLUMN reasoning TEXT"))
+                print("Migration: Added reasoning column to chat_messages table")
             db.commit()
         except Exception as e:
             print(f"Migration warning: Could not add columns to chat_messages: {e}")

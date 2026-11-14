@@ -877,8 +877,18 @@ class SkillEngine:
                     for tc in tool_calls_dict:
                         tc["type"] = "function"
 
+                    turn_reasoning = (
+                        getattr(response_msg, "reasoning_content", None) or
+                        getattr(response_msg, "reasoning", None)
+                    )
+                    if not turn_reasoning and hasattr(response_msg, "model_extra") and isinstance(response_msg.model_extra, dict):
+                        turn_reasoning = (
+                            response_msg.model_extra.get("reasoning_content") or
+                            response_msg.model_extra.get("reasoning")
+                        )
+
                     if persist and session_obj:
-                        save_message(db, session_obj, "assistant", content=response_msg.content, tool_calls=tool_calls_dict)
+                        save_message(db, session_obj, "assistant", content=response_msg.content, tool_calls=tool_calls_dict, reasoning=turn_reasoning or None)
                     messages.append({"role": "assistant", "content": response_msg.content if response_msg.content else None, "tool_calls": tool_calls_dict})
 
                     mcp_servers = prefetch_mcp_servers(tool_calls_dict, db, tenant_id=tenant.id)
@@ -961,7 +971,7 @@ class SkillEngine:
 
                     arts_list = list(accumulated_artifacts.values())
                     if persist and session_obj:
-                        save_message(db, session_obj, "assistant", content=final_answer, json_data=extracted_json, code=extracted_code, artifact_data=arts_list if arts_list else None)
+                        save_message(db, session_obj, "assistant", content=final_answer, json_data=extracted_json, code=extracted_code, artifact_data=arts_list if arts_list else None, reasoning=model_reasoning or None)
 
                     finalize_request(db, chat_req, final_answer, executed_logs, start_time,
                                      getattr(response, "usage", None), in_r, out_r, au_in_r, au_out_r, model_name=model_name)
@@ -1190,6 +1200,7 @@ class SkillEngine:
                     raise e
 
                 full_text = ""
+                full_reasoning = ""
                 tool_calls_accumulator = {}
                 id_to_index = {}
                 last_idx = 0
@@ -1230,6 +1241,7 @@ class SkillEngine:
                             )
 
                         if raw_thought and isinstance(raw_thought, str):
+                            full_reasoning += raw_thought
                             yield _chunk(session_id, model_name, reasoning=raw_thought)
 
                         # 2. Extract content & handle Gemini thoughts & inline tags (<think>, <thought>, <thinking>)
@@ -1240,6 +1252,7 @@ class SkillEngine:
                             if is_google_thought:
                                 c_clean = content_piece.replace("<thought>", "").replace("</thought>", "")
                                 if c_clean:
+                                    full_reasoning += c_clean
                                     yield _chunk(session_id, model_name, reasoning=c_clean)
                                 continue
 
@@ -1271,11 +1284,13 @@ class SkillEngine:
                                 if end_tag:
                                     think_part, rest = content_piece.split(end_tag, 1)
                                     if think_part:
+                                        full_reasoning += think_part
                                         yield _chunk(session_id, model_name, reasoning=think_part)
                                     in_think_tag = False
                                     content_piece = rest
                                 else:
                                     if content_piece:
+                                        full_reasoning += content_piece
                                         yield _chunk(session_id, model_name, reasoning=content_piece)
                                     content_piece = ""
 
@@ -1355,7 +1370,7 @@ class SkillEngine:
                         tool_calls_list.append(tc_data)
 
                     if persist and session_obj:
-                        save_message(db, session_obj, "assistant", content=full_text or None, tool_calls=tool_calls_list)
+                        save_message(db, session_obj, "assistant", content=full_text or None, tool_calls=tool_calls_list, reasoning=full_reasoning or None)
                     messages.append({"role": "assistant", "content": full_text or None, "tool_calls": tool_calls_list})
 
                     mcp_servers = prefetch_mcp_servers(tool_calls_list, db, tenant_id=tenant.id)
@@ -1483,7 +1498,8 @@ class SkillEngine:
                     if persist and session_obj:
                         save_message(db, session_obj, "assistant", content=full_text,
                                      json_data=last_extracted_json, code=last_extracted_code,
-                                     artifact_data=arts_list if arts_list else None)
+                                     artifact_data=arts_list if arts_list else None,
+                                     reasoning=full_reasoning or None)
 
                     finalize_request(db, chat_req, full_text, executed_logs, start_time,
                                      accumulated_usage if accumulated_usage["prompt_tokens"] else None,
@@ -1514,7 +1530,8 @@ class SkillEngine:
             if persist and session_obj:
                 save_message(db, session_obj, "assistant", content=final_answer,
                              json_data=last_extracted_json, code=last_extracted_code,
-                             artifact_data=arts_list if arts_list else None)
+                             artifact_data=arts_list if arts_list else None,
+                             reasoning=full_reasoning or None)
 
             finalize_request(db, chat_req, final_answer, executed_logs, start_time,
                              accumulated_usage if accumulated_usage["prompt_tokens"] else None,

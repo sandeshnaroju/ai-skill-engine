@@ -27,56 +27,81 @@ const getToolSummaryPreview = (args) => {
   return `${matchedKey}: "${cleanVal}${val.length > 40 ? '…' : ''}"`;
 };
 
-// Groups sequential tool_call and tool_result pairs into single interactive tool items
+// Groups sequential or parallel tool_call and tool_result pairs into single interactive tool items
 const groupReasoningSteps = (rawSteps) => {
   const grouped = [];
-  let pendingTool = null;
+  const pendingTools = [];
 
-  rawSteps.forEach(step => {
-    if (step.type === 'tool_call') {
-      if (pendingTool) {
-        grouped.push(pendingTool);
+  rawSteps.forEach(rawStep => {
+    let step = rawStep;
+    if (typeof step === 'string') {
+      const trimmed = step.trim();
+      if (trimmed.startsWith('⚡')) {
+        let outputContent = trimmed.replace(/^⚡\s*/, '').trim();
+        if (outputContent.startsWith('Executed tool\nOutput:')) {
+          outputContent = outputContent.replace(/^Executed tool\nOutput:\s*/, '');
+        } else if (outputContent.startsWith('Output:')) {
+          outputContent = outputContent.substring(7).trim();
+        }
+        step = { type: 'tool_result', output: outputContent };
+      } else {
+        const textContent = trimmed.replace(/^💭\s*/, '').trim();
+        if (textContent === 'Tool execution completed.') {
+          return;
+        }
+        step = { type: 'thought', content: textContent };
       }
-      pendingTool = {
+    }
+
+    if (!step || typeof step !== 'object') return;
+
+    if (step.type === 'tool_execution') {
+      grouped.push(step);
+    } else if (step.type === 'tool_call') {
+      const toolObj = {
         type: 'tool_execution',
-        name: step.name,
+        id: step.id,
+        name: step.name || 'Tool',
         arguments: step.arguments,
         output: null,
         exit_code: null,
         execution_time_ms: null,
         isCompleted: false
       };
+      pendingTools.push(toolObj);
+      grouped.push(toolObj);
     } else if (step.type === 'tool_result') {
-      if (pendingTool && (pendingTool.name === step.name || !pendingTool.output)) {
-        pendingTool.output = step.output;
-        pendingTool.exit_code = step.exit_code;
-        pendingTool.execution_time_ms = step.execution_time_ms;
-        pendingTool.isCompleted = true;
-        grouped.push(pendingTool);
-        pendingTool = null;
+      // Find matching pending tool by id, name, or first uncompleted
+      const matchedIdx = pendingTools.findIndex(
+        pt => !pt.isCompleted && (
+          (step.id && pt.id && pt.id === step.id) ||
+          (step.name && pt.name && pt.name.toLowerCase() === step.name.toLowerCase()) ||
+          !pt.output
+        )
+      );
+      if (matchedIdx !== -1) {
+        const pt = pendingTools[matchedIdx];
+        pt.output = step.output;
+        pt.exit_code = step.exit_code ?? 0;
+        pt.execution_time_ms = step.execution_time_ms;
+        pt.isCompleted = true;
+        pendingTools.splice(matchedIdx, 1);
       } else {
         grouped.push({
           type: 'tool_execution',
+          id: step.id,
           name: step.name || 'Tool Result',
           arguments: null,
           output: step.output,
-          exit_code: step.exit_code,
+          exit_code: step.exit_code ?? 0,
           execution_time_ms: step.execution_time_ms,
           isCompleted: true
         });
       }
     } else {
-      if (pendingTool) {
-        grouped.push(pendingTool);
-        pendingTool = null;
-      }
       grouped.push(step);
     }
   });
-
-  if (pendingTool) {
-    grouped.push(pendingTool);
-  }
 
   return grouped;
 };
