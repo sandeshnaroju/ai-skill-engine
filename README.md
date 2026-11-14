@@ -187,6 +187,7 @@ All guides are packaged directly into the web application and can be interactive
 | 15 | [🛡️ **Execution Sandboxes**](frontend/src/docs/15-sandboxes.md) | Docker containers, Azure Container Apps (Hyper-V), E2B micro-VMs, Fly.io, and AWS Lambda. |
 | 16 | [⚙️ **Configuration & Settings**](frontend/src/docs/16-configuration.md) | Environment variables, Fernet encryption, custom token pricing rates, and SMTP email setup. |
 | 17 | [🧩 **Skills & MCP Servers**](frontend/src/docs/17-skills-and-mcp.md) | Anatomy of `SKILL.md`, tool schemas, AI Skill Generator, and Model Context Protocol integrations. |
+| 18 | [⏰ **Scheduled Jobs & Automation**](frontend/src/docs/18-scheduled-jobs.md) | Recurring cron, interval, and future date triggers, dynamic secrets resolution, and multi-channel delivery. |
 
 ---
 

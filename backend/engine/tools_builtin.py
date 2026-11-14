@@ -709,20 +709,6 @@ def run_create_schedule_tool(args: dict, tenant, db, session_id: str = None,
         except Exception:
             run_at_val = None
 
-    # Webhook Resolution:
-    # 1. Explicit tool argument (notify_webhook or webhook_url)
-    # 2. Method 1: request-level webhook_url
-    # 3. Method 3: tenant.default_webhook_url
-    resolved_webhook = (
-        args.get("notify_webhook")
-        or args.get("webhook_url")
-        or request_webhook_url
-        or (getattr(tenant, "default_webhook_url", None) if tenant else None)
-    )
-
-    delivery_channels = args.get("delivery_channels")
-    delivery_channels_str = json.dumps(delivery_channels) if (delivery_channels and isinstance(delivery_channels, (list, dict))) else None
-
     skill_names = args.get("skill_names")
     skill_names_str = json.dumps(skill_names) if (skill_names and isinstance(skill_names, list)) else None
 
@@ -744,9 +730,6 @@ def run_create_schedule_tool(args: dict, tenant, db, session_id: str = None,
         cron_expression=cron_expr,
         interval_seconds=interval_secs,
         run_at=run_at_val,
-        delivery_channels=delivery_channels_str,
-        notify_email=args.get("notify_email"),
-        notify_webhook=resolved_webhook,
         skill_names=skill_names_str,
         model_name=model_name,
         user_data=user_data_str,
@@ -771,23 +754,12 @@ def run_create_schedule_tool(args: dict, tenant, db, session_id: str = None,
         "date": f"once at {job.run_at.isoformat() if job.run_at else ''}",
     }.get(job.trigger_type, job.trigger_type)
 
-    delivery_desc = []
-    if job.notify_email:
-        delivery_desc.append(f"Email: {job.notify_email}")
-    if job.notify_webhook:
-        delivery_desc.append(f"Webhook: {job.notify_webhook}")
-    if job.delivery_channels:
-        delivery_desc.append("Multi-channel targets")
-    if not delivery_desc:
-        delivery_desc.append("In-app chat session")
-
     elapsed_ms = int((time.time() - start_t) * 1000)
     msg = (
         f"Scheduled job created successfully! ✅\n"
         f"• ID: {job.id}\n"
         f"• Name: {job.name}\n"
         f"• Schedule: {trigger_desc}\n"
-        f"• Delivery: {', '.join(delivery_desc)}\n"
         f"• Timezone: {tenant.timezone if tenant and tenant.timezone else 'UTC'}"
     )
     return {

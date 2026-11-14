@@ -79,8 +79,6 @@ export default function SchedulerManager() {
     cron_expression: '0 10 * * *',
     interval_minutes: 60,
     run_at: '',
-    notify_email: '',
-    webhook_url: '',
     user_data_template_id: '',
     store_in_session: true,
   });
@@ -226,8 +224,6 @@ export default function SchedulerManager() {
       cron_expression: '0 10 * * *',
       interval_minutes: 60,
       run_at: '',
-      notify_email: '',
-      webhook_url: '',
       user_data_template_id: '',
       store_in_session: true,
     });
@@ -263,8 +259,6 @@ export default function SchedulerManager() {
       cron_expression: formData.trigger_type === 'cron' ? formData.cron_expression : null,
       interval_seconds: formData.trigger_type === 'interval' ? Math.max(10, parseInt(formData.interval_minutes || 60, 10) * 60) : null,
       run_at: formData.trigger_type === 'date' && formData.run_at ? new Date(formData.run_at).toISOString() : null,
-      notify_email: formData.notify_email?.trim() || null,
-      webhook_url: formData.webhook_url?.trim() || null,
       user_data_template_id: formData.user_data_template_id || null,
       store_in_session: Boolean(formData.store_in_session),
     };
@@ -566,7 +560,6 @@ export default function SchedulerManager() {
                   <th style={{ padding: '12px 16px', fontSize: '0.72rem', fontWeight: '700', color: 'var(--text-muted)', whiteSpace: 'nowrap', minWidth: '220px' }}>Schedule & Task</th>
                   <th style={{ padding: '12px 14px', fontSize: '0.72rem', fontWeight: '700', color: 'var(--text-muted)', whiteSpace: 'nowrap', width: '120px' }}>Tenant</th>
                   <th style={{ padding: '12px 14px', fontSize: '0.72rem', fontWeight: '700', color: 'var(--text-muted)', whiteSpace: 'nowrap', width: '140px' }}>Trigger Rule</th>
-                  <th style={{ padding: '12px 14px', fontSize: '0.72rem', fontWeight: '700', color: 'var(--text-muted)', whiteSpace: 'nowrap', width: '150px' }}>Delivery Target</th>
                   <th style={{ padding: '12px 14px', fontSize: '0.72rem', fontWeight: '700', color: 'var(--text-muted)', whiteSpace: 'nowrap', width: '90px' }}>Runs</th>
                   <th style={{ padding: '12px 14px', fontSize: '0.72rem', fontWeight: '700', color: 'var(--text-muted)', whiteSpace: 'nowrap', width: '110px' }}>Last Run</th>
                   <th style={{ padding: '12px 16px', fontSize: '0.72rem', fontWeight: '700', color: 'var(--text-muted)', whiteSpace: 'nowrap', textAlign: 'right', width: '140px' }}>Actions</th>
@@ -658,35 +651,6 @@ export default function SchedulerManager() {
                             Once: {job.run_at ? new Date(job.run_at).toLocaleDateString([], { month: 'short', day: 'numeric' }) : 'N/A'}
                           </span>
                         )}
-                      </td>
-
-                      {/* Delivery Target */}
-                      <td style={{ padding: '12px 14px', maxWidth: '150px' }}>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
-                          {job.notify_email ? (
-                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.74rem', color: 'var(--text-main)' }}>
-                              <Mail size={12} style={{ color: '#3b82f6', flexShrink: 0 }} />
-                              <span style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }} title={job.notify_email}>
-                                {job.notify_email}
-                              </span>
-                            </div>
-                          ) : null}
-
-                          {job.webhook_url ? (
-                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.74rem', color: 'var(--text-main)' }}>
-                              <Globe size={12} style={{ color: '#10b981', flexShrink: 0 }} />
-                              <span style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }} title={job.webhook_url}>
-                                Webhook
-                              </span>
-                            </div>
-                          ) : null}
-
-                          {!job.notify_email && !job.webhook_url && (
-                            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                              In-app session
-                            </span>
-                          )}
-                        </div>
                       </td>
 
                       {/* Executions */}
@@ -1078,43 +1042,6 @@ export default function SchedulerManager() {
                   />
                 </div>
               )}
-
-              {/* Delivery Channels */}
-              <div style={{ padding: '14px', borderRadius: '12px', background: 'var(--bg-input)', border: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                <div style={{ fontSize: '0.82rem', fontWeight: '700', color: 'var(--text-main)' }}>
-                  Delivery Channels (Optional)
-                </div>
-
-                <div>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
-                    <Mail size={13} />
-                    <span>Notification Email</span>
-                  </label>
-                  <input
-                    type="email"
-                    className="input-field"
-                    placeholder="user@example.com (sends formatted email via configured SMTP)"
-                    value={formData.notify_email}
-                    onChange={(e) => setFormData({ ...formData, notify_email: e.target.value })}
-                    style={{ width: '100%', borderRadius: '8px', height: '36px' }}
-                  />
-                </div>
-
-                <div>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
-                    <Globe size={13} />
-                    <span>Webhook URL</span>
-                  </label>
-                  <input
-                    type="url"
-                    className="input-field"
-                    placeholder="https://api.yourdomain.com/webhooks/scheduler"
-                    value={formData.webhook_url}
-                    onChange={(e) => setFormData({ ...formData, webhook_url: e.target.value })}
-                    style={{ width: '100%', borderRadius: '8px', height: '36px' }}
-                  />
-                </div>
-              </div>
 
               {/* LLM Model & Options */}
               <div style={{ display: 'flex', gap: '14px', alignItems: 'center' }}>

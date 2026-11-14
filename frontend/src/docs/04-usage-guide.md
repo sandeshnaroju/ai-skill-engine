@@ -11,6 +11,7 @@ The sidebar is divided into four functional categories:
 | Group | Page | URL | Purpose |
 |---|---|---|---|
 | **Chat & Testing** | **Chat Playground** | `/playground` | Live chatbot simulator with streaming, reasoning traces, and Canvas side-by-side. |
+| | **Scheduled Jobs** | `/schedules` | Automated background recurring cron, interval, and future date tasks with multi-channel delivery. |
 | | **API Tester** | `/tester` | In-browser HTTP request builder to test external API client requests without leaving the dashboard. |
 | **Registry & Assets** | **Apps & Groups** | `/apps` | Package skills into logical application containers for scoped API access. |
 | | **Skills Catalog** | `/skills` | Visual catalog to create, edit, test, and AI-generate SKILL.md tool definitions. |

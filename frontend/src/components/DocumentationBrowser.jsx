@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { 
   BookOpen, Rocket, Terminal, Layers, HardDrive, ShieldCheck, 
   Settings, Cpu, Search, Copy, Check, ChevronRight, ExternalLink,
-  FileText, Download, Upload, Server, Layout, Code, Sparkles, KeyRound, FolderTree
+  FileText, Download, Upload, Server, Layout, Code, Sparkles, KeyRound, FolderTree, Clock
 } from 'lucide-react';
 import MarkdownViewer from './MarkdownViewer';
 
@@ -30,6 +30,7 @@ import storageDoc from '../docs/14-session-storage.md?raw';
 import sandboxDoc from '../docs/15-sandboxes.md?raw';
 import configDoc from '../docs/16-configuration.md?raw';
 import skillsDoc from '../docs/17-skills-and-mcp.md?raw';
+import schedulerDoc from '../docs/18-scheduled-jobs.md?raw';
 
 const DOC_ITEMS = [
   // Getting Started
@@ -134,6 +135,14 @@ const DOC_ITEMS = [
     category: 'Workflows & Features',
     description: 'Chat Playground, Universal Canvas, Apps & Groups, ProChat, and Audit Logs.',
     content: usageDoc
+  },
+  {
+    id: 'scheduled-jobs',
+    title: 'Scheduled Jobs & Automation',
+    icon: Clock,
+    category: 'Workflows & Features',
+    description: 'Background cron, interval, and date triggers, dynamic secrets resolution, and multi-channel delivery.',
+    content: schedulerDoc
   },
   {
     id: 'skills-and-mcp',

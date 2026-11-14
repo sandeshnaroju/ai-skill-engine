@@ -454,11 +454,6 @@ class ScheduledJob(Base):
     cron_expression = Column(String, nullable=True)  # Standard 5-field cron (e.g. '0 10 * * *')
     interval_seconds = Column(Integer, nullable=True)  # Seconds between ticks (e.g. 3600)
     run_at = Column(DateTime, nullable=True)  # Exact one-shot date/time
-
-    # Multi-Channel Delivery
-    delivery_channels = Column(Text, nullable=True)  # JSON array of channel targets
-    notify_email = Column(String, nullable=True)
-    notify_webhook = Column(String, nullable=True)
     store_in_session = Column(Boolean, default=True)
 
     # State & Audit

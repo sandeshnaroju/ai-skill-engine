@@ -53,19 +53,6 @@ def _resolve_auth(
 
 
 def _serialize_job(j: ScheduledJob) -> dict:
-    channels = []
-    if j.delivery_channels:
-        try:
-            channels = json.loads(j.delivery_channels)
-        except Exception:
-            channels = []
-
-    # Map fallbacks for clear UI representation
-    if j.notify_email and not any(c.get("type") == "email" for c in channels if isinstance(c, dict)):
-        channels.append({"type": "email", "target": j.notify_email})
-    if j.notify_webhook and not any(c.get("type") == "webhook" for c in channels if isinstance(c, dict)):
-        channels.append({"type": "webhook", "target": j.notify_webhook})
-
     skill_list = []
     if j.skill_names:
         try:
@@ -84,9 +71,6 @@ def _serialize_job(j: ScheduledJob) -> dict:
         "cron_expression": j.cron_expression,
         "interval_seconds": j.interval_seconds,
         "run_at": j.run_at.isoformat() if j.run_at else None,
-        "delivery_channels": channels,
-        "notify_email": j.notify_email,
-        "notify_webhook": j.notify_webhook,
         "skill_names": skill_list,
         "model_name": j.model_name,
         "session_id": j.session_id,
@@ -201,9 +185,6 @@ def create_job(
         except Exception:
             run_at_val = None
 
-    # Webhook Resolution: explicit in payload -> fallback to tenant default
-    resolved_webhook = payload.notify_webhook or t_obj.default_webhook_url
-
     job = ScheduledJob(
         tenant_id=target_tenant_id,
         session_id=payload.session_id,
@@ -213,9 +194,6 @@ def create_job(
         cron_expression=payload.cron_expression,
         interval_seconds=payload.interval_seconds,
         run_at=run_at_val,
-        delivery_channels=json.dumps(payload.delivery_channels) if payload.delivery_channels else None,
-        notify_email=payload.notify_email,
-        notify_webhook=resolved_webhook,
         skill_names=json.dumps(payload.skill_names) if payload.skill_names else None,
         model_name=payload.model_name,
         user_data=json.dumps(payload.user_data) if payload.user_data else None,
@@ -288,12 +266,6 @@ def update_job(
             job.run_at = datetime.fromisoformat(payload.run_at)
         except Exception:
             job.run_at = None
-    if payload.delivery_channels is not None:
-        job.delivery_channels = json.dumps(payload.delivery_channels)
-    if payload.notify_email is not None:
-        job.notify_email = payload.notify_email
-    if payload.notify_webhook is not None:
-        job.notify_webhook = payload.notify_webhook
     if payload.skill_names is not None:
         job.skill_names = json.dumps(payload.skill_names)
     if payload.model_name is not None:

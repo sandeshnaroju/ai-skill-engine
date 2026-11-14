@@ -50,28 +50,6 @@ tools:
           description: >
             ISO 8601 datetime for a one-shot run. Required if trigger_type is "date".
             Example: "2026-11-12T15:00:00"
-        notify_email:
-          type: string
-          description: Email address to send the result to after each execution.
-        notify_webhook:
-          type: string
-          description: Webhook URL to HTTP POST the result payload to after each execution.
-        delivery_channels:
-          type: array
-          description: >
-            Optional list of delivery destinations. Supported types: "email", "webhook", "session".
-          items:
-            type: object
-            properties:
-              type:
-                type: string
-                enum: [email, webhook, session]
-              target:
-                type: string
-                description: Destination target (email address or webhook URL).
-              subject:
-                type: string
-                description: Optional subject line for email notifications.
         skill_names:
           type: array
           items:
@@ -150,9 +128,5 @@ Use this skill whenever the user asks for periodic, recurring, or future automat
      - An email must ONLY be dispatched when valid data or report results were successfully obtained.
      - If an API fails, a secret is missing, or an error occurs, the scheduled agent should log the error internally in its response and terminate WITHOUT calling `send_email`.
      - Example prompt directive to include: `"Fetch weather data for Perth. If the data is retrieved successfully, format a beautiful email report and send it to user@example.com. If the data cannot be fetched due to missing credentials, API errors, or 401/403 responses, DO NOT send any email to the user; simply log the failure reason in your final response."`
-2. **Delivery Configuration**:
-   - Also set `notify_email` or `delivery_channels` so the platform tracks the destination.
-   - The platform will prevent duplicate sends if the model already emailed that recipient during execution.
-3. Always confirm the schedule cadence in clear, friendly human language (e.g. *"I've scheduled this to run every day at 10:00 AM"*).
-4. Report which delivery channels will receive the output (e.g. *"Results will be sent to your email `alerts@company.com` and recorded in your chat history"*).
+2. Always confirm the schedule cadence in clear, friendly human language (e.g. *"I've scheduled this to run every day at 10:00 AM"*).
 

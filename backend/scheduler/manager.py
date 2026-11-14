@@ -277,7 +277,6 @@ def run_scheduled_job(job_id: str, force: bool = False):
     from database import SessionLocal
     from models import ScheduledJob
     from skill_engine import skill_engine
-    from scheduler.notifier import dispatch_notifications
 
     db = SessionLocal()
     job = None
@@ -305,7 +304,6 @@ def run_scheduled_job(job_id: str, force: bool = False):
             skill_names=skill_names,
             user_data=user_data,
             persist=bool(job.store_in_session),
-            webhook_url=job.notify_webhook or (tenant.default_webhook_url if tenant else None),
         )
 
         answer = result.get("response", "") or ""

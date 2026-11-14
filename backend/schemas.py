@@ -98,9 +98,6 @@ class ScheduledJobCreate(BaseModel):
     cron_expression: Optional[str] = None
     interval_seconds: Optional[int] = None
     run_at: Optional[str] = None
-    notify_email: Optional[str] = None
-    notify_webhook: Optional[str] = None
-    delivery_channels: Optional[List[dict]] = None
     skill_names: Optional[List[str]] = None
     model_name: Optional[str] = None
     session_id: Optional[str] = None
@@ -114,9 +111,6 @@ class ScheduledJobUpdate(BaseModel):
     cron_expression: Optional[str] = None
     interval_seconds: Optional[int] = None
     run_at: Optional[str] = None
-    notify_email: Optional[str] = None
-    notify_webhook: Optional[str] = None
-    delivery_channels: Optional[List[dict]] = None
     skill_names: Optional[List[str]] = None
     model_name: Optional[str] = None
     is_active: Optional[bool] = None
