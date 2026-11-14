@@ -5,7 +5,7 @@ import {
   Zap, Copy, Check, ExternalLink, FileText, ChevronRight, ChevronLeft, Layers, Key
 } from 'lucide-react';
 import AsyncSearchableDropdown from './AsyncSearchableDropdown';
-import { schedulerApi, tenantsApi } from '../api';
+import { schedulerApi, tenantsApi, userDataApi } from '../api';
 import { useToast } from '../context/ToastContext';
 
 export default function SchedulerManager() {
@@ -69,6 +69,7 @@ export default function SchedulerManager() {
   // Create Modal state
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [userDataTemplates, setUserDataTemplates] = useState([]);
   const [formData, setFormData] = useState({
     name: '',
     tenant_id: '',
@@ -80,6 +81,7 @@ export default function SchedulerManager() {
     run_at: '',
     notify_email: '',
     webhook_url: '',
+    user_data_template_id: '',
     store_in_session: true,
   });
 
@@ -211,7 +213,7 @@ export default function SchedulerManager() {
   };
 
   // Open Create Modal
-  const openCreateModal = () => {
+  const openCreateModal = async () => {
     const defaultTenant = (selectedTenantId && selectedTenantId !== 'all')
       ? selectedTenantId
       : (tenants[0]?.id || '');
@@ -226,9 +228,18 @@ export default function SchedulerManager() {
       run_at: '',
       notify_email: '',
       webhook_url: '',
+      user_data_template_id: '',
       store_in_session: true,
     });
     setIsCreateModalOpen(true);
+    if (defaultTenant) {
+      try {
+        const res = await userDataApi.list({ tenant_id: defaultTenant, page_size: 50, page: 1 });
+        setUserDataTemplates(res.items || (Array.isArray(res) ? res : []));
+      } catch (e) {
+        setUserDataTemplates([]);
+      }
+    }
   };
 
   // Submit Create Schedule
@@ -254,6 +265,7 @@ export default function SchedulerManager() {
       run_at: formData.trigger_type === 'date' && formData.run_at ? new Date(formData.run_at).toISOString() : null,
       notify_email: formData.notify_email?.trim() || null,
       webhook_url: formData.webhook_url?.trim() || null,
+      user_data_template_id: formData.user_data_template_id || null,
       store_in_session: Boolean(formData.store_in_session),
     };
 
@@ -924,7 +936,20 @@ export default function SchedulerManager() {
                 <select
                   className="input-field"
                   value={formData.tenant_id}
-                  onChange={(e) => setFormData({ ...formData, tenant_id: e.target.value })}
+                  onChange={async (e) => {
+                    const newTenantId = e.target.value;
+                    setFormData({ ...formData, tenant_id: newTenantId, user_data_template_id: '' });
+                    if (newTenantId) {
+                      try {
+                        const res = await userDataApi.list({ tenant_id: newTenantId, page_size: 50, page: 1 });
+                        setUserDataTemplates(res.items || (Array.isArray(res) ? res : []));
+                      } catch {
+                        setUserDataTemplates([]);
+                      }
+                    } else {
+                      setUserDataTemplates([]);
+                    }
+                  }}
                   style={{ width: '100%', borderRadius: '10px', height: '38px' }}
                   required
                 >
@@ -935,6 +960,30 @@ export default function SchedulerManager() {
                     </option>
                   ))}
                 </select>
+              </div>
+
+              {/* Secrets & User Data Profile Binding */}
+              <div>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.82rem', fontWeight: '700', color: 'var(--text-main)', marginBottom: '6px' }}>
+                  <Key size={13} style={{ color: 'var(--primary)' }} />
+                  <span>Secrets & User Data Profile (Optional)</span>
+                </label>
+                <select
+                  className="input-field"
+                  value={formData.user_data_template_id}
+                  onChange={(e) => setFormData({ ...formData, user_data_template_id: e.target.value })}
+                  style={{ width: '100%', borderRadius: '10px', height: '38px' }}
+                >
+                  <option value="">None (Do not attach user data secrets)</option>
+                  {userDataTemplates.map(tpl => (
+                    <option key={tpl.id} value={tpl.id}>
+                      {tpl.name} {tpl.description ? `— ${tpl.description}` : ''}
+                    </option>
+                  ))}
+                </select>
+                <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+                  If selected, secrets from this profile are loaded dynamically at runtime when the job fires. If omitted, no profile secrets are injected.
+                </div>
               </div>
 
               {/* Prompt */}

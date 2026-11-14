@@ -308,6 +308,7 @@ def _build_messages(db, persist, session_obj, user_message, allowed_skills, user
             "- You are running as an automated background scheduled task.\n"
             "- Execute the task thoroughly according to the prompt.\n"
             "- If the task requires sending an email or external API update, use your available tools (such as 'email__send_email' or relevant skill API tools) to craft and deliver the update directly.\n"
+            "- CRITICAL EMAIL / NOTIFICATION RULE: NEVER send emails or webhook notifications containing error messages, API failures, missing API keys/secrets, 401/403 authorization failures, or system errors to the user. Emails must ONLY be sent when data was successfully retrieved and a valid report or update is ready. If a required secret/API key is missing or an API call fails, DO NOT call 'email__send_email' or notify the user; simply state the error reason in your text completion so it is logged in the job history.\n"
             "- Do NOT call 'scheduler' tools to recursively create, reschedule, or cancel jobs.\n"
         )
 

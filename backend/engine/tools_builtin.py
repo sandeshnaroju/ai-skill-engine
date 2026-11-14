@@ -671,7 +671,8 @@ def run_get_datetime_tool(args: dict = None, tenant = None) -> dict:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def run_create_schedule_tool(args: dict, tenant, db, session_id: str = None,
-                              model_name: str = None, request_webhook_url: str = None) -> dict:
+                              model_name: str = None, request_webhook_url: str = None,
+                              user_data: dict = None) -> dict:
     import json
     import time
     from datetime import datetime
@@ -727,6 +728,13 @@ def run_create_schedule_tool(args: dict, tenant, db, session_id: str = None,
 
     tenant_id = tenant.id if tenant else "default"
 
+    # User Data & Profile Resolution:
+    # 1. args.get("user_data") or caller session user_data
+    # 2. args.get("user_data_template_id")
+    resolved_user_data = args.get("user_data") or user_data
+    user_data_str = json.dumps(resolved_user_data) if resolved_user_data and isinstance(resolved_user_data, dict) else None
+    user_data_template_id = args.get("user_data_template_id")
+
     job = ScheduledJob(
         tenant_id=tenant_id,
         session_id=session_id,
@@ -741,6 +749,8 @@ def run_create_schedule_tool(args: dict, tenant, db, session_id: str = None,
         notify_webhook=resolved_webhook,
         skill_names=skill_names_str,
         model_name=model_name,
+        user_data=user_data_str,
+        user_data_template_id=user_data_template_id,
         is_active=True,
     )
     db.add(job)

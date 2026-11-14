@@ -166,7 +166,8 @@ def execute_tool(fn_name: str, args: dict, tool_def: dict, user_data: dict,
                 db=db,
                 session_id=session_id,
                 model_name=model_name,
-                request_webhook_url=request_webhook_url
+                request_webhook_url=request_webhook_url,
+                user_data=user_data
             )
         elif fn_name in ("list_schedules", "scheduler__list_schedules"):
             exec_res = run_list_schedules_tool(tenant=tenant, db=db)

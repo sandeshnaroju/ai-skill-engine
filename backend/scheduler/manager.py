@@ -235,6 +235,39 @@ def _poll_new_jobs(scheduler: Optional[BackgroundScheduler] = None):
         db.close()
 
 
+def resolve_job_user_data(db, job) -> dict:
+    """
+    Dynamically resolve user_data and secrets for a scheduled job at the exact moment of execution.
+    Only resolves when explicitly bound or provided:
+      1. Specific Bound Profile (user_data_template_id): Loads the linked UserDataTemplate dynamically (supporting key rotation).
+      2. Explicit Job Overrides (job.user_data): Merges any explicit parameters/secrets passed by caller or API.
+    """
+    from models import UserDataTemplate
+    resolved = {}
+
+    # 1. Specific Bound Profile (if explicitly linked to the job)
+    if getattr(job, "user_data_template_id", None):
+        try:
+            tpl = db.query(UserDataTemplate).filter(UserDataTemplate.id == job.user_data_template_id).first()
+            if tpl and tpl.data:
+                data = json.loads(tpl.data) if isinstance(tpl.data, str) else tpl.data
+                if isinstance(data, dict):
+                    resolved.update(data)
+        except Exception as e:
+            logger.warning(f"[Scheduler] Could not load bound template {job.user_data_template_id} for job {job.id}: {e}")
+
+    # 2. Explicit Job Overrides / Passed User Data
+    if job.user_data:
+        try:
+            overrides = json.loads(job.user_data) if isinstance(job.user_data, str) else job.user_data
+            if isinstance(overrides, dict):
+                resolved.update(overrides)
+        except Exception as e:
+            logger.warning(f"[Scheduler] Could not parse job.user_data overrides for job {job.id}: {e}")
+
+    return resolved or None
+
+
 def run_scheduled_job(job_id: str, force: bool = False):
     """
     Executed by APScheduler worker thread when a schedule triggers,
@@ -256,9 +289,9 @@ def run_scheduled_job(job_id: str, force: bool = False):
 
         tenant = job.tenant
         skill_names = json.loads(job.skill_names) if job.skill_names else None
-        user_data = json.loads(job.user_data) if job.user_data else None
+        user_data = resolve_job_user_data(db, job)
 
-        print(f"[Scheduler] Firing scheduled job '{job.name}' (ID: {job.id}, force={force}) for tenant '{tenant.name if tenant else 'default'}'", flush=True)
+        print(f"[Scheduler] Firing scheduled job '{job.name}' (ID: {job.id}, force={force}) for tenant '{tenant.name if tenant else 'default'}' with resolved keys: {list(user_data.keys()) if user_data else []}", flush=True)
         logger.info(f"[Scheduler] Firing scheduled job '{job.name}' (ID: {job.id}) for tenant '{tenant.name if tenant else 'default'}'")
 
         # Execute agentic turn

@@ -447,6 +447,7 @@ class ScheduledJob(Base):
     skill_names = Column(Text, nullable=True)  # JSON-encoded array of active skill names
     model_name = Column(String, nullable=True)
     user_data = Column(Text, nullable=True)  # JSON-encoded dictionary
+    user_data_template_id = Column(String, ForeignKey("user_data_templates.id"), nullable=True)
 
     # Triggers
     trigger_type = Column(String, nullable=False, default="cron")  # cron, interval, date

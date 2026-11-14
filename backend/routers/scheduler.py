@@ -90,6 +90,8 @@ def _serialize_job(j: ScheduledJob) -> dict:
         "skill_names": skill_list,
         "model_name": j.model_name,
         "session_id": j.session_id,
+        "user_data_template_id": getattr(j, "user_data_template_id", None),
+        "user_data": json.loads(j.user_data) if getattr(j, "user_data", None) and isinstance(j.user_data, str) else getattr(j, "user_data", None),
         "is_active": j.is_active,
         "run_count": j.run_count,
         "last_run_at": j.last_run_at.isoformat() if j.last_run_at else None,
@@ -216,6 +218,8 @@ def create_job(
         notify_webhook=resolved_webhook,
         skill_names=json.dumps(payload.skill_names) if payload.skill_names else None,
         model_name=payload.model_name,
+        user_data=json.dumps(payload.user_data) if payload.user_data else None,
+        user_data_template_id=payload.user_data_template_id,
         is_active=True,
     )
     db.add(job)
@@ -294,6 +298,10 @@ def update_job(
         job.skill_names = json.dumps(payload.skill_names)
     if payload.model_name is not None:
         job.model_name = payload.model_name
+    if payload.user_data is not None:
+        job.user_data = json.dumps(payload.user_data) if payload.user_data else None
+    if payload.user_data_template_id is not None:
+        job.user_data_template_id = payload.user_data_template_id
     if payload.is_active is not None:
         job.is_active = payload.is_active
 

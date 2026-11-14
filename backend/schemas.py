@@ -104,6 +104,8 @@ class ScheduledJobCreate(BaseModel):
     skill_names: Optional[List[str]] = None
     model_name: Optional[str] = None
     session_id: Optional[str] = None
+    user_data: Optional[dict] = None
+    user_data_template_id: Optional[str] = None
 
 class ScheduledJobUpdate(BaseModel):
     name: Optional[str] = None
@@ -118,6 +120,8 @@ class ScheduledJobUpdate(BaseModel):
     skill_names: Optional[List[str]] = None
     model_name: Optional[str] = None
     is_active: Optional[bool] = None
+    user_data: Optional[dict] = None
+    user_data_template_id: Optional[str] = None
 
 class SkillSaveRequest(BaseModel):
     skill_name: str

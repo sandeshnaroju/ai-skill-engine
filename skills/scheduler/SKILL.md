@@ -77,6 +77,9 @@ tools:
           items:
             type: string
           description: List of skills to activate when executing this scheduled task. Leave empty to enable all available skills.
+        user_data_template_id:
+          type: string
+          description: Optional ID of a User Data / Secrets Profile template to bind to this scheduled task. If not provided, no user data profile is attached.
       required:
         - name
         - prompt
@@ -142,6 +145,11 @@ Use this skill whenever the user asks for periodic, recurring, or future automat
    - The `prompt` should include all necessary task context and delivery actions.
    - If the user wants the result delivered via email or webhook, instruct the model in `prompt` to gather the necessary data, format it nicely, and invoke the email/webhook tool to send it to the specified recipient.
    - Example: `prompt="Fetch the latest news headlines for Hyderabad, India (last 24 hours), format a clean digest, and send an email to sandesh.aiengineer@gmail.com with subject 'Hyderabad News Briefing'."`
+   - **CRITICAL - Error & Missing Secret Handling in Automated Tasks**:
+     - When generating prompts for automated scheduled tasks, **explicitly instruct the agent to NEVER email errors, authentication failures, missing API keys/secrets, 401/403 access denied messages, or technical stack traces to the end user**.
+     - An email must ONLY be dispatched when valid data or report results were successfully obtained.
+     - If an API fails, a secret is missing, or an error occurs, the scheduled agent should log the error internally in its response and terminate WITHOUT calling `send_email`.
+     - Example prompt directive to include: `"Fetch weather data for Perth. If the data is retrieved successfully, format a beautiful email report and send it to user@example.com. If the data cannot be fetched due to missing credentials, API errors, or 401/403 responses, DO NOT send any email to the user; simply log the failure reason in your final response."`
 2. **Delivery Configuration**:
    - Also set `notify_email` or `delivery_channels` so the platform tracks the destination.
    - The platform will prevent duplicate sends if the model already emailed that recipient during execution.
