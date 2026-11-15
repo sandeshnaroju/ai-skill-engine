@@ -19,6 +19,8 @@ from routers.chat import router as chat_router
 from routers.mcp import router as mcp_router
 from routers.user_data import router as user_data_router
 from routers.generator import router as generator_router
+from routers.scheduler import router as scheduler_router
+from scheduler.manager import start_scheduler, shutdown_scheduler
 from artifacts import artifacts_router
 
 app = FastAPI(
@@ -32,9 +34,11 @@ app = FastAPI(
 @app.on_event("startup")
 def on_startup():
     init_db()
+    start_scheduler()
 
 @app.on_event("shutdown")
 def on_shutdown():
+    shutdown_scheduler()
     try:
         from database import engine
         if engine.dialect.name == "sqlite":
@@ -65,6 +69,7 @@ app.include_router(mcp_router, prefix="/api/v1/mcp_servers", tags=["mcp"])
 app.include_router(user_data_router, prefix="/api/v1/user_data_templates", tags=["user_data"])
 app.include_router(generator_router, prefix="/api/v1/generator", tags=["generator"])
 app.include_router(artifacts_router, prefix="/api/v1/artifacts", tags=["artifacts"])
+app.include_router(scheduler_router, prefix="/api/v1/scheduler", tags=["scheduler"])
 
 # Mount static files & SPA Fallback for clean HTML5 paths (/playground, /apps, /skills, etc.)
 frontend_dist = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend", "dist")

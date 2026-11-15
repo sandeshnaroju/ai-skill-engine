@@ -208,7 +208,7 @@ def _normalize_multimodal_content(content):
     return normalized
 
 
-def _build_messages(db, persist, session_obj, user_message, allowed_skills, user_data, client_messages, tenant_id=None, raw_session_id=None):
+def _build_messages(db, persist, session_obj, user_message, allowed_skills, user_data, client_messages, tenant_id=None, raw_session_id=None, request_source: str = None, webhook_url: str = None):
     """Build the messages list for the LLM call."""
     sys_content = skill_registry.get_system_instructions(allowed_skills=allowed_skills, tenant_id=tenant_id)
     if user_data:
@@ -301,6 +301,16 @@ def _build_messages(db, persist, session_obj, user_message, allowed_skills, user
                     "if you need to find specific sections or concepts. Never regenerate the entire document if only a section needs editing."
                 )
                 msgs[0]["content"] += artifact_context
+
+    if request_source == "scheduler":
+        msgs[0]["content"] += (
+            "\n\n[AUTOMATED SCHEDULED TASK CONTEXT]\n"
+            "- You are running as an automated background scheduled task.\n"
+            "- Execute the task thoroughly according to the prompt.\n"
+            "- If the task requires sending an email or external API update, use your available tools (such as 'email__send_email' or relevant skill API tools) to craft and deliver the update directly.\n"
+            "- CRITICAL EMAIL / NOTIFICATION RULE: NEVER send emails or webhook notifications containing error messages, API failures, missing API keys/secrets, 401/403 authorization failures, or system errors to the user. Emails must ONLY be sent when data was successfully retrieved and a valid report or update is ready. If a required secret/API key is missing or an API call fails, DO NOT call 'email__send_email' or notify the user; simply state the error reason in your text completion so it is logged in the job history.\n"
+            "- Do NOT call 'scheduler' tools to recursively create, reschedule, or cancel jobs.\n"
+        )
 
     return msgs
 
@@ -728,6 +738,7 @@ class SkillEngine:
         temperature: float = None,
         top_p: float = None,
         top_k: int = None,
+        webhook_url: str = None,
         max_tokens: int = None,
         max_completion_tokens: int = None,
         presence_penalty: float = None,
@@ -749,9 +760,11 @@ class SkillEngine:
         prompt_cache_key: str = None,
         prompt_cache_options: dict = None,
         verbosity: str = None,
+        persist: bool = None,
     ) -> dict:
         start_time = time.time()
-        persist = (request_source == "dashboard")
+        if persist is None:
+            persist = (request_source == "dashboard")
 
         user_message_db = json.dumps(user_message) if not isinstance(user_message, str) else user_message
         chat_req = create_chat_request(db, tenant, session_id, app_id, model_name, request_source, user_message_db)
@@ -764,7 +777,7 @@ class SkillEngine:
                 save_message(db, session_obj, "user", content=user_message_db)
 
             allowed_skills = resolve_allowed_skills(db, tenant, app_id, skill_names)
-            messages = _build_messages(db, persist, session_obj, user_message, allowed_skills, user_data, client_messages, tenant_id=tenant.id, raw_session_id=session_id)
+            messages = _build_messages(db, persist, session_obj, user_message, allowed_skills, user_data, client_messages, tenant_id=tenant.id, raw_session_id=session_id, request_source=request_source, webhook_url=webhook_url)
             model_name = _resolve_model(db, tenant, model_name)
             chat_req.model_name = model_name
             db.commit()
@@ -865,8 +878,18 @@ class SkillEngine:
                     for tc in tool_calls_dict:
                         tc["type"] = "function"
 
+                    turn_reasoning = (
+                        getattr(response_msg, "reasoning_content", None) or
+                        getattr(response_msg, "reasoning", None)
+                    )
+                    if not turn_reasoning and hasattr(response_msg, "model_extra") and isinstance(response_msg.model_extra, dict):
+                        turn_reasoning = (
+                            response_msg.model_extra.get("reasoning_content") or
+                            response_msg.model_extra.get("reasoning")
+                        )
+
                     if persist and session_obj:
-                        save_message(db, session_obj, "assistant", content=response_msg.content, tool_calls=tool_calls_dict)
+                        save_message(db, session_obj, "assistant", content=response_msg.content, tool_calls=tool_calls_dict, reasoning=turn_reasoning or None)
                     messages.append({"role": "assistant", "content": response_msg.content if response_msg.content else None, "tool_calls": tool_calls_dict})
 
                     mcp_servers = prefetch_mcp_servers(tool_calls_dict, db, tenant_id=tenant.id)
@@ -884,7 +907,9 @@ class SkillEngine:
                                 fn, args, tool_def, user_data, tenant, session_id, worker_db, mcp_servers,
                                 image_model=image_model, image_gen_model=image_gen_model,
                                 audio_model=audio_model, video_model=video_model,
-                                video_gen_model=video_gen_model
+                                video_gen_model=video_gen_model,
+                                model_name=model_name,
+                                request_webhook_url=webhook_url
                             )
                             worker_db.commit()
                         except Exception as e:
@@ -947,7 +972,7 @@ class SkillEngine:
 
                     arts_list = list(accumulated_artifacts.values())
                     if persist and session_obj:
-                        save_message(db, session_obj, "assistant", content=final_answer, json_data=extracted_json, code=extracted_code, artifact_data=arts_list if arts_list else None)
+                        save_message(db, session_obj, "assistant", content=final_answer, json_data=extracted_json, code=extracted_code, artifact_data=arts_list if arts_list else None, reasoning=model_reasoning or None)
 
                     finalize_request(db, chat_req, final_answer, executed_logs, start_time,
                                      getattr(response, "usage", None), in_r, out_r, au_in_r, au_out_r, model_name=model_name)
@@ -1019,6 +1044,7 @@ class SkillEngine:
         temperature: float = None,
         top_p: float = None,
         top_k: int = None,
+        webhook_url: str = None,
         max_tokens: int = None,
         max_completion_tokens: int = None,
         presence_penalty: float = None,
@@ -1070,7 +1096,7 @@ class SkillEngine:
 
             yield _chunk(session_id, model_name, status="Analyzing query & active skills...")
 
-            messages = _build_messages(db, persist, session_obj, user_message, allowed_skills, user_data, client_messages, tenant_id=tenant.id, raw_session_id=session_id)
+            messages = _build_messages(db, persist, session_obj, user_message, allowed_skills, user_data, client_messages, tenant_id=tenant.id, raw_session_id=session_id, request_source=request_source, webhook_url=webhook_url)
             model_name = _resolve_model(db, tenant, model_name)
             chat_req.model_name = model_name
             db.commit()
@@ -1175,6 +1201,7 @@ class SkillEngine:
                     raise e
 
                 full_text = ""
+                full_reasoning = ""
                 tool_calls_accumulator = {}
                 id_to_index = {}
                 last_idx = 0
@@ -1215,6 +1242,7 @@ class SkillEngine:
                             )
 
                         if raw_thought and isinstance(raw_thought, str):
+                            full_reasoning += raw_thought
                             yield _chunk(session_id, model_name, reasoning=raw_thought)
 
                         # 2. Extract content & handle Gemini thoughts & inline tags (<think>, <thought>, <thinking>)
@@ -1225,6 +1253,7 @@ class SkillEngine:
                             if is_google_thought:
                                 c_clean = content_piece.replace("<thought>", "").replace("</thought>", "")
                                 if c_clean:
+                                    full_reasoning += c_clean
                                     yield _chunk(session_id, model_name, reasoning=c_clean)
                                 continue
 
@@ -1256,11 +1285,13 @@ class SkillEngine:
                                 if end_tag:
                                     think_part, rest = content_piece.split(end_tag, 1)
                                     if think_part:
+                                        full_reasoning += think_part
                                         yield _chunk(session_id, model_name, reasoning=think_part)
                                     in_think_tag = False
                                     content_piece = rest
                                 else:
                                     if content_piece:
+                                        full_reasoning += content_piece
                                         yield _chunk(session_id, model_name, reasoning=content_piece)
                                     content_piece = ""
 
@@ -1340,7 +1371,7 @@ class SkillEngine:
                         tool_calls_list.append(tc_data)
 
                     if persist and session_obj:
-                        save_message(db, session_obj, "assistant", content=full_text or None, tool_calls=tool_calls_list)
+                        save_message(db, session_obj, "assistant", content=full_text or None, tool_calls=tool_calls_list, reasoning=full_reasoning or None)
                     messages.append({"role": "assistant", "content": full_text or None, "tool_calls": tool_calls_list})
 
                     mcp_servers = prefetch_mcp_servers(tool_calls_list, db, tenant_id=tenant.id)
@@ -1376,7 +1407,9 @@ class SkillEngine:
                                 fn, args, tool_def, user_data, tenant, session_id, worker_db, mcp_servers,
                                 image_model=image_model, image_gen_model=image_gen_model,
                                 audio_model=audio_model, video_model=video_model,
-                                video_gen_model=video_gen_model
+                                video_gen_model=video_gen_model,
+                                model_name=model_name,
+                                request_webhook_url=webhook_url
                             )
                             worker_db.commit()
                         except Exception as e:
@@ -1466,7 +1499,8 @@ class SkillEngine:
                     if persist and session_obj:
                         save_message(db, session_obj, "assistant", content=full_text,
                                      json_data=last_extracted_json, code=last_extracted_code,
-                                     artifact_data=arts_list if arts_list else None)
+                                     artifact_data=arts_list if arts_list else None,
+                                     reasoning=full_reasoning or None)
 
                     finalize_request(db, chat_req, full_text, executed_logs, start_time,
                                      accumulated_usage if accumulated_usage["prompt_tokens"] else None,
@@ -1497,7 +1531,8 @@ class SkillEngine:
             if persist and session_obj:
                 save_message(db, session_obj, "assistant", content=final_answer,
                              json_data=last_extracted_json, code=last_extracted_code,
-                             artifact_data=arts_list if arts_list else None)
+                             artifact_data=arts_list if arts_list else None,
+                             reasoning=full_reasoning or None)
 
             finalize_request(db, chat_req, final_answer, executed_logs, start_time,
                              accumulated_usage if accumulated_usage["prompt_tokens"] else None,

@@ -334,34 +334,96 @@ export default function ChatPlayground({ isSidebarOpen, toggleSidebar }) {
   };
 
   const processLoadedMessages = (rawMessages) => {
+    if (!Array.isArray(rawMessages) || rawMessages.length === 0) return [];
+
     const processed = [];
-    let pendingReasoning = [];
-    let pendingArtifacts = [];
+
+    // Group all intermediate turns into a single unified conversational turn per user message
+    let currentTurn = {
+      user: null,
+      traces: [],
+      artifacts: [],
+      finalAssistant: null,
+      toolCallsMap: {}
+    };
+
+    const commitTurn = () => {
+      if (currentTurn.user) {
+        processed.push(currentTurn.user);
+      }
+
+      if (currentTurn.finalAssistant || currentTurn.traces.length > 0) {
+        const fa = currentTurn.finalAssistant || {};
+        const content = fa.content || (currentTurn.artifacts.length > 0 ? 'Created Canvas document.' : '');
+
+        // De-duplicate artifacts by id/token
+        const dedupedArtifacts = [];
+        const seenKeys = new Set();
+        (currentTurn.artifacts || []).forEach(art => {
+          const key = art.id || art.token || art.title;
+          if (key && !seenKeys.has(key)) {
+            seenKeys.add(key);
+            dedupedArtifacts.push(art);
+          }
+        });
+
+        processed.push({
+          role: 'assistant',
+          content: content,
+          json: fa.json || null,
+          code: fa.code || null,
+          artifacts: dedupedArtifacts,
+          timestamp: fa.timestamp || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          reasoning: currentTurn.traces.length > 0 ? JSON.stringify(currentTurn.traces) : null
+        });
+      }
+
+      // Reset turn state
+      currentTurn = {
+        user: null,
+        traces: [],
+        artifacts: [],
+        finalAssistant: null,
+        toolCallsMap: {}
+      };
+    };
 
     rawMessages.forEach((m) => {
       if (m.role === 'user') {
-        processed.push({
+        if (currentTurn.user || currentTurn.traces.length > 0 || currentTurn.finalAssistant) {
+          commitTurn();
+        }
+        currentTurn.user = {
           role: 'user',
           content: m.content || '',
           timestamp: m.timestamp || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        });
+        };
       } else if (m.role === 'tool') {
         const contentStr = m.content || '';
-        pendingReasoning.push(`💭 Tool execution completed.`);
-        pendingReasoning.push(`⚡ Executed tool\nOutput: ${contentStr}`);
+        const tcId = m.tool_call_id || '';
+        const matchingTool = currentTurn.toolCallsMap[tcId];
+        const toolName = matchingTool?.name || 'Tool Execution';
+
+        currentTurn.traces.push({
+          type: 'tool_result',
+          id: tcId,
+          name: toolName,
+          output: contentStr,
+          exit_code: 0
+        });
 
         if (m.artifact) {
-          pendingArtifacts.push(m.artifact);
+          currentTurn.artifacts.push(m.artifact);
         } else if (m.artifact_data) {
           try {
             const parsed = typeof m.artifact_data === 'string' ? JSON.parse(m.artifact_data) : m.artifact_data;
-            if (Array.isArray(parsed)) pendingArtifacts.push(...parsed);
-            else if (parsed) pendingArtifacts.push(parsed);
+            if (Array.isArray(parsed)) currentTurn.artifacts.push(...parsed);
+            else if (parsed) currentTurn.artifacts.push(parsed);
           } catch (e) { }
         } else if (contentStr.includes('/embed/canvas?token=')) {
           const match = contentStr.match(/token=([a-zA-Z0-9_\-\.]+)/);
           if (match) {
-            pendingArtifacts.push({
+            currentTurn.artifacts.push({
               title: 'Interactive Document',
               artifact_type: 'document',
               token: match[1],
@@ -377,50 +439,101 @@ export default function ChatPlayground({ isSidebarOpen, toggleSidebar }) {
           } catch (e) { }
         }
 
-        if (toolCalls && toolCalls.length > 0) {
-          pendingReasoning.push({ type: 'phase_notice', content: 'Analyzing context & invoking tool dependencies...' });
+        // 1. Model reasoning / thinking text
+        let modelThought = m.reasoning || '';
+        let cleanContent = m.content || '';
+
+        // Check if content has inline <think>...</think> or <thought>...</thought> tags
+        if (cleanContent) {
+          const thinkMatch = cleanContent.match(/<(?:think|thought|thinking)>([\s\S]*?)<\/(?:think|thought|thinking)>/i);
+          if (thinkMatch) {
+            if (!modelThought) {
+              modelThought = thinkMatch[1].trim();
+            }
+            cleanContent = cleanContent.replace(/<(?:think|thought|thinking)>[\s\S]*?<\/(?:think|thought|thinking)>/gi, '').trim();
+          }
+        }
+
+        if (modelThought && typeof modelThought === 'string' && modelThought.trim()) {
+          if (modelThought.trim().startsWith('[')) {
+            try {
+              const parsed = JSON.parse(modelThought);
+              if (Array.isArray(parsed)) {
+                currentTurn.traces.push(...parsed);
+                modelThought = '';
+              }
+            } catch (e) { }
+          }
+          if (modelThought && modelThought.trim()) {
+            currentTurn.traces.push({
+              type: 'thought',
+              content: modelThought.trim()
+            });
+          }
+        }
+
+        const hasToolCalls = toolCalls && toolCalls.length > 0;
+
+        // 2. Intermediate assistant step (has tool calls) vs final answer (no tool calls)
+        if (hasToolCalls) {
+          // If this intermediate assistant message had text, it represents intermediate thinking
+          if (cleanContent && cleanContent.trim()) {
+            currentTurn.traces.push({
+              type: 'thought',
+              content: cleanContent.trim()
+            });
+          }
+
+          if (!currentTurn.traces.some(t => t.type === 'phase_notice')) {
+            currentTurn.traces.push({ type: 'phase_notice', content: 'Analyzing context & invoking tool dependencies...' });
+          }
+
           toolCalls.forEach(tc => {
             const rawName = tc.function?.name || tc.name || 'tool';
             const cleanName = rawName.split('__').pop().replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
             const argsRaw = tc.function?.arguments || tc.arguments || {};
             const argsObj = typeof argsRaw === 'string' ? (() => { try { return JSON.parse(argsRaw); } catch(e) { return { raw: argsRaw }; } })() : argsRaw;
-            pendingReasoning.push({ type: 'tool_call', name: cleanName, raw_name: rawName, arguments: argsObj });
+            const tcId = tc.id || `call_${cleanName}`;
+
+            currentTurn.toolCallsMap[tcId] = { name: cleanName, raw_name: rawName, arguments: argsObj };
+
+            currentTurn.traces.push({
+              type: 'tool_call',
+              id: tcId,
+              name: cleanName,
+              raw_name: rawName,
+              arguments: argsObj
+            });
           });
+        } else {
+          // Final assistant message without tool calls for this turn
+          // If there was an earlier non-tool-call message, preserve its text in traces as thought
+          if (currentTurn.finalAssistant && currentTurn.finalAssistant.content && cleanContent) {
+            currentTurn.traces.push({
+              type: 'thought',
+              content: currentTurn.finalAssistant.content
+            });
+          }
+
+          currentTurn.finalAssistant = {
+            content: cleanContent,
+            json: m.json,
+            code: m.code,
+            timestamp: m.timestamp || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          };
         }
 
-        let messageArtifacts = [];
+        // Collect artifacts
         if (Array.isArray(m.artifacts) && m.artifacts.length > 0) {
-          messageArtifacts = [...m.artifacts];
+          currentTurn.artifacts.push(...m.artifacts);
         } else if (m.artifact_data) {
           try {
             const parsed = typeof m.artifact_data === 'string' ? JSON.parse(m.artifact_data) : m.artifact_data;
-            if (Array.isArray(parsed)) messageArtifacts.push(...parsed);
-            else if (parsed) messageArtifacts.push(parsed);
+            if (Array.isArray(parsed)) currentTurn.artifacts.push(...parsed);
+            else if (parsed) currentTurn.artifacts.push(parsed);
           } catch (e) { }
         } else if (m.artifact) {
-          messageArtifacts.push(m.artifact);
-        }
-
-        if (messageArtifacts.length === 0 && pendingArtifacts.length > 0) {
-          messageArtifacts = [...pendingArtifacts];
-        }
-
-        messageArtifacts.forEach(a => {
-          if (!a.id && a.artifact_id) a.id = a.artifact_id;
-        });
-        pendingArtifacts = [];
-
-        if (m.content && m.content.trim()) {
-          processed.push({
-            role: 'assistant',
-            content: m.content,
-            json: m.json,
-            code: m.code,
-            artifacts: messageArtifacts,
-            timestamp: m.timestamp || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            reasoning: pendingReasoning.length > 0 ? JSON.stringify(pendingReasoning) : null
-          });
-          pendingReasoning = [];
+          currentTurn.artifacts.push(m.artifact);
         }
       } else {
         processed.push({
@@ -431,13 +544,8 @@ export default function ChatPlayground({ isSidebarOpen, toggleSidebar }) {
       }
     });
 
-    if (pendingReasoning.length > 0) {
-      processed.push({
-        role: 'assistant',
-        content: 'No response content emitted.',
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        reasoning: JSON.stringify(pendingReasoning)
-      });
+    if (currentTurn.user || currentTurn.traces.length > 0 || currentTurn.finalAssistant) {
+      commitTurn();
     }
 
     return processed;

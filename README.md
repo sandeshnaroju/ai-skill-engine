@@ -168,25 +168,20 @@ The streaming response delivers rich, real-time lifecycle deltas directly into y
 
 All guides are packaged directly into the web application and can be interactively browsed with live search, syntax highlighting, and one-click copy from the dashboard at **`/api-docs`** (Tab 3: *Complete Knowledge Base & Guides*), or viewed directly in [`frontend/src/docs/`](frontend/src/docs/):
 
-| # | Guide | Description |
-|---|---|---|
-| 01 | [📖 **Introduction & Architecture**](frontend/src/docs/01-introduction.md) | Platform overview, request lifecycle, multi-tenancy model, and core concepts. |
-| 02 | [⚡ **Quickstart Walkthrough**](frontend/src/docs/02-quickstart.md) | 5-minute step-by-step from initial boot to first tool call and API request. |
-| 03 | [📦 **Installation & Deployment**](frontend/src/docs/03-installation.md) | Docker Hub zero-clone, Docker Compose (with PostgreSQL), Bare-Metal, and Nginx SSL proxy. |
-| 04 | [💡 **Usage & Dashboard Workflows**](frontend/src/docs/04-usage-guide.md) | Chat Playground, Universal Canvas, Apps & Groups, ProChat Generative UI, and Audit Logs. |
-| 05 | [🔌 **Chat Completions & Streaming API**](frontend/src/docs/05-backend-api.md) | OpenAI wire-compatible endpoint, streaming SSE deltas, tool schemas, and custom tools. |
-| 06 | [🎨 **Multimodal & Sub-Agents**](frontend/src/docs/06-backend-multimodal.md) | Image generation (DALL-E 3/Imagen/Flux), video generation (Veo/Runway), vision and audio analysis. |
-| 07 | [📁 **Session Files & Lifecycle**](frontend/src/docs/07-backend-files.md) | File uploads, session attachment, listing, single file deletion, and cascade session purges. |
-| 08 | [⚙️ **Artifacts & Management APIs**](frontend/src/docs/08-backend-management.md) | Artifacts REST/SSE endpoints, MCP servers, tenant management, and audit logs. |
-| 09 | [📡 **Complete API Reference**](frontend/src/docs/09-api-reference.md) | Request parameters, response bodies, error codes, and end-to-end Python/JS SDK snippets. |
-| 10 | [🖼️ **Universal Canvas Iframe Embedding**](frontend/src/docs/10-frontend-canvas.md) | Embedding interactive Canvas in your web apps via iframe and postMessage bi-directional events. |
-| 11 | [⚡ **Headless Canvas REST & SSE**](frontend/src/docs/11-frontend-headless.md) | Building custom canvas viewers with direct REST and real-time Server-Sent Events. |
-| 12 | [🔒 **Canvas Security & Uploaded Files**](frontend/src/docs/12-frontend-security.md) | HMAC security tokens, proxy patterns, and opening user files directly in Canvas editors. |
-| 13 | [📄 **Universal Canvas Artifacts**](frontend/src/docs/13-artifacts-canvas.md) | Architecture of live co-editing documents, spreadsheets, slides, and 3D CAD models. |
-| 14 | [💾 **Session Storage & Cloud Files**](frontend/src/docs/14-session-storage.md) | Azure Blob, S3, and Local Disk file lifecycles, session uploads, listing, and cascade purge APIs. |
-| 15 | [🛡️ **Execution Sandboxes**](frontend/src/docs/15-sandboxes.md) | Docker containers, Azure Container Apps (Hyper-V), E2B micro-VMs, Fly.io, and AWS Lambda. |
-| 16 | [⚙️ **Configuration & Settings**](frontend/src/docs/16-configuration.md) | Environment variables, Fernet encryption, custom token pricing rates, and SMTP email setup. |
-| 17 | [🧩 **Skills & MCP Servers**](frontend/src/docs/17-skills-and-mcp.md) | Anatomy of `SKILL.md`, tool schemas, AI Skill Generator, and Model Context Protocol integrations. |
+| # | Category | Guide | Description |
+|---|---|---|---|
+| 01 | **Getting Started** | [🚀 **Quickstart & Platform Overview**](frontend/src/docs/01-getting-started.md) | What you can build, platform architecture, and a 3-minute first API request. |
+| 02 | **Getting Started** | [🔑 **Authentication & Workspaces**](frontend/src/docs/02-authentication-and-tenants.md) | Tenant API keys, request headers, multi-tenant isolation, and workspace limits. |
+| 03 | **Building with API** | [💬 **Chat Completions & Streaming**](frontend/src/docs/03-chat-completions.md) | OpenAI wire-compatible endpoint, streaming SSE deltas, live reasoning, and tool results. |
+| 04 | **Building with API** | [🎨 **Embedding Artifacts & Canvas**](frontend/src/docs/04-artifacts-and-canvas.md) | Embedding interactive documents, spreadsheets, slides, and 3D CAD via iframe or REST. |
+| 05 | **Building with API** | [📁 **File Uploads & Session Storage**](frontend/src/docs/05-files-and-storage.md) | Uploading documents/CSVs for agent analysis, downloading results, and cascade purges. |
+| 06 | **Building with API** | [⏰ **Scheduled Background Tasks**](frontend/src/docs/06-scheduled-jobs.md) | Automating recurring tasks with cron, interval, and date triggers, plus error guardrails. |
+| 07 | **Building with API** | [📡 **Complete REST API Reference**](frontend/src/docs/07-api-reference.md) | Endpoints, request/response bodies, parameters, and HTTP error code resolutions. |
+| 08 | **Skills & Tools** | [🧩 **Connecting Custom APIs as Skills**](frontend/src/docs/08-custom-skills.md) | Turning your REST APIs into AI tools with SKILL.md and runtime secret injection. |
+| 09 | **Skills & Tools** | [🔌 **External Tools with MCP**](frontend/src/docs/09-mcp-servers.md) | Connecting PostgreSQL databases, local filesystems, and GitHub using MCP. |
+| 10 | **Skills & Tools** | [🔐 **Secrets & User Data Profiles**](frontend/src/docs/10-secrets-and-user-data.md) | Injecting API credentials into tools dynamically without ever leaking them to the LLM. |
+| 11 | **Dashboard** | [🖥️ **Chat Playground & Dashboard Guide**](frontend/src/docs/11-dashboard-guide.md) | Navigating the dashboard: Playground testing, active skills, Apps packaging, and usage. |
+| 12 | **Deployment** | [📦 **Self-Hosting & Deployment Guide**](frontend/src/docs/12-deployment-and-setup.md) | Docker run in 60s, Docker Compose with Postgres, LLM providers, and environment variables. |
 
 ---
 

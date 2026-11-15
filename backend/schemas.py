@@ -37,6 +37,7 @@ class PlaygroundChatRequest(BaseModel):
     prompt_cache_key: Optional[str] = None
     prompt_cache_options: Optional[dict] = None
     verbosity: Optional[str] = None
+    webhook_url: Optional[str] = None
 
 class OpenAIStyleMessage(BaseModel):
     role: str
@@ -80,9 +81,41 @@ class OpenAIChatRequest(BaseModel):
     prompt_cache_key: Optional[str] = None
     prompt_cache_options: Optional[dict] = None
     verbosity: Optional[str] = None
+    webhook_url: Optional[str] = None
 
 class TenantCreate(BaseModel):
     name: str
+    default_webhook_url: Optional[str] = None
+
+class TenantWebhookUpdate(BaseModel):
+    default_webhook_url: Optional[str] = None
+
+class ScheduledJobCreate(BaseModel):
+    name: str
+    prompt: str
+    tenant_id: Optional[str] = None
+    trigger_type: Optional[str] = "cron"
+    cron_expression: Optional[str] = None
+    interval_seconds: Optional[int] = None
+    run_at: Optional[str] = None
+    skill_names: Optional[List[str]] = None
+    model_name: Optional[str] = None
+    session_id: Optional[str] = None
+    user_data: Optional[dict] = None
+    user_data_template_id: Optional[str] = None
+
+class ScheduledJobUpdate(BaseModel):
+    name: Optional[str] = None
+    prompt: Optional[str] = None
+    trigger_type: Optional[str] = None
+    cron_expression: Optional[str] = None
+    interval_seconds: Optional[int] = None
+    run_at: Optional[str] = None
+    skill_names: Optional[List[str]] = None
+    model_name: Optional[str] = None
+    is_active: Optional[bool] = None
+    user_data: Optional[dict] = None
+    user_data_template_id: Optional[str] = None
 
 class SkillSaveRequest(BaseModel):
     skill_name: str

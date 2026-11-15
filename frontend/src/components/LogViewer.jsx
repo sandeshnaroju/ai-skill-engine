@@ -30,6 +30,7 @@ function LogDetailDrawer({ log, onClose }) {
               </span>
             )],
             ['Time', log.created_at ? new Date(log.created_at).toLocaleString() : 'N/A'],
+            ['Source', <span style={{ textTransform: 'capitalize', fontWeight: '600', color: log.request_source === 'scheduler' ? '#f59e0b' : log.request_source === 'dashboard' ? 'var(--primary-violet)' : 'var(--primary-cyan)' }}>{log.request_source || 'api'}</span>],
             ['Tenant', log.tenant_name],
             ['Model', log.model_name || '—'],
             ['Skill / Tool', `${log.skill_name} / ${log.tool_name}`],

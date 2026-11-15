@@ -119,6 +119,19 @@ def init_db():
         finally:
             db.close()
 
+    if inspector.has_table("tenants"):
+        columns = [c["name"] for c in inspector.get_columns("tenants")]
+        db = SessionLocal()
+        try:
+            if "default_webhook_url" not in columns:
+                db.execute(text("ALTER TABLE tenants ADD COLUMN default_webhook_url TEXT"))
+                print("Migration: Added 'default_webhook_url' column to tenants table")
+            db.commit()
+        except Exception as e:
+            print(f"Migration warning: Could not update tenants table columns: {e}")
+        finally:
+            db.close()
+
     if inspector.has_table("mcp_servers"):
         columns = [c["name"] for c in inspector.get_columns("mcp_servers")]
         db = SessionLocal()
@@ -250,11 +263,27 @@ def init_db():
             if "artifact_data" not in columns:
                 db.execute(text("ALTER TABLE chat_messages ADD COLUMN artifact_data TEXT"))
                 print("Migration: Added artifact_data column to chat_messages table")
+            if "reasoning" not in columns:
+                db.execute(text("ALTER TABLE chat_messages ADD COLUMN reasoning TEXT"))
+                print("Migration: Added reasoning column to chat_messages table")
             db.commit()
         except Exception as e:
             print(f"Migration warning: Could not add columns to chat_messages: {e}")
         finally:
             db.close()
+
+    if inspector.has_table("scheduled_jobs"):
+        columns = [c["name"] for c in inspector.get_columns("scheduled_jobs")]
+        if "user_data_template_id" not in columns:
+            db = SessionLocal()
+            try:
+                db.execute(text("ALTER TABLE scheduled_jobs ADD COLUMN user_data_template_id TEXT"))
+                db.commit()
+                print("Migration: Added user_data_template_id column to scheduled_jobs table")
+            except Exception as e:
+                print(f"Migration warning: Could not add user_data_template_id to scheduled_jobs: {e}")
+            finally:
+                db.close()
 
     if inspector.has_table("tenant_llms"):
         columns = [c["name"] for c in inspector.get_columns("tenant_llms")]
