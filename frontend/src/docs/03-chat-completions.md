@@ -128,14 +128,57 @@ async function sendChatMessage(prompt) {
 
 ---
 
-## 4. Request Parameters Reference
+## 4. Multi-Model Routing & Specialized Model Overrides
+
+AI Skill Engine allows you to configure a **heterogeneous multi-model pipeline** in a single API call. Instead of forcing one model to handle fast reasoning, expensive vision inspection, media generation, and UI layout simultaneously, you can route sub-tasks to specialized models:
+
+```json
+{
+  "model": "gemini-2.5-flash",
+  "prochat_model": "gemini-2.5-pro",
+  "image_model": "gemini-2.5-pro",
+  "image_gen_model": "imagen-3.0-generate-002",
+  "audio_model": "gemini-2.5-flash",
+  "video_model": "gemini-2.5-pro",
+  "reasoning_effort": "high",
+  "thinking_budget": 4096,
+  "stream": true,
+  "messages": [
+    { "role": "user", "content": "Inspect this schematic image, generate a clean block diagram, and layout the summary report." }
+  ]
+}
+```
+
+### Specialized Model Roles:
+
+- **`model`** *(Primary Orchestrator)*: Drives the conversational agent loop, tool selection, and text streaming (e.g. `gemini-2.5-flash`, `gpt-4o`).
+- **`prochat_model`** *(UI & Visual Synthesis)*: A secondary high-capability model used to synthesize structured UI cards, dynamic interactive components, and generative widgets alongside the chat stream.
+- **`image_model`** *(Vision Understanding)*: Dispatched to skills and tools when inspecting, describing, OCR-ing, or reasoning over uploaded images, screenshots, and visual schematics.
+- **`image_gen_model`** *(Image Generation)*: Dispatched to creative generation tools when the agent produces synthetic images, wireframes, or diagrams.
+- **`audio_model`** *(Audio & Speech)*: Dedicated model for transcribing or analyzing speech and audio recordings.
+- **`video_model`** *(Video Understanding)*: Specialized multimodal model for deep temporal and frame-by-frame video reasoning.
+- **`video_gen_model`** *(Video Generation)*: Model used when generating dynamic video clips from agent prompts.
+
+---
+
+## 5. Request Parameters Reference
 
 | Parameter | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
-| `messages` | array | **Yes** | Standard OpenAI messages list (`[{"role": "user", "content": "..."}]`). Supports multimodal images/audio. |
-| `model` | string | Optional | Model to invoke (e.g. `gemini-2.5-flash`, `gpt-4o`, `claude-3-7-sonnet`). |
+| `messages` | array | **Yes** | Standard OpenAI messages list (`[{"role": "user", "content": "..."}]`). Supports multimodal content parts. |
+| `model` | string | Optional | Primary conversational model (e.g. `gemini-2.5-flash`, `gpt-4o`, `claude-3-7-sonnet`). |
 | `stream` | boolean | Optional | Whether to stream response via Server-Sent Events (SSE). Default `false`. |
-| `session_id` | string | Optional | Unique conversation ID. Ensures past conversation turns, files, and artifacts persist across requests. |
-| `skill_names` | array | Optional | Explicitly restricts the agent to a subset of skills (e.g. `["code_interpreter", "email"]`). |
+| `session_id` | string | Optional | Conversation thread ID. Ensures memory, files, and artifacts persist across requests. |
+| `prochat_model` | string | Optional | Secondary model override for ProChat UI and rich component generation. |
+| `image_model` | string | Optional | Vision model override for image analysis and visual tool execution. |
+| `image_gen_model` | string | Optional | Image generation model override for generative image tools. |
+| `audio_model` | string | Optional | Audio processing and transcription model override. |
+| `video_model` | string | Optional | Video reasoning model override for temporal analysis. |
+| `video_gen_model` | string | Optional | Video generation model override. |
+| `reasoning_effort` | string | Optional | Reasoning effort for supported models (`low`, `medium`, `high`). |
+| `thinking_budget` | integer | Optional | Token budget allocated for chain-of-thought thinking models. |
+| `skill_names` | array | Optional | Restricts the agent to a specific list of skills (e.g. `["code_interpreter", "email"]`). |
 | `app_id` | string | Optional | Restricts tools to those bundled inside a predefined App container. |
-| `user_data` | object | Optional | Runtime key-value dictionary to inject secrets or parameters dynamically into skills. |
+| `user_data` | object | Optional | Runtime key-value dictionary injecting dynamic secrets/parameters into skills. |
+| `temperature` | float | Optional | Sampling temperature between `0.0` and `2.0`. |
+| `max_tokens` | integer | Optional | Maximum token limit for the generated completion. |

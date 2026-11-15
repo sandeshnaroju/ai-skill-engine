@@ -7,21 +7,40 @@ This reference documents the complete suite of REST endpoints available to **Ext
 ## 1. Chat Completions & Sessions (`/api/v1/...`)
 
 ### `POST /api/v1/chat/completions`
-Executes an AI agent turn with dynamic tool orchestration, reasoning streaming, and artifact generation. Compatible with the standard OpenAI wire format.
+Executes an AI agent turn with dynamic tool orchestration, reasoning streaming, multimodal tool dispatch, and artifact generation. Compatible with the standard OpenAI wire format.
 
 **Request Body:**
 ```json
 {
-  "messages": [{"role": "user", "content": "Fetch top news and draft a summary."}],
+  "messages": [{"role": "user", "content": "Fetch top news, analyze the infographic, and draft a summary."}],
   "model": "gemini-2.5-flash",
   "stream": true,
   "session_id": "thread_abc123",
+  "prochat_model": "gemini-2.5-pro",
+  "image_model": "gemini-2.5-pro",
+  "image_gen_model": "imagen-3.0-generate-002",
+  "audio_model": "gemini-2.5-flash",
+  "video_model": "gemini-2.5-pro",
+  "reasoning_effort": "high",
+  "thinking_budget": 4096,
   "skill_names": ["http_fetcher", "code_interpreter"],
   "app_id": "support_app",
   "user_data": {"api_key": "custom_token"},
   "temperature": 0.7
 }
 ```
+
+- **Core Parameters**:
+  - `model`: Main conversational model driving tool routing and replies.
+  - `prochat_model`: Secondary model override for rendering rich ProChat UI cards and generative components.
+  - `image_model`: Vision model passed to skills that inspect, describe, or OCR uploaded images/diagrams.
+  - `image_gen_model`: Image generation model passed to creative skills producing visual outputs.
+  - `audio_model`: Audio processing and speech transcription model.
+  - `video_model`: Video understanding model for frame-by-frame temporal reasoning.
+  - `reasoning_effort` & `thinking_budget`: Thinking controls for reasoning models (e.g., Gemini Thinking, Claude 3.7).
+  - `session_id`: Unique thread ID for conversation memory, uploaded files, and artifact persistence.
+  - `skill_names` / `app_id`: Restrict tools to specific skills or an App package.
+  - `user_data`: Dynamic runtime credentials and environment variables for skills.
 
 ### `GET /api/v1/sessions`
 Lists conversation sessions for the authenticated workspace.

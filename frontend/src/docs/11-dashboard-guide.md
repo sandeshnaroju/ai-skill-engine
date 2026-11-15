@@ -26,6 +26,7 @@ The **Chat Playground** (`/playground`) is designed for fast, iterative agent te
 
 ### Key Controls:
 - **Model Selector**: Switch between registered models (Gemini 2.5 Flash, GPT-4o, Claude 3.7 Sonnet, DeepSeek R1, or local Ollama).
+- **Secondary Model Overrides**: Configure dedicated models for specialized tasks (e.g. ProChat UI Model, Vision Model) to split reasoning, visual analysis, and UI generation across models.
 - **Active Skills Drawer**: Click the right-hand panel to toggle individual skills on or off to test how the model behaves with different tool combinations.
 - **Thought Process Accordion**: Inspect the model's live chain-of-thought reasoning before and during tool calls.
 - **Tool Execution Drawers**: Click on any tool pill (`run_python`, `call_api`, `send_email`) to inspect the exact parameters passed to the sandbox and the raw output returned.
