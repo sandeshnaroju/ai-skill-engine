@@ -328,7 +328,10 @@ def get_chat_request(
     if not r:
         raise HTTPException(status_code=404, detail="Request not found")
     tenant_obj = db.query(Tenant).filter(Tenant.id == r.tenant_id).first() if r.tenant_id else None
-    logs = db.query(ExecutionLog).filter(ExecutionLog.request_id == request_id).order_by(ExecutionLog.created_at.asc()).all()
+    logs = db.query(ExecutionLog).filter(
+        ExecutionLog.request_id == request_id,
+        ExecutionLog.tenant_id == r.tenant_id
+    ).order_by(ExecutionLog.created_at.asc()).all()
     return {
         "id": r.id,
         "tenant_name": tenant_obj.name if tenant_obj else "Unknown",
