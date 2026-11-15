@@ -61,8 +61,11 @@ def get_current_tenant(
                     (Tenant.id == x_tenant_id) | (Tenant.api_key == x_tenant_id),
                     Tenant.is_active == True
                 ).first()
-                if tenant:
-                    return tenant
+                if not tenant:
+                    raise HTTPException(status_code=404, detail="Specified workspace not found or inactive")
+                if tenant.user_id and tenant.user_id != user.id:
+                    raise HTTPException(status_code=403, detail="Access denied to specified workspace")
+                return tenant
             
             # Retrieve the user's tenant (or create a default one if none exists)
             tenant = db.query(Tenant).filter(Tenant.user_id == user.id, Tenant.is_active == True).first()
@@ -80,3 +83,35 @@ def get_current_tenant(
             return tenant
 
     raise HTTPException(status_code=401, detail="Authentication required or invalid credentials")
+
+
+def resolve_auth_context(
+    authorization: Optional[str] = Header(None),
+    x_api_key: Optional[str] = Header(None),
+    session_token: Optional[str] = Cookie(None),
+    db: Session = Depends(get_db)
+) -> dict:
+    """
+    Unified authenticator returning {'user': user, 'tenant': tenant}.
+    - If called with API Key (Bearer sk_mgr_... or X-API-Key), returns the authenticated tenant and its owner.
+    - If called with Session Cookie, returns the authenticated dashboard user.
+    """
+    api_key = None
+    if authorization and authorization.startswith("Bearer "):
+        api_key = authorization.split(" ")[1].strip()
+    elif x_api_key:
+        api_key = x_api_key.strip()
+
+    if api_key:
+        tenant = db.query(Tenant).filter(Tenant.api_key == api_key, Tenant.is_active == True).first()
+        if not tenant:
+            raise HTTPException(status_code=401, detail="Invalid or inactive API Key")
+        return {"user": tenant.user, "tenant": tenant}
+
+    if session_token:
+        user = db.query(User).filter(User.session_token == session_token).first()
+        if user:
+            return {"user": user, "tenant": None}
+
+    raise HTTPException(status_code=401, detail="Authentication required or invalid credentials")
+

@@ -22,9 +22,17 @@ def list_user_data_templates(
     page_size: int = 10,
     search: Optional[str] = None
 ):
-    from models import UserDataTemplate
+    from models import UserDataTemplate, Tenant as DBTenant
     from sqlalchemy.orm import joinedload
-    target_tenant_id = tenant_id if tenant_id is not None else current_tenant.id
+    target_tenant_id = current_tenant.id
+    if tenant_id and tenant_id != current_tenant.id:
+        if not current_tenant.user_id:
+            raise HTTPException(status_code=403, detail="Access denied: Cannot query profiles of another tenant workspace.")
+        t_check = db.query(DBTenant).filter(DBTenant.id == tenant_id, DBTenant.user_id == current_tenant.user_id).first()
+        if not t_check:
+            raise HTTPException(status_code=403, detail="Access denied: Cannot query profiles of another tenant workspace.")
+        target_tenant_id = t_check.id
+
     query = db.query(UserDataTemplate).options(joinedload(UserDataTemplate.tenant))
     if target_tenant_id:
         query = query.filter(
@@ -60,10 +68,17 @@ def get_user_data_template(
     db: Session = Depends(get_db),
     current_tenant: Tenant = Depends(get_current_tenant)
 ):
-    from models import UserDataTemplate
+    from models import UserDataTemplate, Tenant as DBTenant
     tpl = db.query(UserDataTemplate).filter(UserDataTemplate.id == template_id).first()
     if not tpl:
         raise HTTPException(status_code=404, detail="User Data profile not found")
+
+    # Strict isolation: profile must belong to this tenant, be global (None), or belong to another tenant of same owner
+    if tpl.tenant_id and tpl.tenant_id != current_tenant.id:
+        target_tenant = db.query(DBTenant).filter(DBTenant.id == tpl.tenant_id).first()
+        if not target_tenant or not current_tenant.user_id or target_tenant.user_id != current_tenant.user_id:
+            raise HTTPException(status_code=404, detail="User Data profile not found")
+
     try:
         parsed_data = json.loads(tpl.data) if isinstance(tpl.data, str) else (tpl.data or {})
     except Exception:
@@ -168,9 +183,12 @@ def update_user_data_template(
     if not tpl:
         raise HTTPException(status_code=404, detail="User Data profile not found")
 
-    if tpl.tenant_id and tpl.tenant_id != current_tenant.id:
+    if tpl.tenant_id is None:
+        raise HTTPException(status_code=403, detail="Cannot modify system/global profile.")
+
+    if tpl.tenant_id != current_tenant.id:
         target_tenant = db.query(DBTenant).filter(DBTenant.id == tpl.tenant_id).first()
-        if target_tenant and current_tenant.user_id and target_tenant.user_id != current_tenant.user_id:
+        if not target_tenant or not current_tenant.user_id or target_tenant.user_id != current_tenant.user_id:
             raise HTTPException(status_code=403, detail="Permission denied to update profile from this tenant workspace.")
 
     # Check for name collision with another template in same tenant
@@ -223,10 +241,13 @@ def delete_user_data_template(
     tpl = db.query(UserDataTemplate).filter(UserDataTemplate.id == template_id).first()
     if not tpl:
         raise HTTPException(status_code=404, detail="Template not found")
-        
-    if tpl.tenant_id and tpl.tenant_id != current_tenant.id:
+
+    if tpl.tenant_id is None:
+        raise HTTPException(status_code=403, detail="Cannot delete system/global profile.")
+
+    if tpl.tenant_id != current_tenant.id:
         target_tenant = db.query(DBTenant).filter(DBTenant.id == tpl.tenant_id).first()
-        if target_tenant and current_tenant.user_id and target_tenant.user_id != current_tenant.user_id:
+        if not target_tenant or not current_tenant.user_id or target_tenant.user_id != current_tenant.user_id:
             raise HTTPException(status_code=403, detail="Permission denied to delete profile from this tenant workspace.")
 
     try:

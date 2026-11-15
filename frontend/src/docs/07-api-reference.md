@@ -54,7 +54,32 @@ Deletes a conversation session and its stored message history.
 
 ---
 
-## 2. Artifacts & Universal Canvas (`/api/v1/artifacts/...`)
+## 2. Request Logs & Execution Audit (`/api/v1/...`)
+
+External API clients can inspect their historical request logs, execution durations, token costs, and raw sandbox tool traces (stdout/stderr):
+
+### `GET /api/v1/requests`
+Lists previous chat completion requests for the authenticated tenant workspace.
+- **Query Params**:
+  - `session_id` (string, optional): Filter by a specific conversation thread.
+  - `status` (string, optional): Filter by `"completed"`, `"failed"`, or `"in_progress"`.
+  - `search` (string, optional): Search within user prompts.
+  - `page` (int), `page_size` (int, default 20).
+
+### `GET /api/v1/requests/{request_id}`
+Retrieves complete execution details for a specific request, including token breakdowns, costs, and an array of `execution_logs`:
+- **Returns**:
+  - `id`, `session_id`, `model_name`, `status`, `total_duration_ms`
+  - `prompt_tokens`, `completion_tokens`, `cost_usd`
+  - `execution_logs`: Array of all tool dispatches containing `skill_name`, `tool_name`, `command`, `sandbox_type`, `stdout`, `stderr`, `exit_code`, and `execution_time_ms`.
+
+### `GET /api/v1/logs`
+Lists raw sandbox tool execution logs directly for audit trails and debugging.
+- **Query Params**: `session_id`, `sandbox_type` (`docker`, `modal`, `e2b`, `subagent`), `page`, `page_size`.
+
+---
+
+## 3. Artifacts & Universal Canvas (`/api/v1/artifacts/...`)
 
 ### `GET /api/v1/artifacts/{artifact_id}`
 Returns artifact metadata, type (`document`, `spreadsheet`, `presentation`, `diagram_svg`, `cad_3d`, `pcb_layout`), source content, and versions.
@@ -101,7 +126,7 @@ Permanently deletes an artifact and its associated blocks and commits.
 
 ---
 
-## 3. Files & Storage (`/api/v1/files/...`)
+## 4. Files & Storage (`/api/v1/files/...`)
 
 ### `POST /api/v1/files/upload`
 Uploads a file (multipart/form-data) to a specific session so agents can read and analyze it.
@@ -125,7 +150,7 @@ Cascade-deletes all files attached to a session.
 
 ---
 
-## 4. Scheduled Jobs & Automation (`/api/v1/scheduler/...`)
+## 5. Scheduled Jobs & Automation (`/api/v1/scheduler/...`)
 
 ### `POST /api/v1/scheduler/jobs`
 Creates a recurring or one-shot background job.
@@ -162,7 +187,7 @@ Permanently deletes a scheduled job.
 
 ---
 
-## 5. Skills & Tool Catalog (`/api/v1/skills/...`)
+## 6. Skills & Tool Catalog (`/api/v1/skills/...`)
 
 ### `GET /api/v1/skills`
 Lists all active built-in and custom skills available to the tenant workspace.
@@ -181,7 +206,7 @@ Clones an existing skill under a new name for fast authoring.
 
 ---
 
-## 6. Apps & Tool Scoping (`/api/v1/apps/...`)
+## 7. Apps & Tool Scoping (`/api/v1/apps/...`)
 
 ### `GET /api/v1/apps`
 Lists grouped App packages that bundle specific skills together.
@@ -204,7 +229,7 @@ Clones an existing app bundle.
 
 ---
 
-## 7. Model Context Protocol Hub (`/api/v1/mcp_servers/...`)
+## 8. Model Context Protocol Hub (`/api/v1/mcp_servers/...`)
 
 ### `GET /api/v1/mcp_servers`
 Lists all connected MCP servers and their auto-discovered tools.
@@ -227,7 +252,7 @@ Unregisters an MCP server.
 
 ---
 
-## 8. Secrets & User Data Profiles (`/api/v1/user_data_templates/...`)
+## 9. Secrets & User Data Profiles (`/api/v1/user_data_templates/...`)
 
 ### `GET /api/v1/user_data_templates`
 Lists saved credential and context profiles.
@@ -253,14 +278,14 @@ Modifies or removes a secret profile template.
 
 ---
 
-## 9. Tenant Workspace & Models (`/api/v1/tenant/...`)
+## 10. Tenant Workspace & Models (`/api/v1/tenant/...`)
 
 ### `GET /api/v1/tenant/llms`
 Lists all active LLM models configured and accessible to this tenant (Gemini, OpenAI, Claude, Grok, Ollama) along with token rates.
 
 ---
 
-## 10. HTTP Status & Error Codes
+## 11. HTTP Status & Error Codes
 
 | Status Code | Reason | Resolution |
 | :--- | :--- | :--- |

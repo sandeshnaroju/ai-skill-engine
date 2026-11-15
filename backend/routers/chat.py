@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from database import get_db
 from models import Tenant, User, ChatRequest, ExecutionLog
-from auth import get_current_tenant, get_current_user
+from auth import get_current_tenant, get_current_user, resolve_auth_context
 from utils import get_paginated_response
 from skill_engine import skill_engine
 from schemas import PlaygroundChatRequest, OpenAIChatRequest
@@ -237,23 +237,39 @@ def openai_chat_completions(
 @router.get("/requests")
 def list_chat_requests(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    auth: dict = Depends(resolve_auth_context),
     page: Optional[int] = None,
     page_size: int = 20,
+    session_id: Optional[str] = None,
     request_source: Optional[str] = None,
     tenant_name: Optional[str] = None,
     status: Optional[str] = None,
     search: Optional[str] = None
 ):
+    """
+    List chat requests and execution metadata.
+    Accessible to both external API users (via Bearer API key) and dashboard users (via session cookie).
+    External API users are strictly scoped to their tenant workspace.
+    """
     from models import Tenant
-    user_tenant_ids = db.query(Tenant.id).filter(Tenant.user_id == current_user.id)
-    query = db.query(ChatRequest).filter(ChatRequest.tenant_id.in_(user_tenant_ids))
+    if auth.get("tenant"):
+        tenant = auth["tenant"]
+        query = db.query(ChatRequest).filter(ChatRequest.tenant_id == tenant.id)
+    elif auth.get("user"):
+        user = auth["user"]
+        user_tenant_ids = db.query(Tenant.id).filter(Tenant.user_id == user.id)
+        query = db.query(ChatRequest).filter(ChatRequest.tenant_id.in_(user_tenant_ids))
+        if tenant_name and tenant_name != "ALL":
+            query = query.join(Tenant).filter(Tenant.name == tenant_name)
+    else:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    if session_id:
+        query = query.filter(ChatRequest.session_id == session_id)
     if request_source:
         query = query.filter(ChatRequest.request_source == request_source)
     if status:
         query = query.filter(ChatRequest.status == status)
-    if tenant_name and tenant_name != "ALL":
-        query = query.join(Tenant).filter(Tenant.name == tenant_name)
     if search:
         query = query.filter(ChatRequest.user_message.ilike(f"%{search}%"))
     query = query.order_by(ChatRequest.created_at.desc())
@@ -286,18 +302,36 @@ def list_chat_requests(
 def get_chat_request(
     request_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    auth: dict = Depends(resolve_auth_context)
 ):
+    """
+    Retrieve single chat request details and its complete sandbox execution logs / tool outputs.
+    Accessible to both external API users (via Bearer API key) and dashboard users (via session cookie).
+    """
     from models import Tenant
-    user_tenant_ids = db.query(Tenant.id).filter(Tenant.user_id == current_user.id)
-    r = db.query(ChatRequest).filter(
-        ChatRequest.id == request_id,
-        ChatRequest.tenant_id.in_(user_tenant_ids)
-    ).first()
+    if auth.get("tenant"):
+        tenant = auth["tenant"]
+        r = db.query(ChatRequest).filter(
+            ChatRequest.id == request_id,
+            ChatRequest.tenant_id == tenant.id
+        ).first()
+    elif auth.get("user"):
+        user = auth["user"]
+        user_tenant_ids = db.query(Tenant.id).filter(Tenant.user_id == user.id)
+        r = db.query(ChatRequest).filter(
+            ChatRequest.id == request_id,
+            ChatRequest.tenant_id.in_(user_tenant_ids)
+        ).first()
+    else:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
     if not r:
         raise HTTPException(status_code=404, detail="Request not found")
     tenant_obj = db.query(Tenant).filter(Tenant.id == r.tenant_id).first() if r.tenant_id else None
-    logs = db.query(ExecutionLog).filter(ExecutionLog.request_id == request_id).order_by(ExecutionLog.created_at.asc()).all()
+    logs = db.query(ExecutionLog).filter(
+        ExecutionLog.request_id == request_id,
+        ExecutionLog.tenant_id == r.tenant_id
+    ).order_by(ExecutionLog.created_at.asc()).all()
     return {
         "id": r.id,
         "tenant_name": tenant_obj.name if tenant_obj else "Unknown",
