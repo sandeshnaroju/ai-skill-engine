@@ -61,8 +61,11 @@ def get_current_tenant(
                     (Tenant.id == x_tenant_id) | (Tenant.api_key == x_tenant_id),
                     Tenant.is_active == True
                 ).first()
-                if tenant:
-                    return tenant
+                if not tenant:
+                    raise HTTPException(status_code=404, detail="Specified workspace not found or inactive")
+                if tenant.user_id and tenant.user_id != user.id:
+                    raise HTTPException(status_code=403, detail="Access denied to specified workspace")
+                return tenant
             
             # Retrieve the user's tenant (or create a default one if none exists)
             tenant = db.query(Tenant).filter(Tenant.user_id == user.id, Tenant.is_active == True).first()

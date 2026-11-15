@@ -65,20 +65,22 @@ def authenticate_canvas_access(
             (Tenant.api_key == cand_api_key) | (Tenant.id == cand_api_key),
             Tenant.is_active == True
         ).first()
-        if tenant:
+        if not tenant:
+            raise HTTPException(status_code=401, detail="Invalid or inactive API Key")
+        
+        art = db.query(SessionArtifact).filter(
+            SessionArtifact.id == artifact_id,
+            SessionArtifact.tenant_id == tenant.id
+        ).first()
+        if not art and tenant.user_id:
+            user_tenant_ids = [t[0] for t in db.query(Tenant.id).filter(Tenant.user_id == tenant.user_id).all()]
             art = db.query(SessionArtifact).filter(
                 SessionArtifact.id == artifact_id,
-                SessionArtifact.tenant_id == tenant.id
+                SessionArtifact.tenant_id.in_(user_tenant_ids)
             ).first()
-            if not art and tenant.user_id:
-                user_tenant_ids = [t[0] for t in db.query(Tenant.id).filter(Tenant.user_id == tenant.user_id).all()]
-                art = db.query(SessionArtifact).filter(
-                    SessionArtifact.id == artifact_id,
-                    SessionArtifact.tenant_id.in_(user_tenant_ids)
-                ).first()
-            if not art:
-                raise HTTPException(status_code=404, detail="Artifact not found")
-            return {"type": "tenant", "tenant_id": art.tenant_id, "artifact_id": artifact_id}
+        if not art:
+            raise HTTPException(status_code=404, detail="Artifact not found")
+        return {"type": "tenant", "tenant_id": art.tenant_id, "artifact_id": artifact_id}
 
     if session_token:
         user = db.query(User).filter(User.session_token == session_token).first()
@@ -91,27 +93,6 @@ def authenticate_canvas_access(
             if not art:
                 raise HTTPException(status_code=404, detail="Artifact not found")
             return {"type": "session", "user_id": user.id, "tenant_id": art.tenant_id, "artifact_id": artifact_id}
-
-    # Fallback: get_current_tenant
-    try:
-        tenant = get_current_tenant(
-            authorization=authorization,
-            x_api_key=x_api_key,
-            session_token=session_token,
-            db=db
-        )
-        if tenant:
-            art = db.query(SessionArtifact).filter(
-                SessionArtifact.id == artifact_id,
-                SessionArtifact.tenant_id == tenant.id
-            ).first()
-            if not art:
-                raise HTTPException(status_code=404, detail="Artifact not found")
-            return {"type": "tenant", "tenant_id": art.tenant_id, "artifact_id": artifact_id}
-    except HTTPException:
-        pass
-    except Exception:
-        pass
 
     raise HTTPException(status_code=401, detail="Authentication required: Provide a valid embed token or API key.")
 
