@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 from database import get_db
 from models import ExecutionLog, Tenant, User, ChatRequest
-from auth import get_current_user
+from auth import get_current_user, resolve_auth_context
 from utils import get_paginated_response
 
 router = APIRouter()
@@ -37,23 +37,32 @@ def get_logs_filters(
 @router.get("")
 def get_logs(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    auth: dict = Depends(resolve_auth_context),
     page: Optional[int] = None,
     page_size: int = 20,
+    session_id: Optional[str] = None,
     request_source: Optional[str] = None,
     tenant_name: Optional[str] = None,
     model_name: Optional[str] = None,
     sandbox_type: Optional[str] = None
 ):
-    user_tenant_ids = db.query(Tenant.id).filter(Tenant.user_id == current_user.id)
-    query = db.query(ExecutionLog).filter(ExecutionLog.tenant_id.in_(user_tenant_ids))
+    if auth.get("tenant"):
+        query = db.query(ExecutionLog).filter(ExecutionLog.tenant_id == auth["tenant"].id)
+    elif auth.get("user"):
+        user_tenant_ids = db.query(Tenant.id).filter(Tenant.user_id == auth["user"].id)
+        query = db.query(ExecutionLog).filter(ExecutionLog.tenant_id.in_(user_tenant_ids))
+        if tenant_name and tenant_name != 'ALL':
+            query = query.join(Tenant).filter(Tenant.name == tenant_name)
+    else:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    if session_id:
+        query = query.filter(ExecutionLog.session_id == session_id)
     if request_source:
         if request_source == 'dashboard':
             query = query.filter(ExecutionLog.request_source == 'dashboard')
         else:
             query = query.filter(ExecutionLog.request_source != 'dashboard')
-    if tenant_name and tenant_name != 'ALL':
-        query = query.join(Tenant).filter(Tenant.name == tenant_name)
     if model_name and model_name != 'ALL':
         query = query.filter(ExecutionLog.model_name == model_name)
     if sandbox_type and sandbox_type != 'ALL':
@@ -85,22 +94,31 @@ def get_logs(
 @router.get("/requests")
 def get_chat_requests(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    auth: dict = Depends(resolve_auth_context),
     page: Optional[int] = None,
     page_size: int = 20,
+    session_id: Optional[str] = None,
     request_source: Optional[str] = None,
     tenant_name: Optional[str] = None,
     status: Optional[str] = None,
     search: Optional[str] = None
 ):
-    user_tenant_ids = db.query(Tenant.id).filter(Tenant.user_id == current_user.id)
-    query = db.query(ChatRequest).filter(ChatRequest.tenant_id.in_(user_tenant_ids))
+    if auth.get("tenant"):
+        query = db.query(ChatRequest).filter(ChatRequest.tenant_id == auth["tenant"].id)
+    elif auth.get("user"):
+        user_tenant_ids = db.query(Tenant.id).filter(Tenant.user_id == auth["user"].id)
+        query = db.query(ChatRequest).filter(ChatRequest.tenant_id.in_(user_tenant_ids))
+        if tenant_name and tenant_name != 'ALL':
+            query = query.join(Tenant).filter(Tenant.name == tenant_name)
+    else:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    if session_id:
+        query = query.filter(ChatRequest.session_id == session_id)
     if request_source and request_source != 'ALL':
         query = query.filter(ChatRequest.request_source == request_source)
     if status and status != 'ALL':
         query = query.filter(ChatRequest.status == status)
-    if tenant_name and tenant_name != 'ALL':
-        query = query.join(Tenant).filter(Tenant.name == tenant_name)
     if search:
         query = query.filter(ChatRequest.user_message.ilike(f"%{search}%"))
     query = query.order_by(ChatRequest.created_at.desc())
@@ -141,13 +159,22 @@ def get_chat_requests(
 def get_chat_request_detail(
     request_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    auth: dict = Depends(resolve_auth_context)
 ):
-    user_tenant_ids = db.query(Tenant.id).filter(Tenant.user_id == current_user.id)
-    r = db.query(ChatRequest).filter(
-        ChatRequest.id == request_id,
-        ChatRequest.tenant_id.in_(user_tenant_ids)
-    ).first()
+    if auth.get("tenant"):
+        r = db.query(ChatRequest).filter(
+            ChatRequest.id == request_id,
+            ChatRequest.tenant_id == auth["tenant"].id
+        ).first()
+    elif auth.get("user"):
+        user_tenant_ids = db.query(Tenant.id).filter(Tenant.user_id == auth["user"].id)
+        r = db.query(ChatRequest).filter(
+            ChatRequest.id == request_id,
+            ChatRequest.tenant_id.in_(user_tenant_ids)
+        ).first()
+    else:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
     if not r:
         raise HTTPException(status_code=404, detail="Request not found")
     tenant_obj = db.query(Tenant).filter(Tenant.id == r.tenant_id).first() if r.tenant_id else None
