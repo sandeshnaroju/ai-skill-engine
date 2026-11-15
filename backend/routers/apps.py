@@ -19,9 +19,17 @@ def list_apps(
     page_size: int = 10,
     search: Optional[str] = None
 ):
-    from models import AppModel
+    from models import AppModel, Tenant as DBTenant
     from sqlalchemy.orm import joinedload
-    target_tenant_id = tenant_id if tenant_id is not None else current_tenant.id
+    target_tenant_id = current_tenant.id
+    if tenant_id and tenant_id != current_tenant.id:
+        if not current_tenant.user_id:
+            raise HTTPException(status_code=403, detail="Access denied: Cannot query apps of another tenant workspace.")
+        t_check = db.query(DBTenant).filter(DBTenant.id == tenant_id, DBTenant.user_id == current_tenant.user_id).first()
+        if not t_check:
+            raise HTTPException(status_code=403, detail="Access denied: Cannot query apps of another tenant workspace.")
+        target_tenant_id = t_check.id
+
     query = db.query(AppModel).options(joinedload(AppModel.tenant))
     if target_tenant_id:
         query = query.filter((AppModel.tenant_id == target_tenant_id) | (AppModel.tenant_id == None))
@@ -118,9 +126,12 @@ def delete_app(
     if not app_obj:
         raise HTTPException(status_code=404, detail="App container not found")
         
-    if app_obj.tenant_id and app_obj.tenant_id != current_tenant.id:
+    if app_obj.tenant_id is None:
+        raise HTTPException(status_code=403, detail="Cannot delete system/global app container.")
+
+    if app_obj.tenant_id != current_tenant.id:
         target_tenant = db.query(DBTenant).filter(DBTenant.id == app_obj.tenant_id).first()
-        if target_tenant and target_tenant.user_id != current_tenant.user_id:
+        if not target_tenant or not current_tenant.user_id or target_tenant.user_id != current_tenant.user_id:
             raise HTTPException(status_code=403, detail="Permission denied to delete app from this tenant workspace.")
 
     db.query(AppSkillMapping).filter(AppSkillMapping.app_id == app_obj.id).delete()

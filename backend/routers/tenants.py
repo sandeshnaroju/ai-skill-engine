@@ -108,7 +108,6 @@ def delete_tenant(
 def list_tenant_llms(
     tenant: Tenant = Depends(get_current_tenant),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
     page: Optional[int] = None,
     page_size: int = 10,
     search: Optional[str] = None,

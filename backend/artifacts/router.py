@@ -66,18 +66,31 @@ def authenticate_canvas_access(
             Tenant.is_active == True
         ).first()
         if tenant:
-            art = db.query(SessionArtifact).filter(SessionArtifact.id == artifact_id).first()
+            art = db.query(SessionArtifact).filter(
+                SessionArtifact.id == artifact_id,
+                SessionArtifact.tenant_id == tenant.id
+            ).first()
+            if not art and tenant.user_id:
+                user_tenant_ids = [t[0] for t in db.query(Tenant.id).filter(Tenant.user_id == tenant.user_id).all()]
+                art = db.query(SessionArtifact).filter(
+                    SessionArtifact.id == artifact_id,
+                    SessionArtifact.tenant_id.in_(user_tenant_ids)
+                ).first()
             if not art:
                 raise HTTPException(status_code=404, detail="Artifact not found")
-            return {"type": "tenant", "tenant_id": tenant.id, "artifact_id": artifact_id}
+            return {"type": "tenant", "tenant_id": art.tenant_id, "artifact_id": artifact_id}
 
     if session_token:
         user = db.query(User).filter(User.session_token == session_token).first()
         if user:
-            art = db.query(SessionArtifact).filter(SessionArtifact.id == artifact_id).first()
+            user_tenant_ids = [t[0] for t in db.query(Tenant.id).filter(Tenant.user_id == user.id).all()]
+            art = db.query(SessionArtifact).filter(
+                SessionArtifact.id == artifact_id,
+                SessionArtifact.tenant_id.in_(user_tenant_ids)
+            ).first()
             if not art:
                 raise HTTPException(status_code=404, detail="Artifact not found")
-            return {"type": "session", "user_id": user.id, "artifact_id": artifact_id}
+            return {"type": "session", "user_id": user.id, "tenant_id": art.tenant_id, "artifact_id": artifact_id}
 
     # Fallback: get_current_tenant
     try:
@@ -88,7 +101,10 @@ def authenticate_canvas_access(
             db=db
         )
         if tenant:
-            art = db.query(SessionArtifact).filter(SessionArtifact.id == artifact_id).first()
+            art = db.query(SessionArtifact).filter(
+                SessionArtifact.id == artifact_id,
+                SessionArtifact.tenant_id == tenant.id
+            ).first()
             if not art:
                 raise HTTPException(status_code=404, detail="Artifact not found")
             return {"type": "tenant", "tenant_id": art.tenant_id, "artifact_id": artifact_id}
@@ -107,17 +123,17 @@ def generate_embed_token_endpoint(
     current_tenant: Tenant = Depends(get_current_tenant),
     db: Session = Depends(get_db)
 ):
-    # First try to find the artifact owned by the current (resolved) tenant
+    # Strictly find the artifact owned by the current tenant (or user's tenants for dashboard admins)
     artifact = db.query(SessionArtifact).filter(
         SessionArtifact.id == artifact_id,
         SessionArtifact.tenant_id == current_tenant.id
     ).first()
 
-    # Fallback: if not found under current_tenant (e.g. admin browsing another tenant's
-    # artifacts), find the artifact regardless of owner so we can mint the correct token
-    if not artifact:
+    if not artifact and current_tenant.user_id:
+        user_tenant_ids = [t[0] for t in db.query(Tenant.id).filter(Tenant.user_id == current_tenant.user_id).all()]
         artifact = db.query(SessionArtifact).filter(
-            SessionArtifact.id == artifact_id
+            SessionArtifact.id == artifact_id,
+            SessionArtifact.tenant_id.in_(user_tenant_ids)
         ).first()
 
     if not artifact:
@@ -226,7 +242,15 @@ def list_tenant_artifacts(
     db: Session = Depends(get_db)
 ):
     """List all artifacts for a specific tenant with search, type filter, and pagination."""
-    target_tenant_id = tenant_id if tenant_id else current_tenant.id
+    target_tenant_id = current_tenant.id
+    if tenant_id and tenant_id != current_tenant.id:
+        if not current_tenant.user_id:
+            raise HTTPException(status_code=403, detail="Access denied: Cannot query artifacts of another tenant.")
+        target_t = db.query(Tenant).filter(Tenant.id == tenant_id, Tenant.user_id == current_tenant.user_id).first()
+        if not target_t:
+            raise HTTPException(status_code=403, detail="Access denied: Cannot query artifacts of another tenant.")
+        target_tenant_id = target_t.id
+
     query = db.query(SessionArtifact).filter(SessionArtifact.tenant_id == target_tenant_id)
 
     if artifact_type and artifact_type != "all":

@@ -103,7 +103,16 @@ def get_skill_content(
     db: Session = Depends(get_db),
     current_tenant: Tenant = Depends(get_current_tenant)
 ):
-    target_tenant_id = tenant_id or current_tenant.id
+    target_tenant_id = current_tenant.id
+    if tenant_id and tenant_id != current_tenant.id:
+        if not current_tenant.user_id:
+            raise HTTPException(status_code=403, detail="Access denied: Cannot access skills of another tenant workspace.")
+        from models import Tenant as DBTenant
+        t_check = db.query(DBTenant).filter(DBTenant.id == tenant_id, DBTenant.user_id == current_tenant.user_id).first()
+        if not t_check:
+            raise HTTPException(status_code=403, detail="Access denied: Cannot access skills of another tenant workspace.")
+        target_tenant_id = t_check.id
+
     skill_registry.reload_skills(tenant_id=target_tenant_id, db=db)
     skill_data = skill_registry.get_skills_dict(tenant_id=target_tenant_id).get(skill_name)
     if not skill_data:
@@ -130,7 +139,15 @@ def update_skill(
     clean_name = skill_name.strip().lower().replace(" ", "_")
     
     validate_skill_content(payload.content)
-    target_tenant_id = payload.tenant_id or current_tenant.id
+    target_tenant_id = current_tenant.id
+    if payload.tenant_id and payload.tenant_id != current_tenant.id:
+        if not current_tenant.user_id:
+            raise HTTPException(status_code=403, detail="Access denied: Cannot update skills of another tenant workspace.")
+        from models import Tenant as DBTenant
+        t_check = db.query(DBTenant).filter(DBTenant.id == payload.tenant_id, DBTenant.user_id == current_tenant.user_id).first()
+        if not t_check:
+            raise HTTPException(status_code=403, detail="Access denied: Cannot update skills of another tenant workspace.")
+        target_tenant_id = t_check.id
     
     existing = db.query(CustomSkill).filter(
         CustomSkill.name == clean_name,
@@ -164,11 +181,19 @@ def delete_skill(
 ):
     from models import CustomSkill
     clean_name = skill_name.strip().lower().replace(" ", "_")
-    target_tenant_id = tenant_id or current_tenant.id
+    target_tenant_id = current_tenant.id
+    if tenant_id and tenant_id != current_tenant.id:
+        if not current_tenant.user_id:
+            raise HTTPException(status_code=403, detail="Access denied: Cannot delete skills of another tenant workspace.")
+        from models import Tenant as DBTenant
+        t_check = db.query(DBTenant).filter(DBTenant.id == tenant_id, DBTenant.user_id == current_tenant.user_id).first()
+        if not t_check:
+            raise HTTPException(status_code=403, detail="Access denied: Cannot delete skills of another tenant workspace.")
+        target_tenant_id = t_check.id
     
     existing = db.query(CustomSkill).filter(
         CustomSkill.name == clean_name,
-        (CustomSkill.tenant_id == target_tenant_id) | (CustomSkill.tenant_id == None)
+        CustomSkill.tenant_id == target_tenant_id
     ).first()
     if existing:
         from models import AppModel, AppSkillMapping
