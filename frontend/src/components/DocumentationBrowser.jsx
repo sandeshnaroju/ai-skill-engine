@@ -7,181 +7,127 @@ import {
 import MarkdownViewer from './MarkdownViewer';
 
 // Import raw markdown files using Vite's '?raw' query
-import introDoc from '../docs/01-introduction.md?raw';
-import quickstartDoc from '../docs/02-quickstart.md?raw';
-import installDoc from '../docs/03-installation.md?raw';
-import usageDoc from '../docs/04-usage-guide.md?raw';
-
-// Backend Docs
-import backendApiDoc from '../docs/05-backend-api.md?raw';
-import backendMultimodalDoc from '../docs/06-backend-multimodal.md?raw';
-import backendFilesDoc from '../docs/07-backend-files.md?raw';
-import backendMgmtDoc from '../docs/08-backend-management.md?raw';
-import apiRefDoc from '../docs/09-api-reference.md?raw';
-
-// Frontend & Canvas Docs
-import frontendCanvasDoc from '../docs/10-frontend-canvas.md?raw';
-import frontendHeadlessDoc from '../docs/11-frontend-headless.md?raw';
-import frontendSecurityDoc from '../docs/12-frontend-security.md?raw';
-import canvasDoc from '../docs/13-artifacts-canvas.md?raw';
-
-// Storage & Infrastructure Docs
-import storageDoc from '../docs/14-session-storage.md?raw';
-import sandboxDoc from '../docs/15-sandboxes.md?raw';
-import configDoc from '../docs/16-configuration.md?raw';
-import skillsDoc from '../docs/17-skills-and-mcp.md?raw';
-import schedulerDoc from '../docs/18-scheduled-jobs.md?raw';
+import gettingStartedDoc from '../docs/01-getting-started.md?raw';
+import authTenantsDoc from '../docs/02-authentication-and-tenants.md?raw';
+import chatCompletionsDoc from '../docs/03-chat-completions.md?raw';
+import artifactsCanvasDoc from '../docs/04-artifacts-and-canvas.md?raw';
+import filesStorageDoc from '../docs/05-files-and-storage.md?raw';
+import scheduledJobsDoc from '../docs/06-scheduled-jobs.md?raw';
+import apiReferenceDoc from '../docs/07-api-reference.md?raw';
+import customSkillsDoc from '../docs/08-custom-skills.md?raw';
+import mcpServersDoc from '../docs/09-mcp-servers.md?raw';
+import secretsUserDataDoc from '../docs/10-secrets-and-user-data.md?raw';
+import dashboardGuideDoc from '../docs/11-dashboard-guide.md?raw';
+import deploymentSetupDoc from '../docs/12-deployment-and-setup.md?raw';
 
 const DOC_ITEMS = [
   // Getting Started
   {
-    id: 'introduction',
-    title: 'Introduction & Architecture',
-    icon: BookOpen,
-    category: 'Getting Started',
-    description: 'Platform overview, request lifecycle, multi-tenancy model, and core concepts.',
-    content: introDoc
-  },
-  {
-    id: 'quickstart',
-    title: 'Quickstart Walkthrough',
+    id: 'getting-started',
+    title: 'Quickstart & Platform Overview',
     icon: Rocket,
     category: 'Getting Started',
-    description: '5-minute zero-to-one guide from boot to your first tool call and API request.',
-    content: quickstartDoc
+    description: 'What you can build with AI Skill Engine, architecture, and 3-minute first API request.',
+    content: gettingStartedDoc
   },
   {
-    id: 'installation',
-    title: 'Installation & Deployment',
-    icon: Download,
+    id: 'authentication-and-tenants',
+    title: 'Authentication & Workspaces',
+    icon: KeyRound,
     category: 'Getting Started',
-    description: 'Docker Hub zero-clone, Docker Compose with Postgres, Bare-Metal, and Nginx SSL.',
-    content: installDoc
+    description: 'Tenant API keys, HTTP headers, multi-tenant isolation, and workspace management.',
+    content: authTenantsDoc
   },
 
-  // Backend API Reference
+  // Building with the API
   {
-    id: 'backend-api',
+    id: 'chat-completions',
     title: 'Chat Completions & Streaming',
     icon: Server,
-    category: 'Backend API Reference',
-    description: 'OpenAI-compatible gateway endpoint, authentication, and streaming SDKs (cURL, Python, JS).',
-    content: backendApiDoc
+    category: 'Building with the API',
+    description: 'OpenAI client compatibility, real-time SSE deltas, live thought process, and status steppers.',
+    content: chatCompletionsDoc
   },
   {
-    id: 'backend-multimodal',
-    title: 'Multimodal & Sub-Agents',
-    icon: Sparkles,
-    category: 'Backend API Reference',
-    description: 'Routing parameters for image/video synthesis, vision analysis, audio transcription, and ProChat UI.',
-    content: backendMultimodalDoc
-  },
-  {
-    id: 'backend-files',
-    title: 'Files & Session Lifecycle',
-    icon: FolderTree,
-    category: 'Backend API Reference',
-    description: 'File uploads, generated asset downloads, session file listing, and cascade purge APIs.',
-    content: backendFilesDoc
-  },
-  {
-    id: 'backend-management',
-    title: 'Artifacts & Management APIs',
-    icon: FileText,
-    category: 'Backend API Reference',
-    description: 'Canvas REST/SSE matrix, MCP server synchronization, execution logs, and audit trails.',
-    content: backendMgmtDoc
-  },
-
-  // Frontend & Universal Canvas
-  {
-    id: 'frontend-canvas',
-    title: 'Canvas Iframe & Embedding',
-    icon: Layout,
-    category: 'Frontend & Universal Canvas',
-    description: 'Embed interactive Canvas in your website: payload parsing, iframe params, and postMessage event handlers.',
-    content: frontendCanvasDoc
-  },
-  {
-    id: 'frontend-headless',
-    title: 'Headless Canvas REST & SSE',
-    icon: Code,
-    category: 'Frontend & Universal Canvas',
-    description: 'Build custom editors without iframe: section block commits, live typing stream, and binary exports.',
-    content: frontendHeadlessDoc
-  },
-  {
-    id: 'frontend-security',
-    title: 'Security, Tokens & Uploaded Files',
-    icon: KeyRound,
-    category: 'Frontend & Universal Canvas',
-    description: 'HMAC token proxy pattern, client-side expiration checks, and opening uploaded files in Canvas.',
-    content: frontendSecurityDoc
-  },
-  {
-    id: 'artifacts-canvas',
-    title: 'Universal Canvas Architecture',
+    id: 'artifacts-and-canvas',
+    title: 'Embedding Artifacts & Canvas',
     icon: Layers,
-    category: 'Frontend & Universal Canvas',
-    description: 'Deep dive into artifact types, section block diffing engine, and WebGL/Three.js viewports.',
-    content: canvasDoc
+    category: 'Building with the API',
+    description: 'Embed interactive documents, spreadsheets, slides, and 3D CAD/PCB viewports via iframe or REST.',
+    content: artifactsCanvasDoc
   },
-
-  // Workflows & Features
   {
-    id: 'usage-guide',
-    title: 'Usage & Workflows',
-    icon: Terminal,
-    category: 'Workflows & Features',
-    description: 'Chat Playground, Universal Canvas, Apps & Groups, ProChat, and Audit Logs.',
-    content: usageDoc
+    id: 'files-and-storage',
+    title: 'File Uploads & Session Storage',
+    icon: FolderTree,
+    category: 'Building with the API',
+    description: 'Upload PDFs/spreadsheets for agent analysis, download generated files, and cascade purge sessions.',
+    content: filesStorageDoc
   },
   {
     id: 'scheduled-jobs',
-    title: 'Scheduled Jobs & Automation',
+    title: 'Scheduled Background Tasks',
     icon: Clock,
-    category: 'Workflows & Features',
-    description: 'Background cron, interval, and date triggers, dynamic secrets resolution, and multi-channel delivery.',
-    content: schedulerDoc
+    category: 'Building with the API',
+    description: 'Automated recurring tasks with cron, interval, and date triggers, plus background execution guardrails.',
+    content: scheduledJobsDoc
   },
   {
-    id: 'skills-and-mcp',
-    title: 'Skills & MCP Servers',
-    icon: Cpu,
-    category: 'Workflows & Features',
-    description: 'Anatomy of SKILL.md, tool schemas, AI Skill Generator, and Model Context Protocol.',
-    content: skillsDoc
+    id: 'api-reference',
+    title: 'Complete REST API Reference',
+    icon: Terminal,
+    category: 'Building with the API',
+    description: 'Exhaustive catalog of endpoints, request/response bodies, parameters, and HTTP status codes.',
+    content: apiReferenceDoc
   },
 
-  // Storage & Infrastructure
+  // Skills & Custom Tools
   {
-    id: 'session-storage',
-    title: 'Session Storage & Cloud Files',
+    id: 'custom-skills',
+    title: 'Connecting Custom APIs as Skills',
+    icon: Cpu,
+    category: 'Skills & Custom Tools',
+    description: 'Turn any REST API into an autonomous tool using SKILL.md schemas and runtime secret injection.',
+    content: customSkillsDoc
+  },
+  {
+    id: 'mcp-servers',
+    title: 'External Tools with MCP',
     icon: HardDrive,
-    category: 'Storage & Infrastructure',
-    description: 'Azure Blob, S3, and Local Disk file lifecycles, session uploads, listing, and cascade purge.',
-    content: storageDoc
+    category: 'Skills & Custom Tools',
+    description: 'Connect PostgreSQL databases, local filesystems, and GitHub using the Model Context Protocol.',
+    content: mcpServersDoc
   },
   {
-    id: 'sandboxes',
-    title: 'Execution Sandboxes',
+    id: 'secrets-and-user-data',
+    title: 'Secrets & User Data Profiles',
     icon: ShieldCheck,
-    category: 'Storage & Infrastructure',
-    description: 'Docker containers, Azure Container Apps (Hyper-V), E2B micro-VMs, Fly.io, and AWS Lambda.',
-    content: sandboxDoc
+    category: 'Skills & Custom Tools',
+    description: 'Inject API tokens and passwords dynamically into tools without ever leaking them to the LLM.',
+    content: secretsUserDataDoc
+  },
+
+  // Dashboard & Workflows
+  {
+    id: 'dashboard-guide',
+    title: 'Chat Playground & Dashboard Guide',
+    icon: Layout,
+    category: 'Dashboard & Workflows',
+    description: 'Tour of the web dashboard: Chat Playground, active skill toggles, Apps packaging, and token analytics.',
+    content: dashboardGuideDoc
   },
   {
-    id: 'configuration',
-    title: 'Configuration & Settings',
+    id: 'deployment-and-setup',
+    title: 'Self-Hosting & Deployment Guide',
     icon: Settings,
-    category: 'Storage & Infrastructure',
-    description: 'System environment variables, Fernet encryption, custom token pricing rates, and SMTP.',
-    content: configDoc
+    category: 'Dashboard & Workflows',
+    description: 'Single-command Docker run, Docker Compose with Postgres, LLM providers, and environment variables.',
+    content: deploymentSetupDoc
   }
 ];
 
 export default function DocumentationBrowser() {
-  const [activeDocId, setActiveDocId] = useState('introduction');
+  const [activeDocId, setActiveDocId] = useState('getting-started');
   const [searchQuery, setSearchQuery] = useState('');
   const [copied, setCopied] = useState(false);
 
