@@ -50,13 +50,39 @@ def stream_interact(
     tenant: Tenant = Depends(get_current_tenant),
     db: Session = Depends(get_db)
 ):
+    from models import TenantLLM
+    cand_model = req.model.strip() if (req.model and str(req.model).strip()) else None
+    if cand_model:
+        has_model = db.query(TenantLLM).filter(
+            TenantLLM.tenant_id == tenant.id,
+            TenantLLM.model_name == cand_model,
+            TenantLLM.is_active == True
+        ).first()
+        if not has_model:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Model '{cand_model}' is not registered or active for this workspace. Please register an LLM and API key in Settings."
+            )
+        resolved_model = cand_model
+    else:
+        first_model = db.query(TenantLLM).filter(
+            TenantLLM.tenant_id == tenant.id,
+            TenantLLM.is_active == True
+        ).first()
+        if not first_model:
+            raise HTTPException(
+                status_code=400,
+                detail="No active LLM models configured for this workspace. Please register an LLM and API key in Settings before chatting."
+            )
+        resolved_model = first_model.model_name
+
     return StreamingResponse(
         skill_engine.stream_openai_chat(
             db=db,
             tenant=tenant,
             session_id=req.session_id,
             user_message=req.message,
-            model_name=req.model or "gemini-2.5-flash",
+            model_name=resolved_model,
             request_source="dashboard",
             prochat_model=req.prochat_model,
             image_model=req.image_model,
@@ -115,6 +141,32 @@ def openai_chat_completions(
 
     client_messages = [{"role": m.role, "content": m.content} for m in req.messages]
 
+    from models import TenantLLM
+    cand_model = req.model.strip() if (req.model and str(req.model).strip()) else None
+    if cand_model:
+        has_model = db.query(TenantLLM).filter(
+            TenantLLM.tenant_id == tenant.id,
+            TenantLLM.model_name == cand_model,
+            TenantLLM.is_active == True
+        ).first()
+        if not has_model:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Model '{cand_model}' is not registered or active for this workspace. Please register an LLM and API key in Settings."
+            )
+        resolved_model = cand_model
+    else:
+        first_model = db.query(TenantLLM).filter(
+            TenantLLM.tenant_id == tenant.id,
+            TenantLLM.is_active == True
+        ).first()
+        if not first_model:
+            raise HTTPException(
+                status_code=400,
+                detail="No active LLM models configured for this workspace. Please register an LLM and API key in Settings before sending requests."
+            )
+        resolved_model = first_model.model_name
+
     try:
         if req.stream:
             return StreamingResponse(
@@ -124,7 +176,7 @@ def openai_chat_completions(
                     session_id=req.session_id,
                     user_message=last_user_msg,
                     app_id=req.app_id,
-                    model_name=req.model or "gemini-2.5-flash",
+                    model_name=resolved_model,
                     request_source=x_request_source,
                     prochat_model=req.prochat_model,
                     image_model=req.image_model,
@@ -170,7 +222,7 @@ def openai_chat_completions(
             session_id=req.session_id,
             user_message=last_user_msg,
             app_id=req.app_id,
-            model_name=req.model,
+            model_name=resolved_model,
             request_source=x_request_source,
             prochat_model=req.prochat_model,
             image_model=req.image_model,

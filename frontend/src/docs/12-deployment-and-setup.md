@@ -25,11 +25,14 @@ docker run -d \
   -e HOST_SANDBOX_DIR="$(pwd)/sandbox" \
   -e DATABASE_URL="sqlite:////app/skill_manager.db" \
   -e ENCRYPTION_SECRET_KEY="YOUR_GENERATED_FERNET_KEY" \
+  -e WHITELISTED_EMAILS="admin@example.com,@mycompany.com" \
   --restart unless-stopped \
   sandeshnaroju/ai-skill-engine:latest
 ```
 
 Open **`http://localhost:2704`** in your browser.
+
+> 🔒 **Registration Whitelisting**: If you are deploying on a publicly accessible server, pass `-e WHITELISTED_EMAILS="alice@gmail.com,@mycompany.com"` to restrict registration. Anyone not matching will be blocked with `HTTP 403 Forbidden`.
 
 ---
 
@@ -94,6 +97,7 @@ AI Skill Engine connects to all major foundation models:
 | Variable | Required | Description |
 | :--- | :--- | :--- |
 | `ENCRYPTION_SECRET_KEY` | **Yes** | 32-byte Fernet key used to encrypt API credentials in the database. |
+| `WHITELISTED_EMAILS` | No | Comma-separated list of allowed emails or domain wildcards (e.g. `admin@co.com,@company.com`). Restricts public registration. |
 | `DATABASE_URL` | No | Defaults to `sqlite:////app/skill_manager.db`. Use PostgreSQL for production. |
 | `HOST_SANDBOX_DIR` | No | Host path mounted to `/app/sandbox` for Python execution containers. |
 | `PORT` | No | Default `2704`. |

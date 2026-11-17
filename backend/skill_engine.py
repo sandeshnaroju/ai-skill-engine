@@ -316,24 +316,21 @@ def _build_messages(db, persist, session_obj, user_message, allowed_skills, user
 
 
 def _resolve_model(db, tenant, model_name):
-    """Return model_name if configured and active for this tenant, falling back to any tenant model, then first active tenant model or default."""
+    """Return model_name if configured and active for this tenant. Raises ValueError if not configured."""
     from models import TenantLLM
-    if model_name and model_name.lower() not in ("default", ""):
+    if not tenant:
+        raise ValueError("Tenant context is required to resolve a model.")
+
+    if model_name and str(model_name).strip().lower() not in ("default", ""):
+        cand = str(model_name).strip()
         existing = db.query(TenantLLM).filter(
             TenantLLM.tenant_id == tenant.id,
-            TenantLLM.model_name == model_name,
+            TenantLLM.model_name == cand,
             TenantLLM.is_active == True
         ).first()
         if existing:
             return existing.model_name
-        
-        # Fallback to model_name configured in any other tenant (e.g. Default Workspace)
-        any_tenant = db.query(TenantLLM).filter(
-            TenantLLM.model_name == model_name,
-            TenantLLM.is_active == True
-        ).first()
-        if any_tenant:
-            return any_tenant.model_name
+        raise ValueError(f"Model '{cand}' is not configured or active for this workspace. Please register an LLM and API key in Settings.")
 
     first = db.query(TenantLLM).filter(
         TenantLLM.tenant_id == tenant.id,
@@ -342,13 +339,7 @@ def _resolve_model(db, tenant, model_name):
     if first:
         return first.model_name
 
-    any_active = db.query(TenantLLM).filter(
-        TenantLLM.is_active == True
-    ).first()
-    if any_active:
-        return any_active.model_name
-
-    return get_model_name()
+    raise ValueError("No active LLM models configured for this workspace. Please register a model and API key in Settings.")
 
 
 def _log_and_append_tool_results(db, tenant, session_id, model_name, request_source, request_id,
@@ -1029,7 +1020,7 @@ class SkillEngine:
         session_id: str,
         user_message: str,
         app_id: str = None,
-        model_name: str = "gemini-2.5-flash",
+        model_name: str = None,
         max_turns: int = 50,
         request_source: str = "api",
         prochat_model: str = None,

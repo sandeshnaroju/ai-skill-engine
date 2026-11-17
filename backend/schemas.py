@@ -45,7 +45,7 @@ class OpenAIStyleMessage(BaseModel):
 
 class OpenAIChatRequest(BaseModel):
     messages: List[OpenAIStyleMessage]
-    model: Optional[str] = "gemini-2.5-flash"
+    model: Optional[str] = None
     session_id: Optional[str] = "default_session"
     app_id: Optional[str] = None
     stream: Optional[bool] = False

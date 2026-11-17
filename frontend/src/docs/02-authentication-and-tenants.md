@@ -76,3 +76,27 @@ If an invalid or missing key is provided, the API returns a standard JSON error:
   "detail": "Invalid or inactive API Key"
 }
 ```
+
+---
+
+## 5. User Registration Whitelisting
+
+By default, any user can register an account. To restrict signups on public servers or production deployments, configure `WHITELISTED_EMAILS`:
+
+```bash
+docker run -d \
+  -e WHITELISTED_EMAILS="alice@example.com,bob@gmail.com,@mycompany.com" \
+  ...
+```
+
+### Supported Patterns:
+- **Exact Email**: `alice@example.com` allows only that specific email.
+- **Domain Wildcard**: `@mycompany.com` allows anyone registering with that company domain.
+- **Comma-Separated**: Combine multiple emails and domains (e.g. `user1@gmail.com,@company.com`).
+- **HTTP 403 Rejection**: Any unregistered outsider trying to register will immediately receive:
+  ```json
+  {
+    "detail": "Registration is restricted. Your email is not whitelisted to register. Please contact the administrator."
+  }
+  ```
+
