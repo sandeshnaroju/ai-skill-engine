@@ -30,10 +30,7 @@ class OpenAiDalleProvider(BaseMediaProvider):
         try:
             client = get_llm_client(db=db, tenant_id=tenant_id, model_name=self.model_name)
         except Exception:
-            try:
-                client = get_llm_client(db=db, tenant_id=tenant_id)
-            except Exception:
-                pass
+            pass
 
         if not client or not hasattr(client, "images"):
             return None

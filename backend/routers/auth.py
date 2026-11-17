@@ -88,6 +88,51 @@ class ChangePasswordRequest(BaseModel):
     old_password: str
     new_password: str
 
+# ==============================================================================
+# REGISTRATION EMAIL WHITELIST
+# Only emails or domain patterns in this list (or in WHITELISTED_EMAILS in .env)
+# are allowed to register. Anyone else receives HTTP 403 Forbidden.
+# Examples:
+#   "admin@example.com"  -> allows this exact email
+#   "@mycompany.com"     -> allows any email ending with @mycompany.com
+# ==============================================================================
+WHITELISTED_EMAILS = [
+    # Add your allowed emails or domains here:
+    # "admin@gmail.com",
+    # "@mycompany.com",
+]
+
+def _matches_email_pattern(email: str, pattern: str) -> bool:
+    pattern = pattern.strip().lower()
+    if not pattern:
+        return False
+    if pattern == "*":
+        return True
+    if pattern.startswith("@"):
+        return email.endswith(pattern)
+    if pattern.startswith("*@"):
+        return email.endswith(pattern[1:])
+    return email == pattern
+
+def is_email_whitelisted(email: str) -> bool:
+    email_clean = email.strip().lower()
+
+    # 1. Combine hardcoded list + environment variable (comma-separated)
+    env_str = os.getenv("WHITELISTED_EMAILS", os.getenv("ALLOWED_EMAILS", "")).strip()
+    env_patterns = [p.strip().lower() for p in env_str.split(",") if p.strip()]
+
+    all_patterns = [p.strip().lower() for p in WHITELISTED_EMAILS if p.strip()] + env_patterns
+
+    # If no whitelist is defined anywhere, registration is open
+    if not all_patterns:
+        return True
+
+    for pattern in all_patterns:
+        if _matches_email_pattern(email_clean, pattern):
+            return True
+
+    return False
+
 @router.post("/register")
 def register_user(payload: UserRegister, db: Session = Depends(get_db)):
     email_clean = payload.email.strip().lower()
@@ -95,6 +140,13 @@ def register_user(payload: UserRegister, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Invalid email address")
     if len(payload.password) < 6:
         raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+    
+    # Check registration email whitelist
+    if not is_email_whitelisted(email_clean):
+        raise HTTPException(
+            status_code=403,
+            detail="Registration is restricted. Your email is not whitelisted to register. Please contact the administrator."
+        )
     
     existing = db.query(User).filter(User.email == email_clean).first()
     if existing:
@@ -324,4 +376,6 @@ def change_password(
     current_user.hashed_password = hash_password(payload.new_password)
     db.commit()
     return {"message": "Password changed successfully"}
+
+
 

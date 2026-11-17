@@ -129,11 +129,14 @@ docker run -d \
   -e HOST_SANDBOX_DIR="$(pwd)/sandbox" \
   -e DATABASE_URL="sqlite:////app/skill_manager.db" \
   -e ENCRYPTION_SECRET_KEY="YOUR_GENERATED_FERNET_KEY" \
+  -e WHITELISTED_EMAILS="admin@example.com,@mycompany.com" \
   --restart unless-stopped \
   sandeshnaroju/ai-skill-engine:latest
 ```
 
 Open **`http://localhost:2704`** in your browser.
+
+> 🔒 **Access Control / Whitelist**: Pass `-e WHITELISTED_EMAILS="user@example.com,@company.com"` (or add to `.env`) to restrict new user registration to specific emails or company domains. All other signups receive `HTTP 403 Forbidden`.
 
 ---
 

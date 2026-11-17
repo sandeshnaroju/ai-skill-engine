@@ -152,32 +152,70 @@ def resolve_subagent_model(
     media_type: str,
     tool_model_arg: Optional[str] = None,
     flat_request_model: Optional[str] = None,
-    tenant=None
+    tenant=None,
+    db: Optional[Session] = None
 ) -> str:
     """
     Model resolution order:
     1. User-selected model from dropdown / API request (image_model, image_gen_model, audio_model, video_model)
     2. Tenant-level default setting (tenant.default_image_model, default_image_gen_model, default_audio_model, default_video_model)
-    3. Environment fallback (MULTIMODAL_MODEL, GEMINI_API_KEY, or gemini-2.5-flash)
-    Note: The user dropdown selection takes strict precedence; LLMs cannot override it.
+    3. Any active model registered for this tenant
+    Strict: No cross-tenant borrowing and no environment variable fallbacks.
     """
+    if not tenant:
+        raise ValueError("Tenant workspace context is required to resolve a subagent model.")
+
+    from models import TenantLLM
+
+    # 1. Explicit model request
     if flat_request_model and str(flat_request_model).strip():
-        return str(flat_request_model).strip()
+        cand = str(flat_request_model).strip()
+        if db:
+            has_m = db.query(TenantLLM).filter(
+                TenantLLM.tenant_id == tenant.id,
+                TenantLLM.model_name == cand,
+                TenantLLM.is_active == True
+            ).first()
+            if has_m:
+                return cand
+            raise ValueError(f"Requested {media_type} model '{cand}' is not configured or active for this workspace.")
+        return cand
 
-    if tenant:
-        attr = f"default_{media_type}_model"
-        tenant_val = getattr(tenant, attr, None)
-        if tenant_val and str(tenant_val).strip():
-            return str(tenant_val).strip()
+    # 2. Tenant default column
+    attr = f"default_{media_type}_model"
+    tenant_val = getattr(tenant, attr, None)
+    if tenant_val and str(tenant_val).strip():
+        cand = str(tenant_val).strip()
+        if db:
+            has_m = db.query(TenantLLM).filter(
+                TenantLLM.tenant_id == tenant.id,
+                TenantLLM.model_name == cand,
+                TenantLLM.is_active == True
+            ).first()
+            if has_m:
+                return cand
+        else:
+            return cand
 
-    default_for_type = {
-        "image_gen": "gemini-3.1-flash-image",
-        "video_gen": "veo-2.0-generate-001",
-        "image": "gemini-2.5-flash",
-        "audio": "gemini-2.5-flash",
-        "video": "gemini-2.5-flash",
-    }
-    return os.getenv("MULTIMODAL_MODEL", default_for_type.get(media_type, "gemini-2.5-flash"))
+    # 3. Check for any active matching model for this tenant
+    if db:
+        type_filter = "image_gen" if media_type == "image_gen" else ("video_gen" if media_type == "video_gen" else "text")
+        m = db.query(TenantLLM).filter(
+            TenantLLM.tenant_id == tenant.id,
+            TenantLLM.is_active == True,
+            (TenantLLM.model_type == type_filter) | (TenantLLM.model_type == "multimodal")
+        ).first()
+        if m:
+            return m.model_name
+
+        m_any = db.query(TenantLLM).filter(
+            TenantLLM.tenant_id == tenant.id,
+            TenantLLM.is_active == True
+        ).first()
+        if m_any:
+            return m_any.model_name
+
+    raise ValueError(f"No active {media_type} model configured for this workspace. Please register an LLM in Settings.")
 
 
 def run_multimodal_subagent(
@@ -223,7 +261,8 @@ def run_multimodal_subagent(
         media_type=media_type,
         tool_model_arg=tool_model_arg,
         flat_request_model=flat_request_model,
-        tenant=tenant
+        tenant=tenant,
+        db=db
     )
 
     # 3. Formulate system prompt & user payload based on media type
@@ -392,22 +431,17 @@ def run_image_generation_subagent(
     from engine.usage import calculate_media_cost
 
     start_time = time.time()
-    tenant_name = tenant.name if tenant else "default"
-    tenant_id = tenant.id if tenant else None
-    if not tenant_id and db:
-        from models import Tenant
-        def_t = db.query(Tenant).first()
-        if def_t:
-            tenant_id = def_t.id
-            tenant_name = def_t.name
-    if not tenant_id:
-        tenant_id = "default"
+    if not tenant:
+        raise ValueError("Tenant workspace context is required for image generation.")
+    tenant_name = tenant.name
+    tenant_id = tenant.id
 
     resolved_model = resolve_subagent_model(
         media_type="image_gen",
         tool_model_arg=tool_model_arg,
         flat_request_model=flat_request_model,
-        tenant=tenant
+        tenant=tenant,
+        db=db
     )
 
     clean_prompt = (prompt or "").strip()
@@ -598,22 +632,17 @@ def run_video_generation_subagent(
     from engine.usage import calculate_media_cost
 
     start_time = time.time()
-    tenant_name = tenant.name if tenant else "default"
-    tenant_id = tenant.id if tenant else None
-    if not tenant_id and db:
-        from models import Tenant
-        def_t = db.query(Tenant).first()
-        if def_t:
-            tenant_id = def_t.id
-            tenant_name = def_t.name
-    if not tenant_id:
-        tenant_id = "default"
+    if not tenant:
+        raise ValueError("Tenant workspace context is required for video generation.")
+    tenant_name = tenant.name
+    tenant_id = tenant.id
 
     resolved_model = resolve_subagent_model(
         media_type="video_gen",
         tool_model_arg=tool_model_arg,
         flat_request_model=flat_request_model,
-        tenant=tenant
+        tenant=tenant,
+        db=db
     )
 
     clean_prompt = (prompt or "").strip()

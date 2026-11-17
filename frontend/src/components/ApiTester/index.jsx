@@ -609,7 +609,16 @@ export default function ApiTester() {
 
       if (!res.ok) {
         const errorText = await res.text();
-        logText(`HTTP Error: status ${res.status} - ${errorText}`);
+        let errorMsg = errorText;
+        try {
+          const errObj = JSON.parse(errorText);
+          if (errObj.detail) errorMsg = errObj.detail;
+        } catch (_) {}
+        logText(`HTTP Error ${res.status}: ${errorMsg}`);
+        setMessageHistory(prev => [
+          ...prev,
+          { role: 'assistant', content: `⚠️ **Workspace Error:** ${errorMsg}` }
+        ]);
         setLoading(false);
         return;
       }

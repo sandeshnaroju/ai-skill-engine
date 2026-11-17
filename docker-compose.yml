@@ -13,6 +13,7 @@ services:
     environment:
       - HOST_SANDBOX_DIR=${PWD}/sandbox
       - DATABASE_URL=${DATABASE_URL}
+      - WHITELISTED_EMAILS=${WHITELISTED_EMAILS:-}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./sandbox:/app/sandbox

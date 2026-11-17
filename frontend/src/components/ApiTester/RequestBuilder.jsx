@@ -1138,10 +1138,31 @@ export default function RequestBuilder({
         />
       </div>
 
+      {tenantModels.length === 0 && (
+        <div style={{
+          padding: '10px 14px',
+          borderRadius: '8px',
+          background: 'rgba(234, 179, 8, 0.08)',
+          border: '1px solid rgba(234, 179, 8, 0.35)',
+          color: '#fbbf24',
+          fontSize: '0.8rem',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          lineHeight: '1.4'
+        }}>
+          <span style={{ fontSize: '1.1rem' }}>⚠️</span>
+          <span>
+            <strong>No LLM Models Configured:</strong> This workspace does not have any active models or API keys registered. Go to <strong>Workspace Settings → LLM Config</strong> to register an API key.
+          </span>
+        </div>
+      )}
+
       <button
         className={loading ? "btn-outline" : "btn-gradient"}
         onClick={loading ? togglePause : handleSend}
-        disabled={(!loading && !selectedTenantKey) || uploading}
+        disabled={(!loading && (!selectedTenantKey || tenantModels.length === 0)) || uploading}
+        title={tenantModels.length === 0 ? "Please configure an LLM model and API key in Settings first" : undefined}
         style={{
           width: '100%',
           padding: '12px',
@@ -1149,6 +1170,10 @@ export default function RequestBuilder({
           alignItems: 'center',
           justifyContent: 'center',
           gap: '8px',
+          ...(tenantModels.length === 0 && !loading && {
+            opacity: 0.5,
+            cursor: 'not-allowed'
+          }),
           ...(loading && {
             color: 'var(--accent-rose)',
             borderColor: 'rgba(244, 63, 94, 0.4)',
@@ -1157,7 +1182,7 @@ export default function RequestBuilder({
         }}
       >
         {loading ? <X size={16} /> : <Play size={16} />}
-        {loading ? 'Stop Execution' : 'Execute Request'}
+        {loading ? 'Stop Execution' : (tenantModels.length === 0 ? 'No LLM Configured' : 'Execute Request')}
       </button>
     </div>
   );
