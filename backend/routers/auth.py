@@ -88,20 +88,6 @@ class ChangePasswordRequest(BaseModel):
     old_password: str
     new_password: str
 
-# ==============================================================================
-# REGISTRATION EMAIL WHITELIST
-# Only emails or domain patterns in this list (or in WHITELISTED_EMAILS in .env)
-# are allowed to register. Anyone else receives HTTP 403 Forbidden.
-# Examples:
-#   "admin@example.com"  -> allows this exact email
-#   "@mycompany.com"     -> allows any email ending with @mycompany.com
-# ==============================================================================
-WHITELISTED_EMAILS = [
-    # Add your allowed emails or domains here:
-    # "admin@gmail.com",
-    # "@mycompany.com",
-]
-
 def _matches_email_pattern(email: str, pattern: str) -> bool:
     pattern = pattern.strip().lower()
     if not pattern:
@@ -117,17 +103,13 @@ def _matches_email_pattern(email: str, pattern: str) -> bool:
 def is_email_whitelisted(email: str) -> bool:
     email_clean = email.strip().lower()
 
-    # 1. Combine hardcoded list + environment variable (comma-separated)
+    # Strictly read from environment variable (comma-separated, e.g. "admin@co.com,@company.com")
     env_str = os.getenv("WHITELISTED_EMAILS", os.getenv("ALLOWED_EMAILS", "")).strip()
-    env_patterns = [p.strip().lower() for p in env_str.split(",") if p.strip()]
-
-    all_patterns = [p.strip().lower() for p in WHITELISTED_EMAILS if p.strip()] + env_patterns
-
-    # If no whitelist is defined anywhere, registration is open
-    if not all_patterns:
+    if not env_str:
         return True
 
-    for pattern in all_patterns:
+    env_patterns = [p.strip().lower() for p in env_str.split(",") if p.strip()]
+    for pattern in env_patterns:
         if _matches_email_pattern(email_clean, pattern):
             return True
 
