@@ -245,8 +245,10 @@ class SkillRegistry:
         skills = self.get_skills_dict(tenant_id)
         openai_tools = []
         effective_allowed = self._normalize_allowed_skills(allowed_skills)
+        if effective_allowed is not None and len(effective_allowed) == 0:
+            return []
         for skill_name, data in skills.items():
-            if effective_allowed is not None and len(effective_allowed) > 0 and skill_name not in effective_allowed:
+            if effective_allowed is not None and skill_name not in effective_allowed:
                 continue
             tools = data.get("tools") or []
             for tool in tools:
@@ -301,11 +303,14 @@ class SkillRegistry:
             instructions = ["You are AI Skill Engine, an enterprise chatbot equipped with advanced tools and skills.\n"]
 
         effective_allowed = self._normalize_allowed_skills(allowed_skills)
+        if effective_allowed is not None and len(effective_allowed) == 0:
+            return "\n".join(instructions).strip()
+
         instructions.append("Active Available Skills:\n")
         for name, data in skills.items():
             if name == "system":
                 continue
-            if effective_allowed is not None and len(effective_allowed) > 0 and name not in effective_allowed:
+            if effective_allowed is not None and name not in effective_allowed:
                 continue
             instructions.append(f"### Skill: {name} (Source: {data.get('source', 'file')})")
             instructions.append(f"Description: {data.get('description', '')}")

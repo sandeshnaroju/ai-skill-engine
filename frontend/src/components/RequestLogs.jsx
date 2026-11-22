@@ -415,6 +415,7 @@ export default function RequestLogs() {
           <AsyncSearchableDropdown
             value={selectedTenant}
             onChange={val => setSelectedTenant(val)}
+            initialLabel={selectedTenant === 'ALL' ? 'All Tenants' : selectedTenant}
             fetchOptions={async (searchTerm) => {
               const data = await tenantsApi.list({ search: searchTerm || '', page_size: 10, page: 1 });
               const items = data.items || Array.isArray(data) ? (data.items || data) : [];

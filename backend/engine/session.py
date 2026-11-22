@@ -83,29 +83,34 @@ def finalize_request(db: DbSession, chat_req: ChatRequest, final_answer: str,
     db.commit()
 
 
-def resolve_allowed_skills(db: DbSession, tenant, app_id: str = None, skill_names: list = None) -> list | None:
+def resolve_allowed_skills(db: DbSession, tenant, app_id: str = None, skill_names: list = None) -> list:
     """
     Compute the set of allowed skill names for this request.
-    - If app_id: scope to skills mapped to the app, optionally intersected with skill_names.
-    - If only skill_names: validate against the registry.
-    - If neither: return None (all skills allowed).
+    - If app_id: start with skills mapped to the app.
+    - If skill_names: add any extra requested skills without repeating already added ones.
+    - If neither: return [] (no skills by default).
     """
     from skill_registry import skill_registry
 
     tenant_id = tenant.id if tenant else None
     known = set(skill_registry.get_skills_dict(tenant_id=tenant_id).keys())
 
+    resolved = []
+    seen = set()
+
     if app_id:
         from models import AppModel
         app_obj = db.query(AppModel).filter(AppModel.id == app_id).first()
         if app_obj:
-            app_skills = [m.skill_name for m in app_obj.skills if m.skill_name in known]
-            if skill_names:
-                return [s for s in skill_names if s in app_skills]
-            return app_skills
-        return []
+            for m in app_obj.skills:
+                if m.skill_name in known and m.skill_name not in seen:
+                    resolved.append(m.skill_name)
+                    seen.add(m.skill_name)
 
     if skill_names:
-        return [s for s in skill_names if s in known]
+        for s in skill_names:
+            if s in known and s not in seen:
+                resolved.append(s)
+                seen.add(s)
 
-    return None
+    return resolved

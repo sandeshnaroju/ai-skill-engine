@@ -12,25 +12,57 @@ router = APIRouter()
 @router.get("/filters")
 def get_logs_filters(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    auth: dict = Depends(resolve_auth_context),
     search_tenant: Optional[str] = None,
-    search_model: Optional[str] = None
+    search_model: Optional[str] = None,
+    request_source: Optional[str] = None
 ):
-    user_tenant_ids = db.query(Tenant.id).filter(Tenant.user_id == current_user.id)
+    if auth.get("tenant"):
+        user = auth.get("user")
+        if user:
+            user_tenant_ids = db.query(Tenant.id).filter(Tenant.user_id == user.id)
+        else:
+            user_tenant_ids = [auth["tenant"].id]
+    elif auth.get("user"):
+        user_tenant_ids = db.query(Tenant.id).filter(Tenant.user_id == auth["user"].id)
+    else:
+        raise HTTPException(status_code=401, detail="Authentication required")
 
-    t_query = db.query(Tenant.name).join(ExecutionLog).filter(Tenant.id.in_(user_tenant_ids)).distinct()
+    t_query = db.query(Tenant.name).filter(Tenant.id.in_(user_tenant_ids)).distinct()
     if search_tenant:
         t_query = t_query.filter(Tenant.name.ilike(f"%{search_tenant}%"))
-    tenants = t_query.limit(10).all() if not search_tenant else t_query.all()
+    tenants = [t[0] for t in t_query.order_by(Tenant.name).all() if t[0]]
 
-    m_query = db.query(ExecutionLog.model_name).filter(ExecutionLog.tenant_id.in_(user_tenant_ids)).distinct()
+    # Source filter helper
+    source_filter = None
+    if request_source:
+        if request_source == 'dashboard':
+            source_filter = (ExecutionLog.request_source == 'dashboard')
+        else:
+            source_filter = ((ExecutionLog.request_source != 'dashboard') | (ExecutionLog.request_source.is_(None)))
+
+    m_query = db.query(ExecutionLog.model_name).filter(
+        ExecutionLog.tenant_id.in_(user_tenant_ids),
+        ExecutionLog.model_name.isnot(None)
+    ).distinct()
+    if source_filter is not None:
+        m_query = m_query.filter(source_filter)
     if search_model:
         m_query = m_query.filter(ExecutionLog.model_name.ilike(f"%{search_model}%"))
-    models = m_query.limit(10).all() if not search_model else m_query.all()
+    models = [m[0] for m in m_query.order_by(ExecutionLog.model_name).all() if m[0]]
+
+    s_query = db.query(ExecutionLog.sandbox_type).filter(
+        ExecutionLog.tenant_id.in_(user_tenant_ids),
+        ExecutionLog.sandbox_type.isnot(None)
+    ).distinct()
+    if source_filter is not None:
+        s_query = s_query.filter(source_filter)
+    sandboxes = [s[0] for s in s_query.order_by(ExecutionLog.sandbox_type).all() if s[0]]
 
     return {
-        "tenants": [t[0] for t in tenants if t[0]],
-        "models": [m[0] for m in models if m[0]]
+        "tenants": tenants,
+        "models": models,
+        "sandboxes": sandboxes
     }
 
 
@@ -51,10 +83,16 @@ def get_logs(
     elif auth.get("user"):
         user_tenant_ids = db.query(Tenant.id).filter(Tenant.user_id == auth["user"].id)
         query = db.query(ExecutionLog).filter(ExecutionLog.tenant_id.in_(user_tenant_ids))
-        if tenant_name and tenant_name != 'ALL':
-            query = query.join(Tenant).filter(Tenant.name == tenant_name)
     else:
         raise HTTPException(status_code=401, detail="Authentication required")
+
+    if tenant_name and tenant_name.upper() != 'ALL':
+        if tenant_name.lower() in ('system/global', 'system', 'global'):
+            query = query.filter(ExecutionLog.tenant_id.is_(None))
+        else:
+            query = query.join(Tenant, ExecutionLog.tenant_id == Tenant.id).filter(
+                (func.lower(Tenant.name) == tenant_name.lower()) | (Tenant.id == tenant_name)
+            )
 
     if session_id:
         query = query.filter(ExecutionLog.session_id == session_id)
@@ -62,11 +100,11 @@ def get_logs(
         if request_source == 'dashboard':
             query = query.filter(ExecutionLog.request_source == 'dashboard')
         else:
-            query = query.filter(ExecutionLog.request_source != 'dashboard')
-    if model_name and model_name != 'ALL':
-        query = query.filter(ExecutionLog.model_name == model_name)
-    if sandbox_type and sandbox_type != 'ALL':
-        query = query.filter(ExecutionLog.sandbox_type == sandbox_type.lower())
+            query = query.filter((ExecutionLog.request_source != 'dashboard') | (ExecutionLog.request_source.is_(None)))
+    if model_name and model_name.upper() != 'ALL':
+        query = query.filter(func.lower(ExecutionLog.model_name) == model_name.lower())
+    if sandbox_type and sandbox_type.upper() != 'ALL':
+        query = query.filter(func.lower(ExecutionLog.sandbox_type) == sandbox_type.lower())
         
     query = query.order_by(ExecutionLog.created_at.desc())
 
@@ -108,8 +146,10 @@ def get_chat_requests(
     elif auth.get("user"):
         user_tenant_ids = db.query(Tenant.id).filter(Tenant.user_id == auth["user"].id)
         query = db.query(ChatRequest).filter(ChatRequest.tenant_id.in_(user_tenant_ids))
-        if tenant_name and tenant_name != 'ALL':
-            query = query.join(Tenant).filter(Tenant.name == tenant_name)
+        if tenant_name and tenant_name.upper() != 'ALL':
+            query = query.join(Tenant, ChatRequest.tenant_id == Tenant.id).filter(
+                (func.lower(Tenant.name) == tenant_name.lower()) | (Tenant.id == tenant_name)
+            )
     else:
         raise HTTPException(status_code=401, detail="Authentication required")
 
