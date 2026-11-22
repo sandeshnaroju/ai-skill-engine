@@ -4,6 +4,9 @@ export const logsApi = {
   getExecutionLogs: (params = {}) =>
     apiClient.get('/api/v1/logs', { params }),
 
+  getFilters: (params = {}) =>
+    apiClient.get('/api/v1/logs/filters', { params }),
+
   getRequestLogs: (params = {}) =>
     apiClient.get('/api/v1/logs/requests', { params }),
 

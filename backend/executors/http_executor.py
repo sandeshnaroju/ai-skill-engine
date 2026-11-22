@@ -2,12 +2,12 @@ import time
 import httpx
 
 class HttpExecutor:
-    def execute(self, tool_def: dict, arguments: dict, timeout: int = 15) -> dict:
+    def execute(self, tool_def: dict, arguments: dict, timeout: int = 600) -> dict:
         start_time = time.time()
         url = tool_def.get("url")
         method = (tool_def.get("method") or "GET").upper()
         headers = tool_def.get("headers") or {}
-        
+
         if not url:
             return {
                 "stdout": "",

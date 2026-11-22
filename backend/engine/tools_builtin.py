@@ -235,11 +235,10 @@ def run_download_public_file_tool(db, args: dict, tenant) -> dict:
             url, 
             headers={'User-Agent': 'Mozilla/5.0'}
         )
-        with urllib.request.urlopen(req, timeout=15) as response:
-            data = response.read()
-            
-        with open(local_path, "wb") as f:
-            f.write(data)
+        with urllib.request.urlopen(req, timeout=600) as response:
+            with open(local_path, "wb") as f:
+                while chunk := response.read(64 * 1024):
+                    f.write(chunk)
             
         elapsed_ms = int((time.time() - start_time) * 1000)
         return {

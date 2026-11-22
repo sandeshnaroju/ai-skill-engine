@@ -261,7 +261,7 @@ def _build_messages(db, persist, session_obj, user_message, allowed_skills, user
             SessionArtifact.tenant_id == tenant_id,
             SessionArtifact.session_id.in_(sess_keys)
         ).all()
-        if artifacts:
+        if artifacts and (allowed_skills is None or "artifact_editor" in allowed_skills):
             artifact_context = "\n\n[ACTIVE CANVAS ARTIFACTS IN THIS CONVERSATION]\n"
             for art in artifacts:
                 outline_items = ", ".join([f"{b.block_key} ('{b.title}')" for b in art.blocks])
@@ -290,7 +290,7 @@ def _build_messages(db, persist, session_obj, user_message, allowed_skills, user
                 SessionArtifact.tenant_id == tenant_id,
                 SessionArtifact.session_id == raw_session_id
             ).all()
-            if artifacts:
+            if artifacts and (allowed_skills is None or "artifact_editor" in allowed_skills):
                 artifact_context = "\n\n[ACTIVE CANVAS ARTIFACTS IN THIS CONVERSATION]\n"
                 for art in artifacts:
                     outline_items = ", ".join([f"{b.block_key} ('{b.title}')" for b in art.blocks])

@@ -91,21 +91,33 @@ export default function LogViewer({ requestSource, title, subtitle, icon: IconCo
 
   const setFilterType = (val) => {
     const nextParams = new URLSearchParams(searchParams);
-    nextParams.set('sandbox', val);
+    if (val && val.toUpperCase() !== 'ALL') {
+      nextParams.set('sandbox', val.toLowerCase());
+    } else {
+      nextParams.delete('sandbox');
+    }
     nextParams.set('page', '1');
     setSearchParams(nextParams);
   };
 
   const setSelectedTenant = (val) => {
     const nextParams = new URLSearchParams(searchParams);
-    nextParams.set('tenant', val);
+    if (val && val !== 'ALL') {
+      nextParams.set('tenant', val);
+    } else {
+      nextParams.delete('tenant');
+    }
     nextParams.set('page', '1');
     setSearchParams(nextParams);
   };
 
   const setSelectedModel = (val) => {
     const nextParams = new URLSearchParams(searchParams);
-    nextParams.set('model', val);
+    if (val && val !== 'ALL') {
+      nextParams.set('model', val);
+    } else {
+      nextParams.delete('model');
+    }
     nextParams.set('page', '1');
     setSearchParams(nextParams);
   };
@@ -116,14 +128,16 @@ export default function LogViewer({ requestSource, title, subtitle, icon: IconCo
   // Lists for dropdown filters
   const [uniqueTenants, setUniqueTenants] = useState([]);
   const [uniqueModels, setUniqueModels] = useState([]);
+  const [availableSandboxes, setAvailableSandboxes] = useState([]);
 
   const [selectedLog, setSelectedLog] = useState(null);
 
   const fetchFilters = async () => {
     try {
-      const data = await apiClient.get('/api/v1/logs/filters');
-      setUniqueTenants(data.tenants || []);
-      setUniqueModels(data.models || []);
+      const data = await logsApi.getFilters({ request_source: requestSource });
+      setUniqueTenants(data?.tenants || []);
+      setUniqueModels(data?.models || []);
+      if (data?.sandboxes) setAvailableSandboxes(data.sandboxes);
     } catch (e) {
       console.error('Failed to fetch filters:', e);
     }
@@ -138,7 +152,7 @@ export default function LogViewer({ requestSource, title, subtitle, icon: IconCo
         request_source: requestSource,
         tenant_name: selectedTenant !== 'ALL' ? selectedTenant : undefined,
         model_name: selectedModel !== 'ALL' ? selectedModel : undefined,
-        sandbox_type: filterType !== 'ALL' ? filterType : undefined
+        sandbox_type: (filterType && filterType.toUpperCase() !== 'ALL') ? filterType : undefined
       });
       
       // Handle either paginated object or fallback raw array
@@ -160,11 +174,11 @@ export default function LogViewer({ requestSource, title, subtitle, icon: IconCo
 
   useEffect(() => {
     fetchFilters();
-  }, []);
+  }, [requestSource]);
 
   useEffect(() => {
     fetchLogs();
-  }, [page, pageSize, filterType, selectedTenant, selectedModel]);
+  }, [page, pageSize, filterType, selectedTenant, selectedModel, requestSource]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
@@ -189,12 +203,18 @@ export default function LogViewer({ requestSource, title, subtitle, icon: IconCo
               <AsyncSearchableDropdown
                 value={selectedTenant}
                 onChange={setSelectedTenant}
+                initialLabel={selectedTenant === 'ALL' ? 'All Tenants' : selectedTenant}
                 fetchOptions={async (searchTerm) => {
-                  const data = await logsApi.getFilters({ search_tenant: searchTerm || '' });
-                  return [
-                    { value: "ALL", label: "All Tenants" },
-                    ...(data.tenants || []).map(t => ({ value: t, label: t }))
-                  ];
+                  try {
+                    const data = await logsApi.getFilters({ search_tenant: searchTerm || '', request_source: requestSource });
+                    return [
+                      { value: "ALL", label: "All Tenants" },
+                      ...(data?.tenants || []).map(t => ({ value: t, label: t }))
+                    ];
+                  } catch (err) {
+                    console.error('Failed to fetch tenant filter options:', err);
+                    return [{ value: "ALL", label: "All Tenants" }];
+                  }
                 }}
                 placeholder="All Tenants"
               />
@@ -208,12 +228,18 @@ export default function LogViewer({ requestSource, title, subtitle, icon: IconCo
               <AsyncSearchableDropdown
                 value={selectedModel}
                 onChange={setSelectedModel}
+                initialLabel={selectedModel === 'ALL' ? 'All Models' : selectedModel}
                 fetchOptions={async (searchTerm) => {
-                  const data = await logsApi.getFilters({ search_model: searchTerm || '' });
-                  return [
-                    { value: "ALL", label: "All Models" },
-                    ...(data.models || []).map(m => ({ value: m, label: m }))
-                  ];
+                  try {
+                    const data = await logsApi.getFilters({ search_model: searchTerm || '', request_source: requestSource });
+                    return [
+                      { value: "ALL", label: "All Models" },
+                      ...(data?.models || []).map(m => ({ value: m, label: m }))
+                    ];
+                  } catch (err) {
+                    console.error('Failed to fetch model filter options:', err);
+                    return [{ value: "ALL", label: "All Models" }];
+                  }
                 }}
                 placeholder="All Models"
               />
@@ -224,18 +250,23 @@ export default function LogViewer({ requestSource, title, subtitle, icon: IconCo
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <span style={{ fontSize: '0.78rem', color: 'var(--text-sub)', fontWeight: '600' }}>Sandbox:</span>
             <select
-              value={filterType}
+              value={filterType.toLowerCase()}
               onChange={(e) => setFilterType(e.target.value)}
               style={{ fontSize: '0.82rem', padding: '6px 12px' }}
             >
-              <option value="ALL">All Sandboxes</option>
-              <option value="DOCKER">Docker Sandbox</option>
-              <option value="PROCESS">Process Sandbox</option>
-              <option value="HTTP_API">HTTP REST API</option>
-              <option value="E2B">E2B Sandbox</option>
-              <option value="AZURE_ACA">Azure ACA Sandbox</option>
-              <option value="FLY_IO">Fly.io Sandbox</option>
-              <option value="AWS_LAMBDA">AWS Lambda Sandbox</option>
+              <option value="all">All Sandboxes</option>
+              <option value="docker">Docker Sandbox</option>
+              <option value="process">Process Sandbox</option>
+              <option value="subagent">Sub-Agent</option>
+              <option value="artifact_editor">Artifact Editor</option>
+              <option value="http_api">HTTP REST API</option>
+              <option value="host">Host Execution</option>
+              <option value="mcp_server_tools">MCP Server Tools</option>
+              <option value="in_memory">In-Memory Sandbox</option>
+              <option value="e2b">E2B Sandbox</option>
+              <option value="azure_aca">Azure ACA Sandbox</option>
+              <option value="fly_io">Fly.io Sandbox</option>
+              <option value="aws_lambda">AWS Lambda Sandbox</option>
             </select>
           </div>
 
