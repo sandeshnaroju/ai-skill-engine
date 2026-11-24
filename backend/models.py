@@ -172,6 +172,7 @@ class ChatRequest(Base):
     request_source = Column(String, nullable=False, default="api")  # "api" | "dashboard"
     user_message = Column(Text, nullable=False)
     assistant_response = Column(Text, nullable=True)            # populated at completion
+    user_data = Column(Text, nullable=True)                     # JSON-encoded masked user data for auditability
     tools_called = Column(Integer, default=0)                   # count of tool executions
     total_duration_ms = Column(Integer, nullable=True)          # wall-clock time ms
     prompt_tokens = Column(Integer, default=0)                  # input tokens count
@@ -441,6 +442,7 @@ class ScheduledJob(Base):
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     tenant_id = Column(String, ForeignKey("tenants.id"), nullable=False, index=True)
+    app_id = Column(String, ForeignKey("apps.id"), nullable=True, index=True)
     session_id = Column(String, nullable=True, index=True)
     name = Column(String, nullable=False)
     prompt = Column(Text, nullable=False)
@@ -467,3 +469,4 @@ class ScheduledJob(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     tenant = relationship("Tenant", back_populates="scheduled_jobs")
+    app = relationship("AppModel", foreign_keys=[app_id])

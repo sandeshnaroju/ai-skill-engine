@@ -287,7 +287,13 @@ def run_scheduled_job(job_id: str, force: bool = False):
             return
 
         tenant = job.tenant
-        skill_names = json.loads(job.skill_names) if job.skill_names else None
+        skill_names = None
+        if job.skill_names:
+            try:
+                skill_names = json.loads(job.skill_names)
+            except Exception:
+                skill_names = None
+
         user_data = resolve_job_user_data(db, job)
 
         print(f"[Scheduler] Firing scheduled job '{job.name}' (ID: {job.id}, force={force}) for tenant '{tenant.name if tenant else 'default'}' with resolved keys: {list(user_data.keys()) if user_data else []}", flush=True)
@@ -301,6 +307,7 @@ def run_scheduled_job(job_id: str, force: bool = False):
             user_message=job.prompt,
             model_name=job.model_name,
             request_source="scheduler",
+            app_id=getattr(job, "app_id", None),
             skill_names=skill_names,
             user_data=user_data,
             persist=bool(job.store_in_session),

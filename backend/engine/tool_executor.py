@@ -72,7 +72,7 @@ def execute_tool(fn_name: str, args: dict, tool_def: dict, user_data: dict,
                  image_model: str = None, image_gen_model: str = None,
                  audio_model: str = None, video_model: str = None,
                  video_gen_model: str = None, model_name: str = None,
-                 request_webhook_url: str = None) -> tuple:
+                 request_webhook_url: str = None, app_id: str = None) -> tuple:
     """
     Dispatch a single tool call and return (command, exec_res, tool_result).
 
@@ -167,7 +167,8 @@ def execute_tool(fn_name: str, args: dict, tool_def: dict, user_data: dict,
                 session_id=session_id,
                 model_name=model_name,
                 request_webhook_url=request_webhook_url,
-                user_data=user_data
+                user_data=user_data,
+                caller_app_id=app_id
             )
         elif fn_name in ("list_schedules", "scheduler__list_schedules"):
             exec_res = run_list_schedules_tool(tenant=tenant, db=db)

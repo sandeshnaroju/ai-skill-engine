@@ -5,7 +5,7 @@ import {
   Zap, Copy, Check, ExternalLink, FileText, ChevronRight, ChevronLeft, Layers, Key
 } from 'lucide-react';
 import AsyncSearchableDropdown from './AsyncSearchableDropdown';
-import { schedulerApi, tenantsApi, userDataApi } from '../api';
+import { schedulerApi, tenantsApi, userDataApi, skillsApi, appsApi } from '../api';
 import { useToast } from '../context/ToastContext';
 
 export default function SchedulerManager() {
@@ -28,6 +28,7 @@ export default function SchedulerManager() {
   const [loading, setLoading] = useState(false);
 
   // Filters & Pagination
+  const [selectedSkills, setSelectedSkills] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all'); // all | active | paused
@@ -218,6 +219,7 @@ export default function SchedulerManager() {
     setFormData({
       name: '',
       tenant_id: defaultTenant,
+      app_id: '',
       prompt: '',
       model_name: 'gemini-2.5-flash',
       trigger_type: 'cron',
@@ -227,6 +229,7 @@ export default function SchedulerManager() {
       user_data_template_id: '',
       store_in_session: true,
     });
+    setSelectedSkills([]);
     setIsCreateModalOpen(true);
     if (defaultTenant) {
       try {
@@ -253,12 +256,14 @@ export default function SchedulerManager() {
     const payload = {
       name: formData.name.trim(),
       tenant_id: formData.tenant_id,
+      app_id: formData.app_id || null,
       prompt: formData.prompt.trim(),
       model_name: formData.model_name || 'gemini-2.5-flash',
       trigger_type: formData.trigger_type,
       cron_expression: formData.trigger_type === 'cron' ? formData.cron_expression : null,
       interval_seconds: formData.trigger_type === 'interval' ? Math.max(10, parseInt(formData.interval_minutes || 60, 10) * 60) : null,
       run_at: formData.trigger_type === 'date' && formData.run_at ? new Date(formData.run_at).toISOString() : null,
+      skill_names: selectedSkills.length > 0 ? selectedSkills : null,
       user_data_template_id: formData.user_data_template_id || null,
       store_in_session: Boolean(formData.store_in_session),
     };
@@ -611,6 +616,23 @@ export default function SchedulerManager() {
                         </div>
                         <div style={{ marginTop: '3px', fontSize: '0.7rem', color: 'var(--text-sub)' }}>
                           Model: <code>{job.model_name || 'default'}</code>
+                          {job.app_name && (
+                            <span style={{
+                              marginLeft: '8px',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              padding: '1px 6px',
+                              borderRadius: '4px',
+                              background: 'rgba(59, 130, 246, 0.1)',
+                              border: '1px solid rgba(59, 130, 246, 0.25)',
+                              color: '#60a5fa',
+                              fontSize: '0.68rem',
+                              fontWeight: '600'
+                            }}>
+                              📱 App: {job.app_name}
+                            </span>
+                          )}
                         </div>
                       </td>
 
@@ -902,7 +924,7 @@ export default function SchedulerManager() {
                   value={formData.tenant_id}
                   onChange={async (e) => {
                     const newTenantId = e.target.value;
-                    setFormData({ ...formData, tenant_id: newTenantId, user_data_template_id: '' });
+                    setFormData({ ...formData, tenant_id: newTenantId, user_data_template_id: '', app_id: '' });
                     if (newTenantId) {
                       try {
                         const res = await userDataApi.list({ tenant_id: newTenantId, page_size: 50, page: 1 });
@@ -926,6 +948,31 @@ export default function SchedulerManager() {
                 </select>
               </div>
 
+              {/* Application Profile (App ID) Selection */}
+              <div>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.82rem', fontWeight: '700', color: 'var(--text-main)', marginBottom: '6px' }}>
+                  <Layers size={13} style={{ color: 'var(--primary-cyan)' }} />
+                  <span>Application Profile (App ID) — Optional</span>
+                </label>
+                <AsyncSearchableDropdown
+                  value={formData.app_id}
+                  onChange={(val) => setFormData(prev => ({ ...prev, app_id: val }))}
+                  fetchOptions={async (searchTerm) => {
+                    try {
+                      const data = await appsApi.list({ search: searchTerm || '', page_size: 30, page: 1 });
+                      const items = Array.isArray(data.items) ? data.items : (Array.isArray(data) ? data : []);
+                      return items.map(a => ({ value: a.id, label: `📱 ${a.name}` }));
+                    } catch {
+                      return [];
+                    }
+                  }}
+                  placeholder="Select an Application profile to attach its skills..."
+                />
+                <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+                  Attaching an App automatically grants all of its mapped skills to this schedule.
+                </div>
+              </div>
+
               {/* Secrets & User Data Profile Binding */}
               <div>
                 <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.82rem', fontWeight: '700', color: 'var(--text-main)', marginBottom: '6px' }}>
@@ -947,6 +994,53 @@ export default function SchedulerManager() {
                 </select>
                 <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginTop: '4px' }}>
                   If selected, secrets from this profile are loaded dynamically at runtime when the job fires. If omitted, no profile secrets are injected.
+                </div>
+              </div>
+
+              {/* Active Skills Selection */}
+              <div>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.82rem', fontWeight: '700', color: 'var(--text-main)', marginBottom: '6px' }}>
+                  <Zap size={13} style={{ color: 'var(--primary)' }} />
+                  <span>Active Skills (Tools for this Schedule)</span>
+                </label>
+                <AsyncSearchableDropdown
+                  value=''
+                  onChange={(val) => {
+                    if (val && !selectedSkills.includes(val)) {
+                      setSelectedSkills(prev => [...prev, val]);
+                    }
+                  }}
+                  fetchOptions={async (searchTerm) => {
+                    try {
+                      const data = await skillsApi.list({ search: searchTerm || '', page_size: 30, page: 1, tenant_id: formData.tenant_id || undefined });
+                      const items = Array.isArray(data.items) ? data.items : (Array.isArray(data) ? data : []);
+                      return items.filter(s => !selectedSkills.includes(s.name)).map(s => ({ value: s.name, label: `🧩 ${s.name}` }));
+                    } catch {
+                      return [];
+                    }
+                  }}
+                  placeholder="Search and attach skill to this schedule..."
+                />
+                {selectedSkills.length > 0 && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
+                    {selectedSkills.map(sk => (
+                      <span key={sk} style={{
+                        display: 'inline-flex', alignItems: 'center', gap: '6px',
+                        padding: '3px 8px', borderRadius: '12px', fontSize: '0.75rem',
+                        background: 'rgba(0,242,254,0.12)', border: '1px solid rgba(0,242,254,0.3)',
+                        color: 'var(--primary-cyan)'
+                      }}>
+                        🧩 {sk}
+                        <button type="button" onClick={() => setSelectedSkills(prev => prev.filter(s => s !== sk))}
+                          style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'inherit', padding: '0', display: 'flex', alignItems: 'center' }}>
+                          <X size={11} />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+                  Only skills selected here will be enabled when the job executes. If none selected, the job runs without tools.
                 </div>
               </div>
 
@@ -1154,6 +1248,37 @@ export default function SchedulerManager() {
                   {inspectJob.prompt}
                 </div>
               </div>
+
+              {/* Bound Profile & Injected User Data */}
+              {(inspectJob.user_data_template_name || (inspectJob.user_data && Object.keys(inspectJob.user_data).length > 0)) && (
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.78rem', fontWeight: '700', color: 'var(--primary-cyan)', marginBottom: '6px', textTransform: 'uppercase' }}>
+                    <Key size={13} />
+                    <span>Injected Secrets & Profile Data</span>
+                    {inspectJob.user_data_template_name && (
+                      <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 'normal' }}>
+                        (Template: <strong>{inspectJob.user_data_template_name}</strong>)
+                      </span>
+                    )}
+                  </div>
+                  {inspectJob.user_data && Object.keys(inspectJob.user_data).length > 0 ? (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '8px', background: 'var(--bg-input)', padding: '10px 12px', borderRadius: '10px', border: '1px solid var(--border-subtle)' }}>
+                      {Object.entries(inspectJob.user_data).map(([key, val]) => (
+                        <div key={key} style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                          <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{key}</span>
+                          <span style={{ fontSize: '0.8rem', color: 'var(--text-main)', fontWeight: '600', fontFamily: 'var(--font-mono)', wordBreak: 'break-all' }}>
+                            {typeof val === 'object' ? JSON.stringify(val) : String(val)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontStyle: 'italic', background: 'var(--bg-input)', padding: '8px 12px', borderRadius: '8px' }}>
+                      Template "{inspectJob.user_data_template_name}" is linked, but contains no stored data key overrides.
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Error Box if any */}
               {inspectJob.last_error && (

@@ -53,6 +53,7 @@ def _resolve_auth(
 
 
 def _serialize_job(j: ScheduledJob) -> dict:
+    from engine.session import mask_user_data_values
     skill_list = []
     if j.skill_names:
         try:
@@ -60,11 +61,39 @@ def _serialize_job(j: ScheduledJob) -> dict:
         except Exception:
             skill_list = []
 
+    # Mask user_data for security in audit/UI returns
+    raw_user_data = None
+    if getattr(j, "user_data", None):
+        try:
+            raw_user_data = json.loads(j.user_data) if isinstance(j.user_data, str) else j.user_data
+        except Exception:
+            raw_user_data = None
+    masked_user_data = mask_user_data_values(raw_user_data) if raw_user_data else None
+
+    # Resolve linked template name if available
+    tpl_name = None
+    if getattr(j, "user_data_template_id", None):
+        from models import UserDataTemplate
+        # Relationship or light lookup
+        if getattr(j, "user_data_template", None):
+            tpl_name = j.user_data_template.name
+        else:
+            try:
+                from database import SessionLocal
+                with SessionLocal() as s:
+                    t_row = s.query(UserDataTemplate).filter(UserDataTemplate.id == j.user_data_template_id).first()
+                    if t_row:
+                        tpl_name = t_row.name
+            except Exception:
+                tpl_name = None
+
     return {
         "id": j.id,
         "tenant_id": j.tenant_id,
         "tenant_name": j.tenant.name if j.tenant else None,
         "tenant_timezone": j.tenant.timezone if j.tenant and j.tenant.timezone else "UTC",
+        "app_id": getattr(j, "app_id", None),
+        "app_name": j.app.name if getattr(j, "app", None) else None,
         "name": j.name,
         "prompt": j.prompt,
         "trigger_type": j.trigger_type,
@@ -75,7 +104,8 @@ def _serialize_job(j: ScheduledJob) -> dict:
         "model_name": j.model_name,
         "session_id": j.session_id,
         "user_data_template_id": getattr(j, "user_data_template_id", None),
-        "user_data": json.loads(j.user_data) if getattr(j, "user_data", None) and isinstance(j.user_data, str) else getattr(j, "user_data", None),
+        "user_data_template_name": tpl_name,
+        "user_data": masked_user_data,
         "is_active": j.is_active,
         "run_count": j.run_count,
         "last_run_at": j.last_run_at.isoformat() if j.last_run_at else None,
@@ -185,8 +215,19 @@ def create_job(
         except Exception:
             run_at_val = None
 
+    # Validate app_id if provided
+    app_id = payload.app_id
+    if app_id:
+        from models import AppModel
+        app_obj = db.query(AppModel).filter(AppModel.id == app_id).first()
+        if not app_obj:
+            raise HTTPException(status_code=400, detail=f"Application '{app_id}' not found")
+        if app_obj.tenant_id and app_obj.tenant_id != target_tenant_id:
+            raise HTTPException(status_code=403, detail="Application does not belong to this tenant")
+
     job = ScheduledJob(
         tenant_id=target_tenant_id,
+        app_id=app_id,
         session_id=payload.session_id,
         name=payload.name.strip(),
         prompt=payload.prompt.strip(),
@@ -255,6 +296,17 @@ def update_job(
         job.name = payload.name.strip()
     if payload.prompt is not None:
         job.prompt = payload.prompt.strip()
+    if payload.app_id is not None:
+        if payload.app_id:
+            from models import AppModel
+            app_obj = db.query(AppModel).filter(AppModel.id == payload.app_id).first()
+            if not app_obj:
+                raise HTTPException(status_code=400, detail=f"Application '{payload.app_id}' not found")
+            if app_obj.tenant_id and app_obj.tenant_id != job.tenant_id:
+                raise HTTPException(status_code=403, detail="Application does not belong to this tenant")
+            job.app_id = payload.app_id
+        else:
+            job.app_id = None
     if payload.trigger_type is not None:
         job.trigger_type = payload.trigger_type
     if payload.cron_expression is not None:

@@ -1,3 +1,4 @@
+import json
 from fastapi import APIRouter, Depends, HTTPException
 from typing import Optional
 from sqlalchemy.orm import Session
@@ -230,6 +231,7 @@ def get_chat_request_detail(
         "model_name": r.model_name,
         "request_source": r.request_source,
         "user_message": r.user_message,
+        "user_data": json.loads(r.user_data) if getattr(r, "user_data", None) and isinstance(r.user_data, str) else getattr(r, "user_data", None),
         "assistant_response": r.assistant_response,
         "tools_called": r.tools_called or 0,
         "total_duration_ms": r.total_duration_ms,

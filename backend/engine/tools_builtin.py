@@ -671,7 +671,7 @@ def run_get_datetime_tool(args: dict = None, tenant = None) -> dict:
 
 def run_create_schedule_tool(args: dict, tenant, db, session_id: str = None,
                               model_name: str = None, request_webhook_url: str = None,
-                              user_data: dict = None) -> dict:
+                              user_data: dict = None, caller_app_id: str = None) -> dict:
     import json
     import time
     from datetime import datetime
@@ -720,8 +720,17 @@ def run_create_schedule_tool(args: dict, tenant, db, session_id: str = None,
     user_data_str = json.dumps(resolved_user_data) if resolved_user_data and isinstance(resolved_user_data, dict) else None
     user_data_template_id = args.get("user_data_template_id")
 
+    # App ID resolution: tool args 'app_id' or inherit caller_app_id
+    app_id = args.get("app_id") or caller_app_id
+    if app_id:
+        from models import AppModel
+        app_obj = db.query(AppModel).filter(AppModel.id == app_id).first()
+        if not app_obj:
+            app_id = None  # fallback if non-existent
+
     job = ScheduledJob(
         tenant_id=tenant_id,
+        app_id=app_id,
         session_id=session_id,
         name=name,
         prompt=prompt,

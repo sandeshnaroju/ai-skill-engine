@@ -94,6 +94,7 @@ class ScheduledJobCreate(BaseModel):
     name: str
     prompt: str
     tenant_id: Optional[str] = None
+    app_id: Optional[str] = None
     trigger_type: Optional[str] = "cron"
     cron_expression: Optional[str] = None
     interval_seconds: Optional[int] = None
@@ -107,6 +108,7 @@ class ScheduledJobCreate(BaseModel):
 class ScheduledJobUpdate(BaseModel):
     name: Optional[str] = None
     prompt: Optional[str] = None
+    app_id: Optional[str] = None
     trigger_type: Optional[str] = None
     cron_expression: Optional[str] = None
     interval_seconds: Optional[int] = None
