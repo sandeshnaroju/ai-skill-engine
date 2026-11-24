@@ -246,6 +246,9 @@ def init_db():
             if "subagent_cost_usd" not in columns:
                 db.execute(text("ALTER TABLE chat_requests ADD COLUMN subagent_cost_usd FLOAT DEFAULT 0.0"))
                 print("Migration: Added subagent_cost_usd column to chat_requests table")
+            if "user_data" not in columns:
+                db.execute(text("ALTER TABLE chat_requests ADD COLUMN user_data TEXT"))
+                print("Migration: Added user_data column to chat_requests table")
             db.commit()
         except Exception as e:
             print(f"Migration warning: Could not update chat_requests columns: {e}")
@@ -405,6 +408,20 @@ def init_db():
                     print(f"Migration warning: Could not add 'tenant_id' to {table_name}: {e}")
                 finally:
                     db.close()
+
+    # Migrate scheduled_jobs table: ensure app_id column exists
+    if inspector.has_table("scheduled_jobs"):
+        columns = [c["name"] for c in inspector.get_columns("scheduled_jobs")]
+        if "app_id" not in columns:
+            db = SessionLocal()
+            try:
+                db.execute(text("ALTER TABLE scheduled_jobs ADD COLUMN app_id TEXT"))
+                db.commit()
+                print("Migration: Added 'app_id' column to scheduled_jobs table")
+            except Exception as e:
+                print(f"Migration warning: Could not add 'app_id' to scheduled_jobs: {e}")
+            finally:
+                db.close()
 
     # Migrate user_data_templates table: drop legacy global unique index on name alone
     if inspector.has_table("user_data_templates"):

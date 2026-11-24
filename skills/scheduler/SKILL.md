@@ -54,7 +54,16 @@ tools:
           type: array
           items:
             type: string
-          description: List of skills to activate when executing this scheduled task. Leave empty to enable all available skills.
+          description: >
+            Optional list of skill names to enable for this scheduled task.
+            If app_id is present or inherited from the current session, these skills are merged with the App's skills without duplicates.
+            Only skills from app_id and/or this list will be available at runtime.
+        app_id:
+          type: string
+          description: >
+            Optional ID of an Application profile to bind to this scheduled task.
+            The scheduled job automatically has access to all skills assigned to this App.
+            If omitted during a conversation with an active App, it automatically inherits the active App ID.
         user_data_template_id:
           type: string
           description: Optional ID of a User Data / Secrets Profile template to bind to this scheduled task. If not provided, no user data profile is attached.
@@ -119,7 +128,11 @@ Use this skill whenever the user asks for periodic, recurring, or future automat
 - **One-off Future Time**: `date`, ISO datetime string `run_at="YYYY-MM-DDTHH:MM:SS"`
 
 ### Best Practices when Creating Schedules:
-1. **Self-Contained Task `prompt`**:
+1. **Skill & App Awareness**:
+   - Automated tasks run with the skills provided by the bound **Application (`app_id`)** and/or explicit **`skill_names`**.
+   - When creating a schedule inside an active chat session that already has an App, the schedule automatically inherits that App's ID and all of its assigned tools.
+   - If specific extra skills are required beyond the App's configuration, or if scheduling outside an App, pass them in `skill_names`.
+2. **Self-Contained Task `prompt`**:
    - The `prompt` should include all necessary task context and delivery actions.
    - If the user wants the result delivered via email or webhook, instruct the model in `prompt` to gather the necessary data, format it nicely, and invoke the email/webhook tool to send it to the specified recipient.
    - Example: `prompt="Fetch the latest news headlines for Hyderabad, India (last 24 hours), format a clean digest, and send an email to sandesh.aiengineer@gmail.com with subject 'Hyderabad News Briefing'."`
@@ -128,5 +141,5 @@ Use this skill whenever the user asks for periodic, recurring, or future automat
      - An email must ONLY be dispatched when valid data or report results were successfully obtained.
      - If an API fails, a secret is missing, or an error occurs, the scheduled agent should log the error internally in its response and terminate WITHOUT calling `send_email`.
      - Example prompt directive to include: `"Fetch weather data for Perth. If the data is retrieved successfully, format a beautiful email report and send it to user@example.com. If the data cannot be fetched due to missing credentials, API errors, or 401/403 responses, DO NOT send any email to the user; simply log the failure reason in your final response."`
-2. Always confirm the schedule cadence in clear, friendly human language (e.g. *"I've scheduled this to run every day at 10:00 AM"*).
+3. Always confirm the schedule cadence in clear, friendly human language (e.g. *"I've scheduled this to run every day at 10:00 AM"*).
 

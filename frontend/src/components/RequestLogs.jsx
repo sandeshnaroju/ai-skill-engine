@@ -193,6 +193,28 @@ function RequestDrawer({ requestId, onClose }) {
             </div>
           </div>
 
+          {/* User Data / Secrets Profile Injected */}
+          {data.user_data && Object.keys(data.user_data).length > 0 && (
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.76rem', color: 'var(--primary-cyan)', fontWeight: '700', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                <Terminal size={12} />
+                <span>Injected User Data & Secrets ({Object.keys(data.user_data).length} keys)</span>
+              </div>
+              <div style={{ background: 'rgba(6,182,212,0.04)', border: '1px solid rgba(6,182,212,0.2)', borderRadius: '8px', padding: '10px 12px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '8px' }}>
+                  {Object.entries(data.user_data).map(([key, val]) => (
+                    <div key={key} style={{ display: 'flex', flexDirection: 'column', gap: '2px', background: 'var(--bg-input)', padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--border-subtle)' }}>
+                      <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{key}</span>
+                      <span style={{ fontSize: '0.8rem', color: 'var(--text-main)', fontWeight: '600', fontFamily: 'var(--font-mono)', wordBreak: 'break-all' }}>
+                        {typeof val === 'object' ? JSON.stringify(val) : String(val)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Assistant response */}
           {data.assistant_response && (
             <div>

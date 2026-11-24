@@ -758,7 +758,7 @@ class SkillEngine:
             persist = (request_source == "dashboard")
 
         user_message_db = json.dumps(user_message) if not isinstance(user_message, str) else user_message
-        chat_req = create_chat_request(db, tenant, session_id, app_id, model_name, request_source, user_message_db)
+        chat_req = create_chat_request(db, tenant, session_id, app_id, model_name, request_source, user_message_db, user_data=user_data)
         request_id = chat_req.id
 
         try:
@@ -767,7 +767,7 @@ class SkillEngine:
                 session_obj = get_or_create_session(db, tenant, session_id)
                 save_message(db, session_obj, "user", content=user_message_db)
 
-            allowed_skills = resolve_allowed_skills(db, tenant, app_id, skill_names)
+            allowed_skills = resolve_allowed_skills(db, tenant, app_id, skill_names, request_source=request_source)
             messages = _build_messages(db, persist, session_obj, user_message, allowed_skills, user_data, client_messages, tenant_id=tenant.id, raw_session_id=session_id, request_source=request_source, webhook_url=webhook_url)
             model_name = _resolve_model(db, tenant, model_name)
             chat_req.model_name = model_name
@@ -900,7 +900,8 @@ class SkillEngine:
                                 audio_model=audio_model, video_model=video_model,
                                 video_gen_model=video_gen_model,
                                 model_name=model_name,
-                                request_webhook_url=webhook_url
+                                request_webhook_url=webhook_url,
+                                app_id=app_id
                             )
                             worker_db.commit()
                         except Exception as e:
@@ -1071,7 +1072,7 @@ class SkillEngine:
             tenant = db.query(Tenant).filter(Tenant.id == tenant.id).first() or tenant
 
             user_message_db = json.dumps(user_message) if not isinstance(user_message, str) else user_message
-            chat_req = create_chat_request(db, tenant, session_id, app_id, model_name, request_source, user_message_db)
+            chat_req = create_chat_request(db, tenant, session_id, app_id, model_name, request_source, user_message_db, user_data=user_data)
             request_id = chat_req.id
 
             executed_logs = []
@@ -1083,7 +1084,7 @@ class SkillEngine:
                 session_obj = get_or_create_session(db, tenant, session_id)
                 save_message(db, session_obj, "user", content=user_message_db)
 
-            allowed_skills = resolve_allowed_skills(db, tenant, app_id, skill_names)
+            allowed_skills = resolve_allowed_skills(db, tenant, app_id, skill_names, request_source=request_source)
 
             yield _chunk(session_id, model_name, status="Analyzing query & active skills...")
 
@@ -1400,7 +1401,8 @@ class SkillEngine:
                                 audio_model=audio_model, video_model=video_model,
                                 video_gen_model=video_gen_model,
                                 model_name=model_name,
-                                request_webhook_url=webhook_url
+                                request_webhook_url=webhook_url,
+                                app_id=app_id
                             )
                             worker_db.commit()
                         except Exception as e:
