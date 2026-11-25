@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Layers,
   ZoomIn,
@@ -23,7 +23,8 @@ import {
   Ruler
 } from 'lucide-react';
 import { SOLDER_MASK_THEMES } from './constants';
-import { parsePcbData } from './parser';
+import { parsePcbData, parsePcbDataAsync } from './parser';
+import ModernSelect from '../XerViewer/ModernSelect';
 import { Component2D } from './ComponentLibrary2D';
 import PcbViewer3D from './PcbViewer3D';
 import { SchematicView } from './SchematicView';
@@ -85,14 +86,78 @@ export default function PcbViewer({ fullContent, artifact, filename, theme = 'da
 
   const svgRef = useRef(null);
 
-  // Parse PCB data
-  const pcbData = useMemo(() => {
-    return parsePcbData(fullContent, filename);
+  // Non-blocking async PCB parser (supports 20MB+ Gerber, Excellon, KiCad, Circuit JSON)
+  const [parseState, setParseState] = useState(() => {
+    if (!fullContent || (typeof fullContent === 'string' && fullContent.length < 300000)) {
+      return { isParsing: false, percent: 100, stage: 'Complete', count: 0, data: parsePcbData(fullContent, filename) };
+    }
+    return { isParsing: true, percent: 5, stage: 'Reading PCB Stream', count: 0, data: parsePcbData(null, filename) };
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!fullContent) {
+      setParseState({ isParsing: false, percent: 100, stage: 'Empty', count: 0, data: parsePcbData(null, filename) });
+      return;
+    }
+
+    const isLarge = typeof fullContent === 'string' && fullContent.length >= 300000;
+    if (isLarge) {
+      setParseState((prev) => ({ ...prev, isParsing: true, percent: 5, stage: 'Reading PCB Stream', count: 0 }));
+    }
+
+    parsePcbDataAsync(fullContent, filename, (prog) => {
+      if (!cancelled) {
+        setParseState((prev) => ({
+          ...prev,
+          percent: prog.percent,
+          stage: prog.stage,
+          count: prog.count
+        }));
+      }
+    })
+      .then((res) => {
+        if (!cancelled) {
+          setParseState({ isParsing: false, percent: 100, stage: 'Complete', count: (res.traces || []).length, data: res });
+        }
+      })
+      .catch((err) => {
+        console.error('Async PCB parse failed:', err);
+        if (!cancelled) {
+          setParseState({ isParsing: false, percent: 100, stage: 'Error', count: 0, data: parsePcbData(fullContent, filename) });
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [fullContent, filename]);
+
+  const pcbData = parseState.data;
 
   const { board = {}, components = [], traces = [], vias = [], schematic = {}, rules = {}, silkscreen = [] } = pcbData;
   const boardWidth = board.width || 65;
   const boardHeight = board.height || 45;
+
+  // High-density SVG batching threshold (prevents 50,000+ DOM nodes on 20MB Gerber/KiCad boards)
+  const isHighDensity = traces.length > 2500;
+  const batchedTraces = useMemo(() => {
+    if (!isHighDensity) return { topPath: '', bottomPath: '' };
+    const topParts = [];
+    const botParts = [];
+    for (let i = 0; i < traces.length; i++) {
+      const t = traces[i];
+      const segs = t.segments || [];
+      if (segs.length < 2) continue;
+      let cmd = `M${segs[0][0]},${segs[0][1]}`;
+      for (let j = 1; j < segs.length; j++) {
+        cmd += `L${segs[j][0]},${segs[j][1]}`;
+      }
+      if (t.layer === 'B.Cu') botParts.push(cmd);
+      else topParts.push(cmd);
+    }
+    return { topPath: topParts.join(' '), bottomPath: botParts.join(' ') };
+  }, [traces, isHighDensity]);
 
   // 2D PCB Dimension Inspection & Caliper Measurement State
   const [hoveredItem, setHoveredItem] = useState(null); // { type: 'trace' | 'component' | 'via', ... }
@@ -614,25 +679,20 @@ export default function PcbViewer({ fullContent, artifact, filename, theme = 'da
 
         {/* Middle & Right: Theme, Display Options & Day/Dark Switcher */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <span style={{ fontSize: '0.75rem', color: themeColors.textSecondary }}>Mask:</span>
-            <select
+            <ModernSelect
               value={maskThemeKey}
-              onChange={(e) => setMaskThemeKey(e.target.value)}
-              style={{
-                background: themeColors.inputBg,
-                color: themeColors.textPrimary,
-                border: `1px solid ${themeColors.border}`,
-                padding: '4px 8px',
-                borderRadius: '4px',
-                fontSize: '0.75rem',
-                cursor: 'pointer'
-              }}
-            >
-              {Object.entries(SOLDER_MASK_THEMES).map(([k, v]) => (
-                <option key={k} value={k}>{v.name}</option>
-              ))}
-            </select>
+              onChange={setMaskThemeKey}
+              isDark={colorMode === 'dark'}
+              minWidth="140px"
+              maxWidth="185px"
+              options={Object.entries(SOLDER_MASK_THEMES).map(([k, v]) => ({
+                value: k,
+                label: v.name,
+                badgeColor: v.board || '#16a34a'
+              }))}
+            />
           </div>
 
           {viewMode === 'pcb' && (
@@ -695,6 +755,49 @@ export default function PcbViewer({ fullContent, artifact, filename, theme = 'da
 
       {/* ── Main Work Area ── */}
       <div style={{ display: 'flex', flex: 1, position: 'relative', overflow: 'hidden' }}>
+        {parseState.isParsing && (
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              background: isLight ? 'rgba(248, 250, 252, 0.88)' : 'rgba(10, 15, 28, 0.88)',
+              backdropFilter: 'blur(6px)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 50
+            }}
+          >
+            <div
+              style={{
+                width: '380px',
+                maxWidth: '90%',
+                padding: '24px',
+                borderRadius: '12px',
+                background: isLight ? '#ffffff' : '#0f172a',
+                border: isLight ? '1px solid #e2e8f0' : '1px solid #1e293b',
+                boxShadow: '0 20px 25px -5px rgba(0,0,0,0.3)'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '14px' }}>
+                <Zap size={22} color="#10b981" />
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: '14px' }}>Streaming PCB / Gerber Data</div>
+                  <div style={{ fontSize: '12px', color: themeColors.textSecondary }}>
+                    {filename} ({parseState.count.toLocaleString()} items)
+                  </div>
+                </div>
+              </div>
+              <div style={{ height: '8px', width: '100%', background: isLight ? '#e2e8f0' : '#1e293b', borderRadius: '4px', overflow: 'hidden', marginBottom: '8px' }}>
+                <div style={{ height: '100%', width: `${parseState.percent}%`, background: 'linear-gradient(90deg, #10b981 0%, #38bdf8 100%)', transition: 'width 0.15s ease' }} />
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: themeColors.textSecondary }}>
+                <span>{parseState.stage || 'Parsing...'}</span>
+                <span style={{ fontWeight: 700, color: '#10b981' }}>{parseState.percent}%</span>
+              </div>
+            </div>
+          </div>
+        )}
         {/* Left Sidebar: Layers / Props / Nets / BOM / DRC */}
         <div style={{
           width: '260px',
@@ -1170,9 +1273,22 @@ export default function PcbViewer({ fullContent, artifact, filename, theme = 'da
                 {/* Bottom Copper Traces (B.Cu) - Blue */}
                 {activeLayers['B.Cu'] && (
                   <g>
-                    {traces
-                      .filter((t) => t.layer === 'B.Cu')
-                      .map((t, i) => {
+                    {isHighDensity ? (
+                      batchedTraces.bottomPath && (
+                        <path
+                          d={batchedTraces.bottomPath}
+                          fill="none"
+                          stroke="#3b82f6"
+                          strokeWidth={0.35}
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          opacity={0.9}
+                        />
+                      )
+                    ) : (
+                      traces
+                        .filter((t) => t.layer === 'B.Cu')
+                        .map((t, i) => {
                         const isNetMatch = selectedNet && t.net === selectedNet;
                         const pts = (t.segments || []).map((p) => `${p[0]},${p[1]}`).join(' ');
                         const trWidth = t.width || 0.4;
@@ -1229,16 +1345,29 @@ export default function PcbViewer({ fullContent, artifact, filename, theme = 'da
                             })}
                           </g>
                         );
-                      })}
+                      })
+                    )}
                   </g>
                 )}
 
                 {/* Top Copper Traces (F.Cu) - Solid Vivid CAD Red */}
                 {activeLayers['F.Cu'] && (
                   <g>
-                    {traces
-                      .filter((t) => t.layer !== 'B.Cu')
-                      .map((t, i) => {
+                    {isHighDensity ? (
+                      batchedTraces.topPath && (
+                        <path
+                          d={batchedTraces.topPath}
+                          fill="none"
+                          stroke="#ef4444"
+                          strokeWidth={0.32}
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      )
+                    ) : (
+                      traces
+                        .filter((t) => t.layer !== 'B.Cu')
+                        .map((t, i) => {
                         const isNetMatch = selectedNet && t.net === selectedNet;
                         const pts = (t.segments || []).map((p) => `${p[0]},${p[1]}`).join(' ');
                         const trWidth = t.width || 0.35;
@@ -1295,7 +1424,8 @@ export default function PcbViewer({ fullContent, artifact, filename, theme = 'da
                             })}
                           </g>
                         );
-                      })}
+                      })
+                    )}
                   </g>
                 )}
 

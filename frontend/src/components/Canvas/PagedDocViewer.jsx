@@ -1,10 +1,10 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import {
   Edit2, Check, X, History, Copy, CheckCheck, Clock, AlignLeft, AlignCenter, AlignRight, AlignJustify, MoveVertical, Sparkles,
   Bold, Italic, Strikethrough, Code, Heading, Heading1, Heading2, Heading3, Heading4, Heading5, Heading6,
   List, ListOrdered, CheckSquare, Table, Link as LinkIcon, Image as ImageIcon,
   Quote, AlertCircle, Palette, Minus, ExternalLink, Eye, Columns, Plus,
-  Trash2, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Grid, ChevronDown
+  Trash2, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Grid, ChevronDown, Search, ChevronLeft, ChevronRight
 } from 'lucide-react';
 import { artifactsApi } from '../../api';
 import { replaceMathAndSymbols } from '../MarkdownViewer';
@@ -1211,6 +1211,11 @@ function renderMarkdownContent(text, sectionTitle) {
   return elements;
 }
 
+// Memoized per-block renderer so editing one section never re-parses unchanged blocks
+const MemoizedProseBlock = React.memo(function MemoizedProseBlock({ content, title }) {
+  return <div className="doc-prose-content">{renderMarkdownContent(content, title)}</div>;
+});
+
 export default function PagedDocViewer({
   artifact,
   blocks = [],
@@ -2069,11 +2074,63 @@ export default function PagedDocViewer({
     }
   };
 
-  // Compute document statistics
-  const totalWords = (blocks || []).reduce((acc, b) => {
-    return acc + (typeof b?.content === 'string' ? b.content.split(/\s+/).filter(Boolean).length : 0);
-  }, 0);
+  // Compute document statistics (memoized for 20MB+ documents)
+  const totalWords = useMemo(() => {
+    return (blocks || []).reduce((acc, b) => {
+      return acc + (typeof b?.content === 'string' ? b.content.split(/\s+/).filter(Boolean).length : 0);
+    }, 0);
+  }, [blocks]);
   const readingTime = Math.max(1, Math.ceil(totalWords / 200));
+
+  // Windowed pagination for large multi-section documents (>35 sections)
+  const BLOCKS_PER_PAGE = 30;
+  const [docPage, setDocPage] = useState(1);
+  const [showAllBlocks, setShowAllBlocks] = useState(false);
+  const isLargeDoc = blocks.length > 35;
+  const totalDocPages = Math.max(1, Math.ceil(blocks.length / BLOCKS_PER_PAGE));
+  const safeDocPage = Math.min(docPage, totalDocPages);
+
+  const visibleBlocks = useMemo(() => {
+    if (!isLargeDoc || showAllBlocks) return blocks;
+    const start = (safeDocPage - 1) * BLOCKS_PER_PAGE;
+    return blocks.slice(start, start + BLOCKS_PER_PAGE);
+  }, [blocks, isLargeDoc, showAllBlocks, safeDocPage]);
+
+  // In-document search & jump across all blocks
+  const [docSearch, setDocSearch] = useState('');
+  const [activeMatchIdx, setActiveMatchIdx] = useState(0);
+
+  const matchingBlockIndices = useMemo(() => {
+    if (!docSearch.trim()) return [];
+    const q = docSearch.toLowerCase().trim();
+    const matches = [];
+    for (let i = 0; i < blocks.length; i++) {
+      const b = blocks[i];
+      const titleMatch = (b.title || b.block_key || '').toLowerCase().includes(q);
+      const bodyMatch = typeof b.content === 'string' && b.content.toLowerCase().includes(q);
+      if (titleMatch || bodyMatch) matches.push(i);
+    }
+    return matches;
+  }, [blocks, docSearch]);
+
+  const jumpToMatch = (matchOrderIdx) => {
+    if (matchingBlockIndices.length === 0) return;
+    const wrapped = (matchOrderIdx + matchingBlockIndices.length) % matchingBlockIndices.length;
+    setActiveMatchIdx(wrapped);
+    const blockIdx = matchingBlockIndices[wrapped];
+    const targetBlock = blocks[blockIdx];
+    if (!targetBlock) return;
+
+    if (isLargeDoc && !showAllBlocks) {
+      const targetPage = Math.floor(blockIdx / BLOCKS_PER_PAGE) + 1;
+      if (targetPage !== safeDocPage) setDocPage(targetPage);
+    }
+
+    setTimeout(() => {
+      const el = blockRefs.current[targetBlock.block_key];
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 40);
+  };
 
   return (
     <div className="doc-desk-viewport">
@@ -2085,20 +2142,75 @@ export default function PagedDocViewer({
             {artifact?.title || 'Untitled Document'}
           </h1>
 
-          <div className="doc-sheet-meta">
-            <span className="doc-meta-item">
-              <Clock size={11} />
-              <span>{readingTime} min</span>
-            </span>
-            <span className="doc-meta-dot">•</span>
-            <span className="doc-meta-item">
-              <AlignLeft size={11} />
-              <span>{totalWords.toLocaleString()} words</span>
-            </span>
-            <span className="doc-meta-dot">•</span>
-            <span className="doc-meta-item">
-              <span className="doc-version-pill">v{artifact?.current_version || 1}</span>
-            </span>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px' }}>
+            <div className="doc-sheet-meta">
+              <span className="doc-meta-item">
+                <Clock size={11} />
+                <span>{readingTime} min</span>
+              </span>
+              <span className="doc-meta-dot">•</span>
+              <span className="doc-meta-item">
+                <AlignLeft size={11} />
+                <span>{totalWords.toLocaleString()} words</span>
+              </span>
+              <span className="doc-meta-dot">•</span>
+              <span className="doc-meta-item">
+                <span className="doc-version-pill">v{artifact?.current_version || 1}</span>
+              </span>
+            </div>
+
+            {/* In-Document Find & Jump Bar */}
+            {blocks.length > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <div style={{ position: 'relative' }}>
+                  <Search size={12} style={{ position: 'absolute', left: '8px', top: '50%', transform: 'translateY(-50%)', opacity: 0.5 }} />
+                  <input
+                    type="text"
+                    placeholder="Find in document..."
+                    value={docSearch}
+                    onChange={(e) => {
+                      setDocSearch(e.target.value);
+                      setActiveMatchIdx(0);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') jumpToMatch(activeMatchIdx + (e.shiftKey ? -1 : 1));
+                    }}
+                    style={{
+                      padding: '4px 10px 4px 26px',
+                      borderRadius: '6px',
+                      border: '1px solid rgba(148, 163, 184, 0.3)',
+                      background: 'rgba(148, 163, 184, 0.08)',
+                      color: 'inherit',
+                      fontSize: '12px',
+                      width: '175px'
+                    }}
+                  />
+                </div>
+                {docSearch.trim() && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', opacity: 0.85 }}>
+                    <span>
+                      {matchingBlockIndices.length > 0 ? `${(activeMatchIdx % matchingBlockIndices.length) + 1}/${matchingBlockIndices.length}` : '0/0'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => jumpToMatch(activeMatchIdx - 1)}
+                      disabled={matchingBlockIndices.length === 0}
+                      style={{ padding: '2px 5px', borderRadius: '4px', border: '1px solid rgba(148,163,184,0.3)', background: 'transparent', color: 'inherit', cursor: 'pointer' }}
+                    >
+                      <ChevronLeft size={12} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => jumpToMatch(activeMatchIdx + 1)}
+                      disabled={matchingBlockIndices.length === 0}
+                      style={{ padding: '2px 5px', borderRadius: '4px', border: '1px solid rgba(148,163,184,0.3)', background: 'transparent', color: 'inherit', cursor: 'pointer' }}
+                    >
+                      <ChevronRight size={12} />
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="doc-sheet-divider" />
@@ -2112,7 +2224,7 @@ export default function PagedDocViewer({
               <p>Document is ready. Start asking questions or editing sections.</p>
             </div>
           ) : (
-            blocks.map((block, idx) => {
+            visibleBlocks.map((block, idx) => {
               const isEditing = editingKey === block.block_key;
               const isJustUpdated = updatedBlockKey === block.block_key;
 
@@ -2832,15 +2944,65 @@ export default function PagedDocViewer({
                       </div>
                     </div>
                   ) : (
-                    <div className="doc-prose-content">
-                      {renderMarkdownContent(block.content, block.title)}
-                    </div>
+                    <MemoizedProseBlock content={block.content} title={block.title} />
                   )}
                 </section>
               );
             })
           )}
         </div>
+
+        {/* Large-Document Section Paginator */}
+        {isLargeDoc && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '12px 16px',
+              marginTop: '16px',
+              borderTop: '1px solid rgba(148, 163, 184, 0.2)',
+              fontSize: '12px',
+              flexWrap: 'wrap',
+              gap: '10px'
+            }}
+          >
+            <span style={{ opacity: 0.75 }}>
+              {showAllBlocks
+                ? `Showing all ${blocks.length} sections`
+                : `Page ${safeDocPage} of ${totalDocPages} • Sections ${(safeDocPage - 1) * BLOCKS_PER_PAGE + 1}–${Math.min(blocks.length, safeDocPage * BLOCKS_PER_PAGE)} of ${blocks.length}`}
+            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              {!showAllBlocks && (
+                <>
+                  <button
+                    type="button"
+                    disabled={safeDocPage <= 1}
+                    onClick={() => setDocPage((p) => Math.max(1, p - 1))}
+                    style={{ padding: '5px 10px', borderRadius: '6px', border: '1px solid rgba(148,163,184,0.3)', background: 'transparent', color: 'inherit', cursor: safeDocPage <= 1 ? 'not-allowed' : 'pointer', opacity: safeDocPage <= 1 ? 0.4 : 1 }}
+                  >
+                    Previous
+                  </button>
+                  <button
+                    type="button"
+                    disabled={safeDocPage >= totalDocPages}
+                    onClick={() => setDocPage((p) => Math.min(totalDocPages, p + 1))}
+                    style={{ padding: '5px 10px', borderRadius: '6px', border: '1px solid rgba(148,163,184,0.3)', background: 'transparent', color: 'inherit', cursor: safeDocPage >= totalDocPages ? 'not-allowed' : 'pointer', opacity: safeDocPage >= totalDocPages ? 0.4 : 1 }}
+                  >
+                    Next
+                  </button>
+                </>
+              )}
+              <button
+                type="button"
+                onClick={() => setShowAllBlocks((v) => !v)}
+                style={{ padding: '5px 10px', borderRadius: '6px', border: '1px solid rgba(59, 130, 246, 0.4)', background: 'rgba(59, 130, 246, 0.12)', color: '#3b82f6', fontWeight: 600, cursor: 'pointer' }}
+              >
+                {showAllBlocks ? 'Paginate (30/page)' : 'Show All Sections'}
+              </button>
+            </div>
+          </div>
+        )}
       </article>
     </div>
   );

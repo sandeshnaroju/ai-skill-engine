@@ -1,6 +1,51 @@
-import React, { useState, useEffect } from 'react';
-import { Plus, History, Save, Trash2, X, Edit3, FileSpreadsheet } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import {
+  Plus,
+  History,
+  Save,
+  Trash2,
+  X,
+  FileSpreadsheet,
+  Search,
+  Download,
+  ArrowUpDown,
+  ChevronLeft,
+  ChevronRight
+} from 'lucide-react';
 import { artifactsApi } from '../../api';
+
+/**
+ * RFC-4180 compliant single-line CSV parser (handles quoted fields, commas inside quotes, and "" escapes)
+ */
+function parseCsvLine(line) {
+  const result = [];
+  let cur = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (i + 1 < line.length && line[i + 1] === '"') {
+          cur += '"';
+          i++;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        cur += ch;
+      }
+    } else if (ch === '"') {
+      inQuotes = true;
+    } else if (ch === ',') {
+      result.push(cur.trim());
+      cur = '';
+    } else {
+      cur += ch;
+    }
+  }
+  result.push(cur.trim());
+  return result;
+}
 
 export default function SheetGrid({
   blocks = [],
@@ -13,6 +58,11 @@ export default function SheetGrid({
   const [saving, setSaving] = useState(false);
   const [editingColIdx, setEditingColIdx] = useState(null);
   const [editingSheetIdx, setEditingSheetIdx] = useState(null);
+  const [activeCell, setActiveCell] = useState(null); // { rowIdx, colIdx } using true underlying row index
+  const [searchTerm, setSearchTerm] = useState('');
+  const [sortConfig, setSortConfig] = useState({ colIdx: null, dir: 'asc' });
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 100;
 
   const sanitizeCol = (c, i) => {
     if (c === null || c === undefined) return `Col ${i + 1}`;
@@ -53,7 +103,7 @@ export default function SheetGrid({
 
   const parseBlockToSheet = (b) => {
     const raw = String(b.content || '').trim();
-    // 1. Try parsing JSON format: { sheet_name, columns, rows } or { sheets: [...] }
+    // 1. JSON format: { sheet_name, columns, rows } or { sheets: [...] }
     try {
       const data = JSON.parse(raw);
       if (data && typeof data === 'object') {
@@ -80,7 +130,7 @@ export default function SheetGrid({
       }
     } catch { }
 
-    // 2. Try parsing Markdown table format:
+    // 2. Markdown table format
     if (raw.includes('|')) {
       const lines = raw.split('\n').map(l => l.trim()).filter(l => l.startsWith('|') && l.endsWith('|'));
       if (lines.length >= 2) {
@@ -98,10 +148,11 @@ export default function SheetGrid({
       }
     }
 
-    // 3. Fallback: parse CSV / TSV lines
-    const lines = raw.split('\n').filter(Boolean).map((l) => {
+    // 3. RFC-4180 CSV / TSV lines
+    const rawLines = raw.split(/\r?\n/).filter(Boolean);
+    const lines = rawLines.map((l) => {
       if (l.includes('\t')) return l.split('\t').map(c => c.trim());
-      return l.split(',').map(c => c.trim());
+      return parseCsvLine(l);
     });
     const rawColumns = lines[0] && lines[0].length > 0 ? lines[0] : ['Col A', 'Col B', 'Col C'];
     const columns = rawColumns.map(sanitizeCol);
@@ -127,24 +178,65 @@ export default function SheetGrid({
 
   const [sheets, setSheets] = useState(getParsedSheets);
 
-  // Sync state whenever external blocks prop changes
   useEffect(() => {
     setSheets(getParsedSheets());
+    setPage(1);
+    setActiveCell(null);
   }, [blocks]);
 
   const currentSheet = sheets[activeSheetIndex] || sheets[0] || { columns: ['Col A', 'Col B', 'Col C'], rows: [], block_key: 'sheet_1', name: 'Sheet 1' };
 
+  // Filter & sort rows while preserving true origIdx for accurate editing
+  const processedRows = useMemo(() => {
+    const rawRows = currentSheet.rows || [];
+    const q = searchTerm.toLowerCase().trim();
+    const indexed = [];
+
+    for (let i = 0; i < rawRows.length; i++) {
+      const r = rawRows[i];
+      if (q) {
+        const match = Array.isArray(r) && r.some((cell) => String(cell ?? '').toLowerCase().includes(q));
+        if (!match) continue;
+      }
+      indexed.push({ origIdx: i, row: r });
+    }
+
+    if (sortConfig.colIdx !== null) {
+      const ci = sortConfig.colIdx;
+      const mult = sortConfig.dir === 'asc' ? 1 : -1;
+      indexed.sort((a, b) => {
+        const va = String(a.row?.[ci] ?? '');
+        const vb = String(b.row?.[ci] ?? '');
+        const na = parseFloat(va.replace(/[$,]/g, ''));
+        const nb = parseFloat(vb.replace(/[$,]/g, ''));
+        if (!isNaN(na) && !isNaN(nb) && /^-?[\d.,$]+$/.test(va.trim()) && /^-?[\d.,$]+$/.test(vb.trim())) {
+          return (na - nb) * mult;
+        }
+        return va.localeCompare(vb) * mult;
+      });
+    }
+
+    return indexed;
+  }, [currentSheet.rows, searchTerm, sortConfig]);
+
+  const totalPages = Math.max(1, Math.ceil(processedRows.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const pagedRows = useMemo(() => {
+    const start = (safePage - 1) * PAGE_SIZE;
+    return processedRows.slice(start, start + PAGE_SIZE);
+  }, [processedRows, safePage]);
+
   // ── Cell Value Editing ──
-  const handleCellChange = (rowIdx, colIdx, value) => {
-    const updated = [...sheets];
-    const newRows = [...(updated[activeSheetIndex]?.rows || [])];
-    newRows[rowIdx] = [...(newRows[rowIdx] || [])];
-    newRows[rowIdx][colIdx] = value;
-    updated[activeSheetIndex] = {
-      ...updated[activeSheetIndex],
-      rows: newRows
-    };
-    setSheets(updated);
+  const handleCellChange = (origRowIdx, colIdx, value) => {
+    setSheets((prev) => {
+      const updated = [...prev];
+      const targetSheet = updated[activeSheetIndex];
+      const newRows = [...(targetSheet?.rows || [])];
+      newRows[origRowIdx] = [...(newRows[origRowIdx] || [])];
+      newRows[origRowIdx][colIdx] = value;
+      updated[activeSheetIndex] = { ...targetSheet, rows: newRows };
+      return updated;
+    });
   };
 
   // ── Row Operations ──
@@ -152,27 +244,30 @@ export default function SheetGrid({
     const updated = [...sheets];
     const colsCount = currentSheet.columns.length || 3;
     const newRow = new Array(colsCount).fill('');
-    updated[activeSheetIndex] = {
-      ...updated[activeSheetIndex],
-      rows: [...(currentSheet.rows || []), newRow]
-    };
-    setSheets(updated);
-  };
-
-  const handleDeleteRow = (rowIdx) => {
-    const updated = [...sheets];
-    const newRows = (currentSheet.rows || []).filter((_, idx) => idx !== rowIdx);
+    const newRows = [...(currentSheet.rows || []), newRow];
     updated[activeSheetIndex] = {
       ...updated[activeSheetIndex],
       rows: newRows
     };
     setSheets(updated);
+    setPage(Math.max(1, Math.ceil(newRows.length / PAGE_SIZE)));
+    setActiveCell({ rowIdx: newRows.length - 1, colIdx: 0 });
+  };
+
+  const handleDeleteRow = (origRowIdx) => {
+    const updated = [...sheets];
+    const newRows = (currentSheet.rows || []).filter((_, idx) => idx !== origRowIdx);
+    updated[activeSheetIndex] = {
+      ...updated[activeSheetIndex],
+      rows: newRows
+    };
+    setSheets(updated);
+    setActiveCell(null);
   };
 
   // ── Column Operations ──
   const handleAddColumn = () => {
     const updated = [...sheets];
-    const nextColNum = currentSheet.columns.length + 1;
     const newColName = `Col ${colLetter(currentSheet.columns.length)}`;
     const newColumns = [...currentSheet.columns, newColName];
     const newRows = (currentSheet.rows || []).map(row => [...(row || []), '']);
@@ -200,6 +295,7 @@ export default function SheetGrid({
       rows: newRows
     };
     setSheets(updated);
+    setActiveCell(null);
   };
 
   const handleRenameColumn = (colIdx, newName) => {
@@ -211,6 +307,17 @@ export default function SheetGrid({
       columns: newColumns
     };
     setSheets(updated);
+  };
+
+  const handleToggleSort = (colIdx) => {
+    setSortConfig((prev) => {
+      if (prev.colIdx === colIdx) {
+        if (prev.dir === 'asc') return { colIdx, dir: 'desc' };
+        return { colIdx: null, dir: 'asc' };
+      }
+      return { colIdx, dir: 'asc' };
+    });
+    setPage(1);
   };
 
   // ── Sheet Tab Operations ──
@@ -225,6 +332,8 @@ export default function SheetGrid({
     const updated = [...sheets, newSheet];
     setSheets(updated);
     setActiveSheetIndex(updated.length - 1);
+    setPage(1);
+    setActiveCell(null);
   };
 
   const handleDeleteSheet = (sheetIdx, e) => {
@@ -238,6 +347,8 @@ export default function SheetGrid({
     if (activeSheetIndex >= updated.length) {
       setActiveSheetIndex(Math.max(0, updated.length - 1));
     }
+    setPage(1);
+    setActiveCell(null);
   };
 
   const handleRenameSheet = (sheetIdx, newName) => {
@@ -247,6 +358,29 @@ export default function SheetGrid({
       name: newName || `Sheet ${sheetIdx + 1}`
     };
     setSheets(updated);
+  };
+
+  // ── Export Active Sheet to RFC-4180 CSV ──
+  const handleExportCsv = () => {
+    const escapeField = (v) => {
+      const s = String(v ?? '');
+      if (/[",\r\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+      return s;
+    };
+    const headerLine = currentSheet.columns.map(escapeField).join(',');
+    const bodyLines = processedRows.map(({ row }) =>
+      currentSheet.columns.map((_, ci) => escapeField(row?.[ci] ?? '')).join(',')
+    );
+    const csv = [headerLine, ...bodyLines].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${(currentSheet.name || 'sheet').replace(/[^a-zA-Z0-9_-]/g, '_')}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
   };
 
   // ── Save All Sheets to Backend ──
@@ -289,7 +423,6 @@ export default function SheetGrid({
     }
   };
 
-  // Generate column labels A, B, C...
   const colLetter = (idx) => {
     if (idx < 26) return String.fromCharCode(65 + idx);
     const first = String.fromCharCode(65 + Math.floor(idx / 26) - 1);
@@ -299,7 +432,7 @@ export default function SheetGrid({
 
   return (
     <div className="sheet-container">
-      {/* ── Top Sheet Bar (Tabs + Action Toolbar) ── */}
+      {/* ── Top Sheet Bar (Tabs + Search + Action Toolbar) ── */}
       <div className="sheet-toolbar">
         {/* Sheet Tabs */}
         <div style={{ display: 'flex', gap: '6px', alignItems: 'center', overflowX: 'auto', minWidth: 0, padding: '2px 0' }}>
@@ -307,7 +440,11 @@ export default function SheetGrid({
             <div
               key={idx}
               className={`sheet-tab-item ${idx === activeSheetIndex ? 'active' : ''}`}
-              onClick={() => setActiveSheetIndex(idx)}
+              onClick={() => {
+                setActiveSheetIndex(idx);
+                setPage(1);
+                setActiveCell(null);
+              }}
             >
               <FileSpreadsheet size={12} style={{ flexShrink: 0, opacity: 0.8 }} />
               {editingSheetIdx === idx ? (
@@ -362,7 +499,37 @@ export default function SheetGrid({
         </div>
 
         {/* Global Toolbar Actions */}
-        <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexShrink: 0 }}>
+        <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexShrink: 0, flexWrap: 'wrap' }}>
+          <div style={{ position: 'relative' }}>
+            <Search size={12} style={{ position: 'absolute', left: '8px', top: '50%', transform: 'translateY(-50%)', opacity: 0.5 }} />
+            <input
+              type="text"
+              placeholder="Filter rows..."
+              value={searchTerm}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setPage(1);
+              }}
+              style={{
+                padding: '4px 8px 4px 26px',
+                borderRadius: '6px',
+                border: '1px solid var(--sheet-cell-border)',
+                background: 'transparent',
+                color: 'inherit',
+                fontSize: '11px',
+                width: '145px'
+              }}
+            />
+          </div>
+
+          <button
+            className="canvas-btn canvas-btn-secondary"
+            style={{ fontSize: '11px', padding: '5px 9px' }}
+            onClick={handleExportCsv}
+            title="Export Active Sheet as CSV"
+          >
+            <Download size={13} /> CSV
+          </button>
           <button
             className="canvas-btn canvas-btn-secondary"
             style={{ fontSize: '11px', padding: '5px 9px' }}
@@ -400,11 +567,11 @@ export default function SheetGrid({
       </div>
 
       {/* ── Table Grid ── */}
-      <div style={{ overflowX: 'auto', overflowY: 'auto', width: '100%', maxHeight: 'calc(100vh - 160px)', minHeight: '320px' }}>
+      <div style={{ overflowX: 'auto', overflowY: 'auto', width: '100%', maxHeight: 'calc(100vh - 165px)', minHeight: '320px' }}>
         <table className="sheet-table">
           <thead>
             <tr>
-              <th style={{ width: '42px', textAlign: 'center', userSelect: 'none' }}>#</th>
+              <th style={{ width: '48px', textAlign: 'center', userSelect: 'none' }}>#</th>
               {currentSheet.columns.map((col, idx) => (
                 <th key={idx} className="sheet-col-header">
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
@@ -437,29 +604,39 @@ export default function SheetGrid({
                         </span>
                       )}
                     </div>
-                    {currentSheet.columns.length > 1 && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
                       <button
                         className="sheet-col-delete-btn"
-                        onClick={() => handleDeleteColumn(idx)}
-                        title={`Delete Column ${colLetter(idx)}`}
+                        onClick={() => handleToggleSort(idx)}
+                        title={`Sort by ${colLetter(idx)}`}
+                        style={{ opacity: sortConfig.colIdx === idx ? 1 : 0.45, color: sortConfig.colIdx === idx ? '#38bdf8' : 'inherit' }}
                       >
-                        <Trash2 size={11} />
+                        <ArrowUpDown size={11} />
                       </button>
-                    )}
+                      {currentSheet.columns.length > 1 && (
+                        <button
+                          className="sheet-col-delete-btn"
+                          onClick={() => handleDeleteColumn(idx)}
+                          title={`Delete Column ${colLetter(idx)}`}
+                        >
+                          <Trash2 size={11} />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {(currentSheet.rows || []).map((row, rowIdx) => (
-              <tr key={rowIdx} className="sheet-row-tr">
+            {pagedRows.map(({ origIdx, row }) => (
+              <tr key={origIdx} className="sheet-row-tr">
                 <td className="sheet-row-number">
-                  <span className="sheet-row-index-text">{rowIdx + 1}</span>
+                  <span className="sheet-row-index-text">{origIdx + 1}</span>
                   <button
                     className="sheet-row-delete-btn"
-                    onClick={() => handleDeleteRow(rowIdx)}
-                    title={`Delete Row ${rowIdx + 1}`}
+                    onClick={() => handleDeleteRow(origIdx)}
+                    title={`Delete Row ${origIdx + 1}`}
                   >
                     <Trash2 size={11} />
                   </button>
@@ -469,13 +646,44 @@ export default function SheetGrid({
                   const displayVal = typeof cellVal === 'object' && cellVal !== null
                     ? (cellVal.value !== undefined ? String(cellVal.value) : cellVal.name || cellVal.text || JSON.stringify(cellVal))
                     : String(cellVal ?? '');
+                  const isActive = activeCell && activeCell.rowIdx === origIdx && activeCell.colIdx === colIdx;
+
                   return (
-                    <td key={colIdx}>
-                      <input
-                        type="text"
-                        value={displayVal}
-                        onChange={(e) => handleCellChange(rowIdx, colIdx, e.target.value)}
-                      />
+                    <td
+                      key={colIdx}
+                      onClick={() => {
+                        if (!isActive) setActiveCell({ rowIdx: origIdx, colIdx });
+                      }}
+                      style={{ cursor: 'text' }}
+                    >
+                      {isActive ? (
+                        <input
+                          type="text"
+                          autoFocus
+                          value={displayVal}
+                          onChange={(e) => handleCellChange(origIdx, colIdx, e.target.value)}
+                          onBlur={() => setActiveCell(null)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === 'Escape') {
+                              setActiveCell(null);
+                            }
+                          }}
+                        />
+                      ) : (
+                        <span
+                          style={{
+                            display: 'block',
+                            padding: '6px 10px',
+                            minHeight: '28px',
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            fontSize: '12.5px'
+                          }}
+                        >
+                          {displayVal}
+                        </span>
+                      )}
                     </td>
                   );
                 })}
@@ -485,8 +693,8 @@ export default function SheetGrid({
         </table>
       </div>
 
-      {/* ── Bottom Quick Add Row Strip ── */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 14px', background: 'var(--sheet-header-bg)', borderTop: '1px solid var(--sheet-cell-border)' }}>
+      {/* ── Bottom Quick Add Row & Pagination Strip ── */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 14px', background: 'var(--sheet-header-bg)', borderTop: '1px solid var(--sheet-cell-border)', flexWrap: 'wrap', gap: '8px' }}>
         <button
           className="canvas-btn canvas-btn-secondary"
           style={{ fontSize: '11px', padding: '3px 8px' }}
@@ -494,11 +702,36 @@ export default function SheetGrid({
         >
           <Plus size={12} /> Add Row
         </button>
-        <span style={{ fontSize: '11px', color: 'var(--doc-text-muted)' }}>
-          {currentSheet.rows.length} {currentSheet.rows.length === 1 ? 'row' : 'rows'} • {currentSheet.columns.length} columns
-        </span>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '11px', color: 'var(--doc-text-muted)' }}>
+          <span>
+            {processedRows.length.toLocaleString()} {processedRows.length === 1 ? 'row' : 'rows'} • {currentSheet.columns.length} columns
+          </span>
+          {totalPages > 1 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <button
+                className="canvas-btn canvas-btn-secondary"
+                style={{ padding: '2px 6px' }}
+                disabled={safePage <= 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+              >
+                <ChevronLeft size={12} />
+              </button>
+              <span>
+                Page {safePage} / {totalPages}
+              </span>
+              <button
+                className="canvas-btn canvas-btn-secondary"
+                style={{ padding: '2px 6px' }}
+                disabled={safePage >= totalPages}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              >
+                <ChevronRight size={12} />
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
 }
-

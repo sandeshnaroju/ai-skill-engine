@@ -3,11 +3,12 @@ import { useSearchParams } from 'react-router-dom';
 import {
   FileText, Code, Table, Presentation, Image, Music, Video, Globe,
   Download, History, RefreshCw, CheckCircle2,
-  Sun, Moon, BookOpen, X, Compass, Box, MapPin, Cpu,
+  Sun, Moon, BookOpen, X, Compass, Box, MapPin, Cpu, Calendar,
   Maximize2, Minimize2, ChevronDown, FileDown
 } from 'lucide-react';
 import { artifactsApi } from '../../api';
 import PagedDocViewer from './PagedDocViewer';
+import PdfViewer from './PdfViewer';
 import CodeViewer from './CodeViewer';
 import SlidePlayer from './SlidePlayer';
 import SheetGrid from './SheetGrid';
@@ -19,6 +20,8 @@ import Cad2DViewer from './Cad2DViewer';
 import Cad3DViewer from './Cad3DViewer';
 import GisViewer from './GisViewer';
 import LogicViewer from './LogicViewer';
+import XerViewer from './XerViewer';
+import IwpDossierViewer from './XerViewer/iwp/IwpDossierViewer';
 import PcbViewer from './PcbViewer';
 import BlockHistoryModal from './BlockHistoryModal';
 import './canvas.css';
@@ -703,10 +706,24 @@ function CanvasInner({ isEmbed = false, artifactId: propArtifactId, token: propT
     }
 
     if (
+      type === 'xer' ||
+      /\.(xer)$/i.test(filename)
+    ) {
+      return 'xer';
+    }
+
+    if (
+      type === 'iwp' ||
+      /\.(iwp|iwp\.json)$/i.test(filename)
+    ) {
+      return 'iwp';
+    }
+
+    if (
       type === 'engineering_data' ||
       type === 'engineering' ||
       type === 'logic' ||
-      /\.(l5x|l5k|s7p|xer|m|slx)$/i.test(filename)
+      /\.(l5x|l5k|s7p|m|slx)$/i.test(filename)
     ) {
       return 'engineering_data';
     }
@@ -740,6 +757,10 @@ function CanvasInner({ isEmbed = false, artifactId: propArtifactId, token: propT
       case 'cad_2d':
         return <Compass size={15} />;
       case 'cad_3d':
+        return <Box size={15} />;
+      case 'xer':
+        return <Calendar size={15} />;
+      case 'iwp':
         return <Box size={15} />;
       case 'gis':
         return <MapPin size={15} />;
@@ -1025,8 +1046,8 @@ function CanvasInner({ isEmbed = false, artifactId: propArtifactId, token: propT
         </aside>
 
         {/* Viewport Stage */}
-        <main className={`canvas-stage ${['cad_2d', 'cad_3d', 'gis', 'logic', 'image'].includes(artType) ? 'canvas-stage-full' : ''}`}>
-          {(artType === 'document' || artType === 'pdf') && (
+        <main className={`canvas-stage ${['cad_2d', 'cad_3d', 'gis', 'logic', 'xer', 'iwp', 'image', 'pdf'].includes(artType) ? 'canvas-stage-full' : ''}`}>
+          {artType === 'document' && (
             <PagedDocViewer
               artifact={artifact}
               blocks={blocks}
@@ -1036,6 +1057,16 @@ function CanvasInner({ isEmbed = false, artifactId: propArtifactId, token: propT
               updatedBlockKey={updatedBlockKey}
               onOpenHistory={(key, title) => setHistoryModal({ blockKey: key, blockTitle: title })}
               onBlockUpdated={handleBlockUpdated}
+            />
+          )}
+
+          {artType === 'pdf' && (
+            <PdfViewer
+              artifact={artifact}
+              fullContent={artifact?.full_content || (blocks && blocks.length ? blocks.map(b => b.content || '').join('\n') : '')}
+              token={currentToken}
+              filename={artifact?.filename || 'document.pdf'}
+              theme={theme}
             />
           )}
 
@@ -1143,6 +1174,24 @@ function CanvasInner({ isEmbed = false, artifactId: propArtifactId, token: propT
             />
           )}
 
+          {artType === 'xer' && (
+            <XerViewer
+              fullContent={artifact?.full_content || (blocks && blocks.length ? blocks.map(b => b.content || '').join('\n') : '')}
+              artifact={artifact}
+              filename={artifact?.filename || 'schedule.xer'}
+              theme={theme}
+            />
+          )}
+
+          {artType === 'iwp' && (
+            <IwpDossierViewer
+              fullContent={artifact?.full_content || (blocks && blocks.length ? blocks.map(b => b.content || '').join('\n') : '')}
+              artifact={artifact}
+              filename={artifact?.filename || 'package.iwp.json'}
+              theme={theme}
+            />
+          )}
+
           {artType === 'engineering_data' && (
             <LogicViewer
               fullContent={artifact?.full_content || (blocks && blocks.length ? blocks.map(b => b.content || '').join('\n') : '')}
@@ -1156,6 +1205,7 @@ function CanvasInner({ isEmbed = false, artifactId: propArtifactId, token: propT
             <MediaViewer
               artifact={artifact}
               token={currentToken}
+              theme={theme}
             />
           )}
         </main>

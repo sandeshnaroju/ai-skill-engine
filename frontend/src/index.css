@@ -143,7 +143,7 @@ body {
 }
 
 /* Input Controls */
-input, select, textarea {
+input:not([type="checkbox"]):not([type="radio"]), select, textarea {
   background: var(--bg-input);
   border: 1px solid var(--border-subtle);
   color: var(--text-main);
@@ -154,6 +154,15 @@ input, select, textarea {
   outline: none;
   width: 100%;
   transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.3s ease;
+}
+
+input[type="checkbox"], input[type="radio"] {
+  width: auto;
+  height: auto;
+  padding: 0;
+  margin: 0;
+  border-radius: 4px;
+  cursor: pointer;
 }
 
 [data-theme="light"] input, 
