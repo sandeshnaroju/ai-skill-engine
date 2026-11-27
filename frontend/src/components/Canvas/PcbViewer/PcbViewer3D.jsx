@@ -15,6 +15,7 @@ import {
   Palette
 } from 'lucide-react';
 import { SOLDER_MASK_THEMES } from './constants';
+import ModernSelect from '../XerViewer/ModernSelect';
 
 /**
  * Creates high-resolution procedural canvas textures for top and bottom PCB solder mask surfaces.
@@ -982,27 +983,22 @@ export default function PcbViewer3D({ pcbData, maskThemeKey = 'green', colorMode
           zIndex: 20
         }}
       >
-        <Palette size={13} color={isLight ? '#64748b' : '#94a3b8'} />
-        <select
+        <ModernSelect
           value={activeTheme}
-          onChange={(e) => setActiveTheme(e.target.value)}
-          style={{
-            background: 'transparent',
-            border: 'none',
-            color: isLight ? '#0f172a' : '#f8fafc',
-            fontSize: '0.74rem',
-            fontWeight: 600,
-            cursor: 'pointer',
-            outline: 'none'
-          }}
-        >
-          <option value="green" style={{ background: '#0f172a', color: '#fff' }}>Classic Green</option>
-          <option value="black" style={{ background: '#0f172a', color: '#fff' }}>Matte Black</option>
-          <option value="blue" style={{ background: '#0f172a', color: '#fff' }}>Royal Blue</option>
-          <option value="purple" style={{ background: '#0f172a', color: '#fff' }}>OSH Park Purple</option>
-          <option value="red" style={{ background: '#0f172a', color: '#fff' }}>Ferrari Red</option>
-          <option value="white" style={{ background: '#0f172a', color: '#fff' }}>Glossy White</option>
-        </select>
+          onChange={setActiveTheme}
+          icon={Palette}
+          isDark={!isLight}
+          minWidth="145px"
+          maxWidth="185px"
+          options={[
+            { value: 'green', label: 'Classic Green', badgeColor: '#16a34a' },
+            { value: 'black', label: 'Matte Black', badgeColor: '#262626' },
+            { value: 'blue', label: 'Royal Blue', badgeColor: '#2563eb' },
+            { value: 'purple', label: 'OSH Park Purple', badgeColor: '#7e22ce' },
+            { value: 'red', label: 'Ferrari Red', badgeColor: '#dc2626' },
+            { value: 'white', label: 'Glossy White', badgeColor: '#e2e8f0' }
+          ]}
+        />
       </div>
 
       {/* ── Bottom Left Instruction Hint ── */}

@@ -16,11 +16,14 @@ tools:
           description: File name with extension (e.g. main.py, agreement.docx, pitch_deck.pptx, model.xlsx, drawing.dxf, part.step, map.geojson, schedule.xer).
         artifact_type:
           type: string
-          enum: ["code", "document", "spreadsheet", "presentation", "diagram_svg", "image", "audio", "video", "cad_2d", "cad_3d", "gis", "pcb", "diagram", "engineering_data"]
+          enum: ["code", "document", "spreadsheet", "presentation", "diagram_svg", "image", "audio", "video", "cad_2d", "cad_3d", "gis", "pcb", "pandid", "diagram", "engineering_data"]
           description: Category of artifact.
         language:
           type: string
           description: Programming, markup, CAD, or data language (e.g. python, javascript, markdown, svg, json, dxf, step, geojson, pcb, xml).
+        media_url:
+          type: string
+          description: Optional URL of a backing image or media file (e.g. "/api/v1/files/download/<image_filename>" for Smart P&IDs or media artifacts).
         content:
           type: string
           description: Complete raw content of the artifact.
@@ -36,7 +39,7 @@ tools:
       properties:
         filename:
           type: string
-          description: Name of the uploaded file (e.g. "quarterly_earnings.xlsx", "contract.docx", "pitch.pptx", "part.step", "model.dxf", "board.pcb.json").
+          description: Name of the uploaded file (e.g. "quarterly_earnings.xlsx", "contract.docx", "pitch.pptx", "part.step", "model.dxf", "board.pcb.json", "diagram.pandid.json").
         file_path:
           type: string
           description: Optional sandbox path of the file if known (e.g. "sandbox/uploads/tenant/file.pdf").
@@ -45,7 +48,7 @@ tools:
           description: Optional display title for the Canvas header.
         artifact_type:
           type: string
-          enum: ["code", "document", "spreadsheet", "presentation", "pdf", "image", "cad_2d", "cad_3d", "gis", "pcb", "diagram", "engineering_data", "audio", "video"]
+          enum: ["code", "document", "spreadsheet", "presentation", "pdf", "image", "cad_2d", "cad_3d", "gis", "pcb", "pandid", "diagram", "engineering_data", "audio", "video"]
           description: Optional explicit artifact type override.
       required:
         - filename
@@ -216,6 +219,13 @@ Use this skill whenever generating, modifying, or refining digital artifacts for
 10. **Raster Images & Generated Visuals (`.png`, `.jpg`, `.jpeg`, `.webp`)**:
    - Set `artifact_type="image"`.
    - **When an image is generated via `multimodal_analyst__generate_image`**: ALWAYS call `artifact_editor__open_uploaded_file_as_artifact(file_path="<sandbox_output_path>", title="<title>", artifact_type="image")`. This registers the generated image and opens it in the Canvas Artifact Editor with interactive zoom, pan, rotation, and high-resolution export controls.
+11. **Generated Binary Office / PDF Files (`.docx`, `.pdf`, `.xlsx`, `.pptx`)**:
+   - **When a `.docx`, `.pdf`, `.xlsx`, or `.pptx` file is generated on disk in `sandbox/outputs/`** (via Python, `python-docx`, `pdf2docx`, `weasyprint`, `reportlab`, `openpyxl`, `python-pptx`, etc.): ALWAYS call `artifact_editor__open_uploaded_file_as_artifact(file_path="<sandbox_output_path>", title="<title>")` instead of calling `open_or_update_artifact` with plain Markdown! Calling `open_or_update_artifact` with Markdown ignores the generated file on disk and strips its layout, styling, tables, and embedded images.
+   - **Converting an uploaded `.pdf` to `.docx`**: ALWAYS convert the source `.pdf` directly using `pdf2docx` in Python (`from pdf2docx import Converter; cv = Converter(pdf_path); cv.convert(docx_path); cv.close()`) rather than rewriting the text from scratch with `python-docx`, then open the converted `.docx` with `artifact_editor__open_uploaded_file_as_artifact(file_path=docx_path, title="...")`.
+12. **Smart P&ID Diagrams (`artifact_type="pandid"`, `.pandid.json`)**:
+   - Use `artifact_type="pandid"` and `filename="<name>.pandid.json"` whenever the user pastes Smart P&ID JSON + image, an external P&ID extraction skill returns JSON for an uploaded P&ID image, or you generate Smart P&ID JSON.
+   - **CRITICAL — Always Attach the User's P&ID Image**: Whenever the user provides or uploads an image, you **MUST** pass that image's URL (e.g. `/api/v1/files/download/<image_filename>` or the pasted `data:image/...` / URL) via `media_url` on `open_or_update_artifact` (AND set `"image_url"` inside the JSON). NEVER open a P&ID with JSON alone when an image was provided by the user.
+   - Required JSON schema: `{"title": "...", "document_no": "...", "pandid_no": "...", "image_url": "/api/v1/files/download/<image_filename>", "symbols": [{"id": "n1", "name": "instrument", "tag_no": "FI-1024", "x0": 0, "y0": 0, "x1": 40, "y1": 40, "svg": "<svg ...>...</svg>"}], "tags": [{"id": "t1", "text": "...", "x0": 0, "y0": 0, "x1": 40, "y1": 20, "symbol_id": "n1"}], "line_numbers": [{"id": "l1", "text": "...", "x0": 0, "y0": 0, "x1": 80, "y1": 20}], "connectors": [{"id": "c1", "text": "...", "x0": 0, "y0": 0, "x1": 60, "y1": 20, "symbol_id": "n11"}], "connections": []}`.
 
 ---
 

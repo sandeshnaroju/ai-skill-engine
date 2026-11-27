@@ -473,7 +473,8 @@ def update_full_artifact(
     title: Optional[str] = None,
     author: str = "assistant",
     summary: str = "Updated full document content",
-    blocks: Optional[List[Dict]] = None
+    blocks: Optional[List[Dict]] = None,
+    media_url: Optional[str] = None
 ) -> SessionArtifact:
     """
     Update the full content of an existing artifact cleanly.
@@ -486,6 +487,8 @@ def update_full_artifact(
 
     if title:
         artifact.title = title
+    if media_url is not None:
+        artifact.media_url = media_url
 
     artifact.current_version += 1
     artifact.updated_at = datetime.utcnow()

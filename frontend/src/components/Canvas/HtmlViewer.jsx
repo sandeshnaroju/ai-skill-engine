@@ -1,6 +1,23 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Eye, Code, RefreshCw, Monitor, Tablet, Smartphone, Copy, CheckCheck, Edit2, Save, History, ExternalLink } from 'lucide-react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import {
+  Eye,
+  Code,
+  RefreshCw,
+  Monitor,
+  Tablet,
+  Smartphone,
+  Copy,
+  CheckCheck,
+  Edit2,
+  Save,
+  History,
+  ExternalLink,
+  Download
+} from 'lucide-react';
 import { artifactsApi } from '../../api';
+
+const ROW_HEIGHT = 21;
+const OVERSCAN = 15;
 
 export default function HtmlViewer({
   fullContent = '',
@@ -19,21 +36,26 @@ export default function HtmlViewer({
   const [copied, setCopied] = useState(false);
   const [saving, setSaving] = useState(false);
   const [iframeKey, setIframeKey] = useState(0);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(600);
+  const scrollContainerRef = useRef(null);
 
   const mainBlock = blocks[0] || { block_key: 'main_block', title: 'HTML Document' };
 
-  // Strip markdown fences if present
   const cleanHtml = (raw) => {
     if (!raw) return '';
-    let cleaned = raw.trim();
-    const fenceMatch = cleaned.match(/```(?:html|xml)?\s*([\s\S]*?)```/i);
-    if (fenceMatch) {
-      cleaned = fenceMatch[1].trim();
+    const trimmed = raw.trim();
+    if (trimmed.startsWith('```')) {
+      const fenceMatch = trimmed.match(/^```(?:html|xml)?\s*([\s\S]*?)```$/i);
+      if (fenceMatch) return fenceMatch[1].trim();
     }
-    return cleaned;
+    return trimmed;
   };
 
-  const rawHtml = cleanHtml(isEditing ? code : fullContent);
+  const rawHtml = useMemo(
+    () => cleanHtml(isEditing ? code : fullContent),
+    [isEditing, code, fullContent]
+  );
 
   useEffect(() => {
     if (!isEditing) {
@@ -41,10 +63,51 @@ export default function HtmlViewer({
     }
   }, [fullContent, isEditing]);
 
+  // Use Blob Object URL for large HTML (>= 200KB) to avoid 20MB srcDoc fiber duplication
+  const isLargeHtml = rawHtml.length >= 200000;
+  const [blobPreviewUrl, setBlobPreviewUrl] = useState(null);
+
+  useEffect(() => {
+    if (!isLargeHtml) {
+      setBlobPreviewUrl(null);
+      return;
+    }
+    const blob = new Blob([rawHtml], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    setBlobPreviewUrl(url);
+    return () => {
+      URL.revokeObjectURL(url);
+    };
+  }, [rawHtml, isLargeHtml]);
+
+  useEffect(() => {
+    const el = scrollContainerRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.contentRect.height > 0) setViewportHeight(entry.contentRect.height);
+      }
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [viewMode, isEditing]);
+
   const handleCopy = () => {
     navigator.clipboard.writeText(rawHtml);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleDownload = () => {
+    const blob = new Blob([rawHtml], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename || 'index.html';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
   };
 
   const handleSave = async () => {
@@ -69,9 +132,10 @@ export default function HtmlViewer({
   };
 
   const handleOpenInNewTab = () => {
-    const blob = new Blob([rawHtml], { type: 'text/html' });
+    const blob = new Blob([rawHtml], { type: 'text/html;charset=utf-8' });
     const url = URL.createObjectURL(blob);
-    window.open(url, '_blank');
+    window.open(url, '_blank', 'noopener,noreferrer');
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
   };
 
   const getContainerWidth = () => {
@@ -80,7 +144,15 @@ export default function HtmlViewer({
     return '100%';
   };
 
-  const lines = String(rawHtml || '').split('\n');
+  const lines = useMemo(() => String(rawHtml || '').split(/\r?\n/), [rawHtml]);
+  const useVirtual = lines.length > 200;
+  const startIdx = useVirtual ? Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN) : 0;
+  const endIdx = useVirtual
+    ? Math.min(lines.length, Math.ceil((scrollTop + viewportHeight) / ROW_HEIGHT) + OVERSCAN)
+    : lines.length;
+  const topPad = useVirtual ? startIdx * ROW_HEIGHT : 0;
+  const bottomPad = useVirtual ? Math.max(0, (lines.length - endIdx) * ROW_HEIGHT) : 0;
+  const visibleSlice = useMemo(() => lines.slice(startIdx, endIdx), [lines, startIdx, endIdx]);
 
   return (
     <div className="html-viewer-container">
@@ -141,6 +213,15 @@ export default function HtmlViewer({
 
         {/* Right: Actions */}
         <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+          <button
+            className="canvas-btn canvas-btn-secondary"
+            style={{ fontSize: '11px' }}
+            onClick={handleDownload}
+            title="Download HTML File"
+          >
+            <Download size={13} />
+          </button>
+
           <button
             className="canvas-btn canvas-btn-secondary"
             style={{ fontSize: '11px' }}
@@ -215,9 +296,10 @@ export default function HtmlViewer({
             }}
           >
             <iframe
-              key={iframeKey}
+              key={`${iframeKey}_${isLargeHtml ? 'blob' : 'srcdoc'}`}
               title="HTML Live Preview"
-              srcDoc={rawHtml}
+              src={isLargeHtml && blobPreviewUrl ? blobPreviewUrl : undefined}
+              srcDoc={!isLargeHtml ? rawHtml : undefined}
               className="html-preview-iframe"
               sandbox="allow-scripts allow-modals allow-forms allow-popups allow-same-origin"
             />
@@ -245,19 +327,37 @@ export default function HtmlViewer({
             onChange={(e) => setCode(e.target.value)}
           />
         ) : (
-          <pre className="code-pre">
+          <pre
+            ref={scrollContainerRef}
+            className="code-pre"
+            onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
+            style={{
+              overflowY: 'auto',
+              overflowX: 'auto',
+              maxHeight: 'calc(100vh - 130px)'
+            }}
+          >
             <table>
               <tbody>
-                {lines.map((line, idx) => (
-                  <tr key={idx}>
-                    <td className="code-line-number">
-                      {idx + 1}
-                    </td>
-                    <td className="code-line-content">
-                      {line || ' '}
-                    </td>
+                {topPad > 0 && (
+                  <tr style={{ height: `${topPad}px` }}>
+                    <td colSpan={2} style={{ padding: 0, border: 'none' }} />
                   </tr>
-                ))}
+                )}
+                {visibleSlice.map((line, offset) => {
+                  const lineIdx = startIdx + offset;
+                  return (
+                    <tr key={lineIdx} style={{ height: useVirtual ? `${ROW_HEIGHT}px` : 'auto' }}>
+                      <td className="code-line-number">{lineIdx + 1}</td>
+                      <td className="code-line-content">{line || ' '}</td>
+                    </tr>
+                  );
+                })}
+                {bottomPad > 0 && (
+                  <tr style={{ height: `${bottomPad}px` }}>
+                    <td colSpan={2} style={{ padding: 0, border: 'none' }} />
+                  </tr>
+                )}
               </tbody>
             </table>
           </pre>

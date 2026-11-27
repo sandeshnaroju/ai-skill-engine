@@ -3,13 +3,14 @@ backend/artifacts/compiler/exporter.py
 Central export dispatcher that handles format determination, compiler routing,
 MIME type assignment, and raw code/text fallback.
 """
+import base64
 import re
 from typing import Tuple
 
 from models import SessionArtifact
 from ..manager import assemble_full_content
 from .utils import _fetch_image_bytes
-from .docx import compile_to_docx
+from .docx import compile_to_docx, convert_pdf_bytes_to_docx
 from .xlsx import compile_to_xlsx
 from .pptx import compile_to_pptx
 from .pdf import compile_to_pdf
@@ -23,6 +24,32 @@ from .pcb import (
     run_circuit_simulation,
 )
 import json
+
+
+def _extract_original_pdf_bytes(artifact: SessionArtifact):
+    """Return original %PDF- bytes from media_url or inline artifact content if available."""
+    if getattr(artifact, "media_url", None):
+        candidate = _fetch_image_bytes(artifact.media_url)
+        if candidate and candidate.lstrip()[:5] == b"%PDF-":
+            return candidate
+    raw_text = (assemble_full_content(artifact) or "").strip()
+    if raw_text.startswith("data:application/pdf") and "," in raw_text:
+        try:
+            decoded = base64.b64decode(raw_text.split(",", 1)[1])
+            if decoded.lstrip()[:5] == b"%PDF-":
+                return decoded
+        except Exception:
+            return None
+    elif raw_text.startswith("JVBERi0"):
+        try:
+            decoded = base64.b64decode(raw_text)
+            if decoded.lstrip()[:5] == b"%PDF-":
+                return decoded
+        except Exception:
+            return None
+    elif raw_text.startswith("%PDF-"):
+        return raw_text.encode("latin-1", errors="ignore")
+    return None
 
 
 def export_artifact(artifact: SessionArtifact, target_format: str = None) -> Tuple[bytes, str, str]:
@@ -74,7 +101,20 @@ def export_artifact(artifact: SessionArtifact, target_format: str = None) -> Tup
         cpl_str = compile_to_centroid_csv(content)
         return cpl_str.encode("utf-8"), "text/csv", f"{base_name}_CPL.csv"
 
-    elif ext == "docx" or (ext == "doc" and artifact.artifact_type == "document"):
+    elif ext == "docx" or (ext == "doc" and getattr(artifact, "artifact_type", None) in ("document", "pdf")):
+        is_pdf_source = getattr(artifact, "artifact_type", None) == "pdf" or (
+            getattr(artifact, "filename", "") or ""
+        ).lower().endswith(".pdf")
+        if is_pdf_source:
+            pdf_bytes = _extract_original_pdf_bytes(artifact)
+            if pdf_bytes:
+                converted_buf = convert_pdf_bytes_to_docx(pdf_bytes)
+                if converted_buf is not None:
+                    return (
+                        converted_buf.read(),
+                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        f"{base_name}.docx",
+                    )
         buf = compile_to_docx(artifact)
         return buf.read(), "application/vnd.openxmlformats-officedocument.wordprocessingml.document", f"{base_name}.docx"
 
@@ -90,6 +130,11 @@ def export_artifact(artifact: SessionArtifact, target_format: str = None) -> Tup
         return buf.read(), "application/vnd.openxmlformats-officedocument.presentationml.presentation", f"{base_name}.pptx"
 
     elif ext == "pdf":
+        # Preserve original binary PDF if available via media_url or inline PDF content
+        pdf_bytes = _extract_original_pdf_bytes(artifact)
+        if pdf_bytes:
+            return pdf_bytes, "application/pdf", f"{base_name}.pdf"
+
         buf = compile_to_pdf(artifact)
         return buf.read(), "application/pdf", f"{base_name}.pdf"
 
