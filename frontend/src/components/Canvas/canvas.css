@@ -1143,6 +1143,30 @@
   background: rgba(125, 125, 125, 0.03);
 }
 
+/* Borderless layout tables (e.g. pdf2docx multi-column / card layouts) */
+.doc-render-table.doc-layout-table {
+  background: transparent;
+}
+.doc-render-table.doc-layout-table th,
+.doc-render-table.doc-layout-table td {
+  border: none;
+  background: transparent;
+  padding: 6px 10px;
+}
+.doc-render-table.doc-layout-table tbody tr:hover,
+.doc-render-table.doc-layout-table tbody tr:nth-child(even) {
+  background: transparent;
+}
+
+/* Page / section background container (behindDoc images & document background) */
+.doc-page-bg {
+  position: relative;
+  border-radius: 8px;
+  padding: 24px 28px;
+  margin: 10px 0;
+  overflow: hidden;
+}
+
 /* ── Desktop Document Visual Table Editor (MS Word Style) ── */
 .doc-word-table-container {
   margin: 2px 0;

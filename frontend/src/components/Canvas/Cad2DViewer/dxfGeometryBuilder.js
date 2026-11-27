@@ -7,6 +7,7 @@
  */
 
 import * as THREE from 'three';
+import { adaptColorForTheme } from './dxfColors';
 
 /**
  * Tessellate a polyline segment with a DXF bulge factor (tan(theta / 4)) into arc points.
@@ -208,12 +209,8 @@ export function buildCadSceneGeometry(parsedData, activeLayerNames, isDark) {
 
     for (let i = 0; i < layerEntities.length; i++) {
       const ent = layerEntities[i];
-      let entColor = ent.color ? new THREE.Color(ent.color) : new THREE.Color(defaultStrokeColor);
-      if (!isDark && (ent.color === '#ffffff' || ent.color === '#f8fafc')) {
-        entColor = new THREE.Color(0x0f172a);
-      } else if (isDark && (ent.color === '#000000' || ent.color === '#0f172a')) {
-        entColor = new THREE.Color(0xf8fafc);
-      }
+      const adaptedHex = adaptColorForTheme(ent.color || defaultStrokeColor, isDark);
+      const entColor = new THREE.Color(adaptedHex);
 
       const dashed = isDashedLinetype(ent.linetype);
 

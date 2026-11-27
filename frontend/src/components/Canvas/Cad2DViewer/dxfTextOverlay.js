@@ -6,6 +6,8 @@
  * Uses camera frustum culling and sub-pixel LOD filtering for 60 FPS pan/zoom on 20MB+ drawings.
  */
 
+import { adaptColorForTheme } from './dxfColors';
+
 function cleanAutoCadText(raw) {
   if (!raw) return '';
   return raw
@@ -91,12 +93,7 @@ export function renderDxfTextOverlay(canvasEl, textEntities, camera, activeLayer
     const sx = (wx - worldLeft) * pxPerUnitX;
     const sy = (worldTop - wy) * pxPerUnitY;
 
-    let color = ent.color || defaultColor;
-    if (!isDark && (color === '#ffffff' || color === '#f8fafc')) {
-      color = '#0f172a';
-    } else if (isDark && (color === '#000000' || color === '#0f172a')) {
-      color = '#f8fafc';
-    }
+    const color = adaptColorForTheme(ent.color || defaultColor, isDark);
 
     const fontPx = Math.min(72, Math.max(8, pxHeight));
     ctx.font = `500 ${fontPx.toFixed(1)}px Inter, system-ui, sans-serif`;

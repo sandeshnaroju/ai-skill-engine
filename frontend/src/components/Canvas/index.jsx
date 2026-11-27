@@ -23,6 +23,8 @@ import LogicViewer from './LogicViewer';
 import XerViewer from './XerViewer';
 import IwpDossierViewer from './XerViewer/iwp/IwpDossierViewer';
 import PcbViewer from './PcbViewer';
+import SmartPidViewer from './SmartPidViewer';
+import { isSmartPidPayload } from './SmartPidViewer/pidParser';
 import BlockHistoryModal from './BlockHistoryModal';
 import './canvas.css';
 
@@ -698,6 +700,14 @@ function CanvasInner({ isEmbed = false, artifactId: propArtifactId, token: propT
     }
 
     if (
+      type === 'pandid' ||
+      /([._]pandid\.json|[._]pid\.json)$/i.test(filename) ||
+      (filename.endsWith('.json') && isSmartPidPayload(artifact?.full_content || (blocks && blocks[0]?.content) || ''))
+    ) {
+      return 'pandid';
+    }
+
+    if (
       type === 'pcb' ||
       type === 'circuit' ||
       /\.(pcb\.json|kicad_pcb|gbr|gerber|drl|dsn)$/i.test(filename)
@@ -762,6 +772,8 @@ function CanvasInner({ isEmbed = false, artifactId: propArtifactId, token: propT
         return <Calendar size={15} />;
       case 'iwp':
         return <Box size={15} />;
+      case 'pandid':
+        return <Cpu size={15} />;
       case 'gis':
         return <MapPin size={15} />;
       case 'pcb':
@@ -1046,7 +1058,7 @@ function CanvasInner({ isEmbed = false, artifactId: propArtifactId, token: propT
         </aside>
 
         {/* Viewport Stage */}
-        <main className={`canvas-stage ${['cad_2d', 'cad_3d', 'gis', 'logic', 'xer', 'iwp', 'image', 'pdf'].includes(artType) ? 'canvas-stage-full' : ''}`}>
+        <main className={`canvas-stage ${['cad_2d', 'cad_3d', 'gis', 'logic', 'xer', 'iwp', 'pandid', 'image', 'pdf'].includes(artType) ? 'canvas-stage-full' : ''}`}>
           {artType === 'document' && (
             <PagedDocViewer
               artifact={artifact}
@@ -1087,6 +1099,7 @@ function CanvasInner({ isEmbed = false, artifactId: propArtifactId, token: propT
           {artType === 'presentation' && (
             <SlidePlayer
               blocks={blocks}
+              fullContent={artifact?.full_content || ''}
               artifactId={artifact?.id}
               token={currentToken}
               theme={theme}
@@ -1188,6 +1201,16 @@ function CanvasInner({ isEmbed = false, artifactId: propArtifactId, token: propT
               fullContent={artifact?.full_content || (blocks && blocks.length ? blocks.map(b => b.content || '').join('\n') : '')}
               artifact={artifact}
               filename={artifact?.filename || 'package.iwp.json'}
+              theme={theme}
+            />
+          )}
+
+          {artType === 'pandid' && (
+            <SmartPidViewer
+              fullContent={artifact?.full_content || (blocks && blocks.length ? blocks.map(b => b.content || '').join('\n') : '')}
+              artifact={artifact}
+              mediaUrl={artifact?.media_url}
+              filename={artifact?.filename || 'drawing.pandid.json'}
               theme={theme}
             />
           )}

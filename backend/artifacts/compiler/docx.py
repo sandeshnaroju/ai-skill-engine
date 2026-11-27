@@ -4,11 +4,48 @@ Compiles Markdown / Document artifacts into native Microsoft Word (.docx)
 with styled tables, headings, code blocks, hyperlinks, images, and horizontal dividers.
 """
 import io
+import os
 import re
-from typing import Any
+import tempfile
+from typing import Any, Optional
 
 from models import SessionArtifact
 from .utils import _strip_html, _tokenize_inline_formatting, _fetch_image_bytes, _hex_to_rgb
+
+
+def convert_pdf_bytes_to_docx(pdf_bytes: bytes) -> Optional[io.BytesIO]:
+    """Convert raw PDF bytes into a layout-preserving .docx using pdf2docx."""
+    if not pdf_bytes or pdf_bytes.lstrip()[:5] != b"%PDF-":
+        return None
+    try:
+        from pdf2docx import Converter
+    except Exception:
+        return None
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        pdf_path = os.path.join(tmpdir, "input.pdf")
+        docx_path = os.path.join(tmpdir, "output.docx")
+        with open(pdf_path, "wb") as f:
+            f.write(pdf_bytes)
+
+        cv = None
+        try:
+            cv = Converter(pdf_path)
+            cv.convert(docx_path)
+        except Exception:
+            return None
+        finally:
+            if cv is not None:
+                try:
+                    cv.close()
+                except Exception:
+                    pass
+
+        if not os.path.isfile(docx_path):
+            return None
+        with open(docx_path, "rb") as f:
+            data = f.read()
+        return io.BytesIO(data) if data else None
 
 
 def compile_to_docx(artifact: SessionArtifact) -> io.BytesIO:
@@ -168,11 +205,60 @@ def compile_to_docx(artifact: SessionArtifact) -> io.BytesIO:
         run.font.italic = True
         run.font.color.rgb = RGBColor(100, 116, 139)
 
+    def flush_html_table(html_tbl_str):
+        """Parse an HTML <table ...>...</table> block and render it with cell shading & alignment."""
+        row_matches = re.findall(r'<tr[^>]*>(.*?)</tr>', html_tbl_str, re.DOTALL | re.IGNORECASE)
+        parsed_rows = []
+        for r_html in row_matches:
+            cells = re.findall(r'<(th|td)([^>]*)>(.*?)</\1>', r_html, re.DOTALL | re.IGNORECASE)
+            if cells:
+                parsed_rows.append(cells)
+        if not parsed_rows:
+            return
+        cols_count = max(len(r) for r in parsed_rows)
+        tbl = doc.add_table(rows=len(parsed_rows), cols=cols_count)
+        tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
+        tblPr = tbl._tbl.tblPr
+        borders = parse_xml(f'<w:tblBorders {nsdecls("w")}><w:top w:val="single" w:sz="4" w:space="0" w:color="CBD5E1"/><w:bottom w:val="single" w:sz="6" w:space="0" w:color="94A3B8"/><w:left w:val="none"/><w:right w:val="none"/><w:insideH w:val="single" w:sz="4" w:space="0" w:color="E2E8F0"/><w:insideV w:val="none"/></w:tblBorders>')
+        tblPr.append(borders)
+        for r_idx, row_cells in enumerate(parsed_rows):
+            for c_idx in range(cols_count):
+                if c_idx >= len(row_cells):
+                    continue
+                tag_name, attrs, cell_inner = row_cells[c_idx]
+                cell = tbl.cell(r_idx, c_idx)
+                set_cell_margins(cell, top=100, bottom=100, left=140, right=140)
+                bg_m = re.search(r'background-color:\s*#([0-9a-fA-F]{6})', attrs, re.IGNORECASE)
+                if bg_m:
+                    set_cell_shading(cell, bg_m.group(1).upper())
+                elif tag_name.lower() == "th" and r_idx == 0:
+                    set_cell_shading(cell, "1E293B")
+                p = cell.paragraphs[0]
+                if "text-align: center" in attrs:
+                    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                elif "text-align: right" in attrs:
+                    p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+                else:
+                    p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+                clean_inner = re.sub(r'<br\s*/?>', '\n', cell_inner).replace('&nbsp;', ' ').strip()
+                if tag_name.lower() == "th" and r_idx == 0 and not bg_m:
+                    run = p.add_run(_strip_html(clean_inner))
+                    run.font.name = "Calibri"
+                    run.font.size = Pt(10)
+                    run.font.bold = True
+                    run.font.color.rgb = RGBColor(255, 255, 255)
+                else:
+                    apply_inline_tokens_to_paragraph(p, clean_inner)
+        spacer_p = doc.add_paragraph()
+        spacer_p.paragraph_format.space_after = Pt(8)
+
     blocks = sorted(artifact.blocks, key=lambda b: b.order_index) if artifact.blocks else []
     for block in blocks:
         lines = block.content.splitlines()
         in_code_block = False
         code_block_lines = []
+        in_html_table = False
+        html_table_lines = []
         table_rows = []
 
         def flush_table():
@@ -243,6 +329,25 @@ def compile_to_docx(artifact: SessionArtifact) -> io.BytesIO:
 
             if in_code_block:
                 code_block_lines.append(raw_line)
+                continue
+
+            # Handle HTML Tables (<table ...>...</table>)
+            if not in_html_table and re.match(r'^<table[\s>]', line_str, re.IGNORECASE):
+                flush_table()
+                in_html_table = True
+                html_table_lines = [raw_line]
+                if re.search(r'</table>', line_str, re.IGNORECASE):
+                    in_html_table = False
+                    flush_html_table("\n".join(html_table_lines))
+                    html_table_lines = []
+                continue
+
+            if in_html_table:
+                html_table_lines.append(raw_line)
+                if re.search(r'</table>', line_str, re.IGNORECASE):
+                    in_html_table = False
+                    flush_html_table("\n".join(html_table_lines))
+                    html_table_lines = []
                 continue
 
             # Handle Tables

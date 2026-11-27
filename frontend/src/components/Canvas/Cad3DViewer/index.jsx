@@ -166,6 +166,9 @@ export default function Cad3DViewer({ fullContent, artifact, filename = 'model.s
     renderer.setSize(width, height);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.localClippingEnabled = true;
+    renderer.domElement.style.display = 'block';
+    renderer.domElement.style.width = '100%';
+    renderer.domElement.style.height = '100%';
     rendererRef.current = renderer;
 
     container.innerHTML = '';
@@ -202,10 +205,21 @@ export default function Cad3DViewer({ fullContent, artifact, filename = 'model.s
       rendererRef.current.setSize(w, h);
     };
     window.addEventListener('resize', handleResize);
+    document.addEventListener('fullscreenchange', handleResize);
+
+    let resizeObserver = null;
+    if (typeof ResizeObserver !== 'undefined') {
+      resizeObserver = new ResizeObserver(() => {
+        handleResize();
+      });
+      resizeObserver.observe(container);
+    }
 
     return () => {
       cancelAnimationFrame(animId);
       window.removeEventListener('resize', handleResize);
+      document.removeEventListener('fullscreenchange', handleResize);
+      if (resizeObserver) resizeObserver.disconnect();
       renderer.dispose();
     };
   }, [updateCameraPosition]);

@@ -26,9 +26,9 @@ function formatInline(str) {
   // 4. Strikethrough: ~~([^~]+)~~
   // 5. Inline code: `([^`]+)`
   // 6. Italic: \*([^*]+)\*
-  // 7. HTML Highlight/Color/Inline tags: <br>, <span...>, <mark...>, <b>, <strong>, <i>, <em>, <u>, <font...>
-  const tokenRegex = /(!\[(?:[^\]]*)\]\((?:[^)]+)\)|\[(?:[^\]]+)\]\((?:[^)]+)\)|\*\*(?:[^*]+)\*\*|~~(?:[^~]+)~~|`(?:[^`]+)`|\*(?:[^*]+)\*|<br\s*\/?>|<(?:span|mark|b|strong|i|em|u|font|del)[^>]*>[\s\S]*?<\/(?:span|mark|b|strong|i|em|u|font|del)>)/gi;
-  const parts = textStr.split(tokenRegex);
+  // 7. HTML Highlight/Color/Inline tags: match outer tag with its SAME closing tag (\2) to prevent premature closing on nested tags
+  const tokenRegex = /(!\[(?:[^\]]*)\]\((?:[^)]+)\)|\[(?:[^\]]+)\]\((?:[^)]+)\)|\*\*(?:[^*]+)\*\*|~~(?:[^~]+)~~|`(?:[^`]+)`|\*(?:[^*]+)\*|<br\s*\/?>|<(span|mark|b|strong|i|em|u|font|del)\b[^>]*>[\s\S]*?<\/\2>)/gi;
+  const parts = textStr.split(tokenRegex).filter((_, i) => i % 3 !== 2);
 
   if (parts.length <= 1) {
     if (/^<br\s*\/?>$/i.test(textStr.trim())) {
@@ -507,26 +507,42 @@ function wysiwygHtmlToContent(html) {
 
     const tag = node.tagName.toLowerCase();
 
-    // Table conversion
+    // Table conversion (preserving cell styles, colspan, rowspan, and inline HTML)
     if (tag === 'table') {
       const rows = Array.from(node.querySelectorAll('tr'));
       if (rows.length === 0) return '';
+      const serializeCell = (c, cellTag) => {
+        const attrs = [];
+        const style = c.getAttribute('style');
+        const colspan = c.getAttribute('colspan');
+        const rowspan = c.getAttribute('rowspan');
+        if (colspan && parseInt(colspan, 10) > 1) attrs.push(`colspan="${colspan}"`);
+        if (rowspan && parseInt(rowspan, 10) > 1) attrs.push(`rowspan="${rowspan}"`);
+        if (style) attrs.push(`style="${style}"`);
+        const attrStr = attrs.length ? ' ' + attrs.join(' ') : '';
+        const content = c.innerHTML.replace(/<br\s*\/?>/gi, '').trim();
+        return `    <${cellTag}${attrStr}>${content || '&nbsp;'}</${cellTag}>`;
+      };
+
       const headTr = node.querySelector('thead tr') || rows[0];
-      const headCells = Array.from(headTr.querySelectorAll('th, td')).map(c => c.textContent.trim() || ' ');
-      const bodyTrs = node.querySelector('thead tr') 
-        ? Array.from(node.querySelectorAll('tbody tr')) 
+      const headThs = Array.from(headTr.querySelectorAll('th, td')).map(c => serializeCell(c, 'th')).join('\n');
+      const bodyTrs = node.querySelector('thead tr')
+        ? Array.from(node.querySelectorAll('tbody tr'))
         : rows.slice(1);
 
-      const headThs = headCells.map(h => `    <th>${h}</th>`).join('\n');
       const trs = bodyTrs.map(tr => {
-        const tds = Array.from(tr.querySelectorAll('td, th')).map(c => {
-          const content = c.innerHTML.replace(/<br\s*\/?>/gi, '').trim();
-          return `    <td>${content || ''}</td>`;
-        }).join('\n');
+        const tds = Array.from(tr.querySelectorAll('td, th')).map(c => serializeCell(c, 'td')).join('\n');
         return `  <tr>\n${tds}\n  </tr>`;
       }).join('\n');
 
-      return `\n\n<table class="doc-render-table">\n  <thead>\n  <tr>\n${headThs}\n  </tr>\n  </thead>\n  <tbody>\n${trs}\n  </tbody>\n</table>\n\n`;
+      const tableCls = node.getAttribute('class') || 'doc-render-table';
+      return `\n\n<table class="${tableCls}">\n  <thead>\n  <tr>\n${headThs}\n  </tr>\n  </thead>\n  <tbody>\n${trs}\n  </tbody>\n</table>\n\n`;
+    }
+
+    if (tag === 'div' && node.classList?.contains('doc-page-bg')) {
+      const style = node.getAttribute('style') || '';
+      const inner = Array.from(node.childNodes).map(nodeToText).join('').trim();
+      return `\n\n<div class="doc-page-bg"${style ? ` style="${style}"` : ''}>\n\n${inner}\n\n</div>\n\n`;
     }
 
     const childrenText = Array.from(node.childNodes).map(nodeToText).join('');
@@ -894,10 +910,20 @@ function renderMarkdownContent(text, sectionTitle) {
             else if (prop === 'line-height') styleObj.lineHeight = val;
             else if (prop === 'margin-bottom') styleObj.marginBottom = val;
             else if (prop === 'margin-top') styleObj.marginTop = val;
+            else if (prop === 'margin-left') styleObj.marginLeft = val;
             else if (prop === 'padding') styleObj.padding = val;
+            else if (prop === 'padding-bottom') styleObj.paddingBottom = val;
             else if (prop === 'font-size') styleObj.fontSize = val;
             else if (prop === 'font-weight') styleObj.fontWeight = val;
+            else if (prop === 'font-family') styleObj.fontFamily = val;
             else if (prop === 'color') styleObj.color = val;
+            else if (prop === 'background-color') styleObj.backgroundColor = val;
+            else if (prop === 'background-image') styleObj.backgroundImage = val;
+            else if (prop === 'background-size') styleObj.backgroundSize = val;
+            else if (prop === 'background-position') styleObj.backgroundPosition = val;
+            else if (prop === 'background-repeat') styleObj.backgroundRepeat = val;
+            else if (prop === 'border-bottom') styleObj.borderBottom = val;
+            else if (prop === 'border-radius') styleObj.borderRadius = val;
           }
         }
       }
@@ -931,6 +957,12 @@ function renderMarkdownContent(text, sectionTitle) {
         elements.push(<h6 key={idx} className="doc-section-h6" style={styleProp}>{inlineFormatted}</h6>);
       } else if (htmlBlockTag === 'blockquote') {
         elements.push(<blockquote key={idx} className="doc-quote" style={styleProp}>{inlineFormatted}</blockquote>);
+      } else if (htmlBlockTag === 'div' && /doc-page-bg/i.test(attrs)) {
+        elements.push(
+          <div key={idx} className="doc-page-bg" style={styleProp}>
+            <MemoizedProseBlock content={innerText} />
+          </div>
+        );
       } else {
         elements.push(<p key={idx} className={`doc-paragraph${emptyClass}`} style={styleProp}>{inlineFormatted}</p>);
       }

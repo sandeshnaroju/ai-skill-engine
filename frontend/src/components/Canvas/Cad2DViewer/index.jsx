@@ -19,6 +19,7 @@ import {
 import { parseDxfAsync } from './dxfParser';
 import { buildCadSceneGeometry } from './dxfGeometryBuilder';
 import { renderDxfTextOverlay } from './dxfTextOverlay';
+import { adaptColorForTheme } from './dxfColors';
 
 export default function Cad2DViewer({ fullContent, artifact, token, filename = 'drawing.dxf', theme: propTheme }) {
   const containerRef = useRef(null);
@@ -860,7 +861,7 @@ export default function Cad2DViewer({ fullContent, artifact, token, filename = '
                     }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: 1, paddingRight: '6px' }}>
-                      <div style={{ width: '10px', height: '10px', borderRadius: '2px', background: layer.color || '#38bdf8', flexShrink: 0 }} />
+                      <div style={{ width: '10px', height: '10px', borderRadius: '2px', background: adaptColorForTheme(layer.color || '#38bdf8', isDark), flexShrink: 0 }} />
                       <span style={{ fontSize: '0.78rem', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {layer.name}
                       </span>

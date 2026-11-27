@@ -20,6 +20,66 @@ from .search import keyword_search_artifact, semantic_search_artifact
 from .importer import import_file_to_artifact_data
 
 
+def _resolve_pandid_media_url(db, tenant_id: str, tenant_name: str, session_id: str, filename: str, content: str) -> str:
+    """Resolve backing P&ID image URL from JSON content, session image artifacts, or tenant uploads on disk."""
+    if content and isinstance(content, str):
+        try:
+            pid_obj = json.loads(content)
+            if isinstance(pid_obj, dict):
+                url = pid_obj.get("image_url") or pid_obj.get("image_data_uri") or pid_obj.get("image")
+                if url:
+                    return url
+        except Exception:
+            pass
+
+    if session_id:
+        recent_img = (
+            db.query(SessionArtifact)
+            .filter(
+                SessionArtifact.tenant_id == tenant_id,
+                SessionArtifact.session_id == session_id,
+                SessionArtifact.artifact_type == "image",
+            )
+            .order_by(SessionArtifact.updated_at.desc())
+            .first()
+        )
+        if recent_img and recent_img.media_url:
+            return recent_img.media_url
+
+    # Scan tenant uploads/outputs on disk (handles uploaded .jpg + .json where .jpg wasn't opened as an artifact)
+    backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    repo_root = os.path.dirname(backend_dir)
+    img_exts = (".jpg", ".jpeg", ".png", ".webp", ".bmp")
+    stem = re.sub(r'\.(pandid|pid)$', '', os.path.splitext(os.path.basename(filename or ""))[0], flags=re.IGNORECASE)
+    base_stem = re.sub(r'\d+$', '', stem)
+
+    all_imgs = []
+    for base in [
+        os.path.join(repo_root, "sandbox", "uploads", tenant_name),
+        os.path.join("/app/sandbox", "uploads", tenant_name),
+        os.path.join(repo_root, "sandbox", "uploads"),
+        os.path.join("/app/sandbox", "uploads"),
+    ]:
+        if os.path.isdir(base):
+            for f in os.listdir(base):
+                if f.lower().endswith(img_exts):
+                    full = os.path.join(base, f)
+                    all_imgs.append((f, os.path.getmtime(full)))
+
+    if all_imgs:
+        exact = next((f for f, _ in all_imgs if os.path.splitext(f)[0].lower() == stem.lower()), None)
+        if exact:
+            return f"/api/v1/files/download/{exact}"
+        if base_stem:
+            pref = next((f for f, _ in all_imgs if os.path.splitext(f)[0].lower() == base_stem.lower()), None)
+            if pref:
+                return f"/api/v1/files/download/{pref}"
+        all_imgs.sort(key=lambda x: x[1], reverse=True)
+        return f"/api/v1/files/download/{all_imgs[0][0]}"
+
+    return None
+
+
 def run_open_or_update_artifact(db, args: dict, tenant, session_id: str) -> dict:
     start_time = time.time()
     tenant_id = tenant.id if tenant else "default"
@@ -57,12 +117,28 @@ def run_open_or_update_artifact(db, args: dict, tenant, session_id: str) -> dict
             artifact_type = "diagram"
         elif fn.endswith((".l5x", ".l5k", ".s7p", ".xer", ".m", ".slx")):
             artifact_type = "engineering_data"
+        elif fn.endswith((".pandid.json", "_pandid.json", ".pid.json", "_pid.json")):
+            artifact_type = "pandid"
         elif fn.endswith((".pcb.json", ".kicad_pcb", ".gbr", ".gerber", ".drl", ".dsn")):
             artifact_type = "pcb"
         elif fn.endswith((".py", ".js", ".jsx", ".ts", ".tsx", ".html", ".css", ".json", ".sql", ".sh")):
             artifact_type = "code"
         else:
             artifact_type = "document"
+
+    # Auto-correct Smart P&ID payloads even if caller mistakenly passed artifact_type="pcb" or "code"
+    if (
+        artifact_type in ("pcb", "code", "document", "diagram")
+        and isinstance(content, str)
+        and ('"pandid_no"' in content or '"document_no"' in content)
+        and ('"symbols"' in content or '"line_numbers"' in content)
+    ):
+        artifact_type = "pandid"
+
+    # For Smart P&ID artifacts, ensure user-provided image is always linked via media_url
+    if artifact_type == "pandid" and not media_url:
+        tenant_name = getattr(tenant, "name", None) or "default"
+        media_url = _resolve_pandid_media_url(db, tenant_id, tenant_name, session_id, filename, content)
 
     # Check if artifact already exists in this session
     filter_clauses = [
@@ -75,6 +151,8 @@ def run_open_or_update_artifact(db, args: dict, tenant, session_id: str) -> dict
     existing = db.query(SessionArtifact).filter(*filter_clauses).first()
 
     if existing:
+        if artifact_type == "pandid" and existing.artifact_type != "pandid":
+            existing.artifact_type = "pandid"
         if content:
             artifact = update_full_artifact(
                 db=db,
@@ -82,9 +160,13 @@ def run_open_or_update_artifact(db, args: dict, tenant, session_id: str) -> dict
                 content=content,
                 title=title,
                 author="assistant",
-                summary="Updated full document content"
+                summary="Updated full document content",
+                media_url=media_url
             )
         else:
+            if media_url and existing.media_url != media_url:
+                existing.media_url = media_url
+                db.commit()
             artifact = existing
     else:
         artifact = create_artifact(
@@ -494,6 +576,23 @@ def run_open_uploaded_file_as_artifact(db, args: dict, tenant, session_id: str) 
     art_media_url = imported.get("media_url")
     art_blocks = imported.get("blocks") or []
 
+    if art_type == "pandid" and not art_media_url:
+        art_media_url = _resolve_pandid_media_url(db, tenant_id, tenant_name, session_id, art_filename, art_content)
+
+    # Ensure imported PDFs generated outside uploads/outputs are also available at /api/v1/files/download/
+    if art_type == "pdf" and resolved_path:
+        abs_resolved = os.path.abspath(resolved_path)
+        in_served_dir = abs_resolved.startswith(os.path.abspath(uploads_base)) or abs_resolved.startswith(os.path.abspath(outputs_base))
+        if not in_served_dir:
+            try:
+                import shutil
+                os.makedirs(tenant_output_dir, exist_ok=True)
+                dest_pdf = os.path.join(tenant_output_dir, os.path.basename(abs_resolved))
+                if os.path.abspath(dest_pdf) != abs_resolved:
+                    shutil.copy2(abs_resolved, dest_pdf)
+            except Exception:
+                pass
+
     # Check if this artifact already exists in the current session
     filter_clauses = [
         SessionArtifact.tenant_id == tenant_id,
@@ -512,7 +611,8 @@ def run_open_uploaded_file_as_artifact(db, args: dict, tenant, session_id: str) 
             title=art_title,
             author="assistant",
             summary=f"Imported updated file: {art_filename}",
-            blocks=art_blocks if art_blocks else None
+            blocks=art_blocks if art_blocks else None,
+            media_url=art_media_url
         )
     else:
         artifact = create_artifact(

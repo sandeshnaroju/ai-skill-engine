@@ -4,6 +4,7 @@ Main entry point for file import: reads uploaded files, determines formats,
 delegates to domain parsers, and packages results into standard artifact dictionary structures.
 """
 import os
+import re
 from typing import Dict, Any, List, Optional
 
 from .type_inference import infer_artifact_type, infer_code_language
@@ -66,6 +67,7 @@ def import_file_to_artifact_data(filepath: str, title: Optional[str] = None, exp
     elif ext == ".pdf":
         artifact_type = "pdf"
         content, blocks = _parse_pdf(filepath, effective_title)
+        media_url = f"/api/v1/files/download/{filename}"
 
     elif ext in (".md", ".markdown", ".txt", ".text", ".rst", ".html", ".htm"):
         artifact_type = "document"
@@ -177,6 +179,42 @@ def import_file_to_artifact_data(filepath: str, title: Optional[str] = None, exp
         artifact_type = "code" if not artifact_type or artifact_type == "document" else artifact_type
         language = infer_code_language(display_filename)
         content, blocks = _parse_code_file(filepath, display_filename, language)
+
+        # Auto-detect Smart P&ID JSON files and link companion uploaded image if present (even if explicit_type was 'pcb')
+        if ext == ".json" and artifact_type in ("code", "pandid", "pcb", "diagram", "document"):
+            if (
+                ('"pandid_no"' in content or '"document_no"' in content)
+                and ('"symbols"' in content or '"line_numbers"' in content)
+            ):
+                artifact_type = "pandid"
+                try:
+                    import json as _json
+                    pid_obj = _json.loads(content)
+                    if isinstance(pid_obj, dict):
+                        media_url = pid_obj.get("image_url") or pid_obj.get("image_data_uri") or pid_obj.get("image")
+                except Exception:
+                    pass
+                if not media_url:
+                    parent_dir = os.path.dirname(filepath)
+                    stem = re.sub(r'\.(pandid|pid)$', '', os.path.splitext(display_filename)[0], flags=re.IGNORECASE)
+                    img_exts = (".jpg", ".jpeg", ".png", ".webp", ".bmp")
+                    if os.path.isdir(parent_dir):
+                        candidates = [
+                            f for f in os.listdir(parent_dir)
+                            if f.lower().endswith(img_exts)
+                        ]
+                        # 1. Exact stem match (e.g. img3.json -> img3.jpg)
+                        matched = next((f for f in candidates if os.path.splitext(f)[0].lower() == stem.lower()), None)
+                        # 2. Numeric suffix fallback (e.g. img1.json -> img.jpg)
+                        if not matched:
+                            base_stem = re.sub(r'\d+$', '', stem)
+                            matched = next((f for f in candidates if os.path.splitext(f)[0].lower() == base_stem.lower()), None)
+                        # 3. Most recently uploaded image in the same folder
+                        if not matched and candidates:
+                            candidates.sort(key=lambda f: os.path.getmtime(os.path.join(parent_dir, f)), reverse=True)
+                            matched = candidates[0]
+                        if matched:
+                            media_url = f"/api/v1/files/download/{matched}"
 
     return {
         "title": effective_title,

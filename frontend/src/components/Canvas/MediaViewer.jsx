@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import {
   Music,
   Video,
@@ -9,6 +9,11 @@ import {
   Loader2,
   Gauge,
   RefreshCw,
+  Volume2,
+  VolumeX,
+  RotateCcw,
+  RotateCw,
+  Camera,
 } from 'lucide-react';
 import { artifactsApi } from '../../api';
 import ModernSelect from './XerViewer/ModernSelect';
@@ -23,6 +28,8 @@ const SPEED_OPTIONS = [
   { value: '1.5', label: '1.5x' },
   { value: '2', label: '2.0x' },
 ];
+
+const EQ_BAR_HEIGHTS = [38, 68, 52, 86, 62, 94, 48, 78, 56, 88, 44, 72, 60, 82, 46, 64];
 
 function formatDuration(seconds) {
   if (!Number.isFinite(seconds) || seconds < 0) return null;
@@ -50,9 +57,14 @@ export default function MediaViewer({ artifact, token, theme = 'dark' }) {
 
   const [playbackRate, setPlaybackRate] = useState('1');
   const [loop, setLoop] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
   const [isBuffering, setIsBuffering] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [metadata, setMetadata] = useState({ duration: null, width: 0, height: 0 });
+  const [currentTime, setCurrentTime] = useState(0);
+  const [bufferedPercent, setBufferedPercent] = useState(0);
+  const [probedBytes, setProbedBytes] = useState(null);
   const [reloadKey, setReloadKey] = useState(0);
 
   const inlineDataUri = useMemo(() => {
@@ -87,14 +99,37 @@ export default function MediaViewer({ artifact, token, theme = 'dark' }) {
     return isVideo ? 'VIDEO' : 'AUDIO';
   }, [artifact?.filename, isVideo]);
 
+  const rawArtifactBytes = artifact?.file_size ?? artifact?.size_bytes ?? artifact?.bytes;
+
+  // Probe Content-Length via lightweight HEAD request when artifact size metadata is absent
+  useEffect(() => {
+    setProbedBytes(null);
+    if (rawArtifactBytes || !mediaUrl || mediaUrl.startsWith('data:') || mediaUrl.startsWith('blob:')) {
+      return;
+    }
+    const controller = new AbortController();
+    fetch(mediaUrl, { method: 'HEAD', signal: controller.signal })
+      .then((res) => {
+        if (!res.ok) return;
+        const len = parseInt(res.headers.get('content-length') || '0', 10);
+        if (Number.isFinite(len) && len > 0) setProbedBytes(len);
+      })
+      .catch(() => {
+        // Ignore HEAD errors (CORS/unsupported)
+      });
+    return () => controller.abort();
+  }, [mediaUrl, rawArtifactBytes]);
+
   const sizeLabel = useMemo(() => {
-    const rawBytes = artifact?.file_size ?? artifact?.size_bytes ?? artifact?.bytes;
-    return formatBytes(Number(rawBytes));
-  }, [artifact?.file_size, artifact?.size_bytes, artifact?.bytes]);
+    return formatBytes(Number(rawArtifactBytes || probedBytes));
+  }, [rawArtifactBytes, probedBytes]);
 
   useEffect(() => {
     setErrorMsg('');
     setMetadata({ duration: null, width: 0, height: 0 });
+    setCurrentTime(0);
+    setBufferedPercent(0);
+    setIsPlaying(false);
     setIsBuffering(Boolean(mediaUrl));
   }, [mediaUrl, reloadKey]);
 
@@ -103,6 +138,19 @@ export default function MediaViewer({ artifact, token, theme = 'dark' }) {
       mediaRef.current.playbackRate = Number(playbackRate) || 1;
     }
   }, [playbackRate, reloadKey]);
+
+  const updateBuffered = useCallback(() => {
+    const el = mediaRef.current;
+    if (!el || !el.duration || !Number.isFinite(el.duration) || el.duration <= 0) return;
+    try {
+      if (el.buffered && el.buffered.length > 0) {
+        const end = el.buffered.end(el.buffered.length - 1);
+        setBufferedPercent(Math.min(100, Math.round((end / el.duration) * 100)));
+      }
+    } catch {
+      // Ignore buffered range errors
+    }
+  }, []);
 
   const handleLoadedMetadata = () => {
     setIsBuffering(false);
@@ -115,10 +163,13 @@ export default function MediaViewer({ artifact, token, theme = 'dark' }) {
       height: el.videoHeight || 0,
     });
     el.playbackRate = Number(playbackRate) || 1;
+    el.muted = isMuted;
+    updateBuffered();
   };
 
   const handleMediaError = () => {
     setIsBuffering(false);
+    setIsPlaying(false);
     const ext = extBadge.toLowerCase();
     const containerHint =
       ext === 'avi' || ext === 'mkv'
@@ -126,6 +177,23 @@ export default function MediaViewer({ artifact, token, theme = 'dark' }) {
         : 'The media format or codec may not be supported by your browser, or the stream failed to load.';
     setErrorMsg(`${containerHint} You can download the file to play it locally.`);
   };
+
+  const handleSkip = useCallback((deltaSec) => {
+    const el = mediaRef.current;
+    if (!el) return;
+    const maxDur = Number.isFinite(el.duration) ? el.duration : Infinity;
+    el.currentTime = Math.max(0, Math.min(maxDur, (el.currentTime || 0) + deltaSec));
+    setCurrentTime(el.currentTime);
+  }, []);
+
+  const handleToggleMute = useCallback(() => {
+    const el = mediaRef.current;
+    setIsMuted((prev) => {
+      const next = !prev;
+      if (el) el.muted = next;
+      return next;
+    });
+  }, []);
 
   const handleTogglePiP = async () => {
     const el = mediaRef.current;
@@ -141,10 +209,51 @@ export default function MediaViewer({ artifact, token, theme = 'dark' }) {
     }
   };
 
+  const handleSnapshot = () => {
+    const el = mediaRef.current;
+    if (!el || !isVideo || !el.videoWidth || !el.videoHeight) return;
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = el.videoWidth;
+      canvas.height = el.videoHeight;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(el, 0, 0, canvas.width, canvas.height);
+      const link = document.createElement('a');
+      const base = (artifact?.filename || 'frame').replace(/\.[^/.]+$/, '');
+      link.download = `${base}_frame.png`;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    } catch {
+      // Ignore tainted canvas errors
+    }
+  };
+
+  const handleKeyDown = (e) => {
+    if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return;
+    const el = mediaRef.current;
+    if (!el) return;
+    if (e.key === ' ') {
+      e.preventDefault();
+      if (el.paused) el.play().catch(() => {});
+      else el.pause();
+    } else if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      handleSkip(-10);
+    } else if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      handleSkip(10);
+    } else if (e.key === 'm' || e.key === 'M') {
+      handleToggleMute();
+    } else if (e.key === 'l' || e.key === 'L') {
+      setLoop((prev) => !prev);
+    }
+  };
+
   const palette = isDark
     ? {
         cardBg: '#111827',
         cardBorder: 'rgba(255,255,255,0.08)',
+        stageBg: '#0b1120',
         title: '#f9fafb',
         muted: '#9ca3af',
         pillBg: 'rgba(255,255,255,0.06)',
@@ -158,10 +267,12 @@ export default function MediaViewer({ artifact, token, theme = 'dark' }) {
         errorBg: 'rgba(239, 68, 68, 0.1)',
         errorBorder: 'rgba(239, 68, 68, 0.3)',
         errorText: '#fca5a5',
+        trackBg: 'rgba(255,255,255,0.08)',
       }
     : {
         cardBg: '#ffffff',
         cardBorder: '#e2e8f0',
+        stageBg: '#f8fafc',
         title: '#0f172a',
         muted: '#64748b',
         pillBg: '#f1f5f9',
@@ -175,9 +286,11 @@ export default function MediaViewer({ artifact, token, theme = 'dark' }) {
         errorBg: '#fef2f2',
         errorBorder: '#fecaca',
         errorText: '#b91c1c',
+        trackBg: '#e2e8f0',
       };
 
   const durationLabel = formatDuration(metadata.duration);
+  const currentTimeLabel = formatDuration(currentTime) || '0:00';
   const canPiP =
     isVideo &&
     typeof document !== 'undefined' &&
@@ -186,14 +299,17 @@ export default function MediaViewer({ artifact, token, theme = 'dark' }) {
 
   return (
     <div
+      tabIndex={0}
+      onKeyDown={handleKeyDown}
       style={{
         width: '100%',
-        maxWidth: '820px',
+        maxWidth: '960px',
         margin: '0 auto',
         textAlign: 'center',
         display: 'flex',
         flexDirection: 'column',
         gap: '16px',
+        outline: 'none',
       }}
     >
       <div
@@ -201,73 +317,62 @@ export default function MediaViewer({ artifact, token, theme = 'dark' }) {
           background: palette.cardBg,
           border: `1px solid ${palette.cardBorder}`,
           borderRadius: '12px',
-          padding: '28px',
+          padding: '24px 28px',
           boxShadow: isDark ? '0 8px 24px rgba(0,0,0,0.3)' : '0 4px 16px rgba(15,23,42,0.06)',
         }}
       >
+        {/* Header & Metadata Badges */}
         <div
           style={{
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'center',
+            justifyContent: 'space-between',
             gap: '12px',
             marginBottom: '16px',
             flexWrap: 'wrap',
           }}
         >
-          <div
-            style={{
-              width: '40px',
-              height: '40px',
-              borderRadius: '10px',
-              background: palette.accentBg,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: palette.accentText,
-              flexShrink: 0,
-            }}
-          >
-            {isVideo ? <Video size={20} /> : <Music size={20} />}
-          </div>
-          <div style={{ textAlign: 'left', minWidth: 0 }}>
-            <h3
-              style={{
-                margin: 0,
-                fontSize: '15px',
-                fontWeight: 600,
-                color: palette.title,
-                wordBreak: 'break-word',
-              }}
-            >
-              {artifact?.title || artifact?.filename || 'Media Artifact'}
-            </h3>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
             <div
               style={{
+                width: '40px',
+                height: '40px',
+                borderRadius: '10px',
+                background: palette.accentBg,
                 display: 'flex',
                 alignItems: 'center',
-                gap: '6px',
-                flexWrap: 'wrap',
-                marginTop: '4px',
+                justifyContent: 'center',
+                color: palette.accentText,
+                flexShrink: 0,
               }}
             >
-              <span
+              {isVideo ? <Video size={20} /> : <Music size={20} />}
+            </div>
+            <div style={{ textAlign: 'left', minWidth: 0 }}>
+              <h3
                 style={{
-                  fontSize: '11px',
+                  margin: 0,
+                  fontSize: '15px',
                   fontWeight: 600,
-                  padding: '2px 7px',
-                  borderRadius: '999px',
-                  background: palette.pillBg,
-                  border: `1px solid ${palette.pillBorder}`,
-                  color: palette.muted,
+                  color: palette.title,
+                  wordBreak: 'break-word',
                 }}
               >
-                {extBadge}
-              </span>
-              {durationLabel && (
+                {artifact?.title || artifact?.filename || 'Media Artifact'}
+              </h3>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  flexWrap: 'wrap',
+                  marginTop: '4px',
+                }}
+              >
                 <span
                   style={{
                     fontSize: '11px',
+                    fontWeight: 600,
                     padding: '2px 7px',
                     borderRadius: '999px',
                     background: palette.pillBg,
@@ -275,55 +380,84 @@ export default function MediaViewer({ artifact, token, theme = 'dark' }) {
                     color: palette.muted,
                   }}
                 >
-                  {durationLabel}
+                  {extBadge}
                 </span>
-              )}
-              {metadata.width > 0 && metadata.height > 0 && (
-                <span
-                  style={{
-                    fontSize: '11px',
-                    padding: '2px 7px',
-                    borderRadius: '999px',
-                    background: palette.pillBg,
-                    border: `1px solid ${palette.pillBorder}`,
-                    color: palette.muted,
-                  }}
-                >
-                  {metadata.width} × {metadata.height}
-                </span>
-              )}
-              {sizeLabel && (
-                <span
-                  style={{
-                    fontSize: '11px',
-                    padding: '2px 7px',
-                    borderRadius: '999px',
-                    background: palette.pillBg,
-                    border: `1px solid ${palette.pillBorder}`,
-                    color: palette.muted,
-                  }}
-                >
-                  {sizeLabel}
-                </span>
-              )}
-              {isBuffering && !errorMsg && (
-                <span
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    fontSize: '11px',
-                    color: palette.accentText,
-                  }}
-                >
-                  <Loader2 size={12} className="spin" />
-                  Loading stream...
-                </span>
-              )}
+                {durationLabel && (
+                  <span
+                    style={{
+                      fontSize: '11px',
+                      padding: '2px 7px',
+                      borderRadius: '999px',
+                      background: palette.pillBg,
+                      border: `1px solid ${palette.pillBorder}`,
+                      color: palette.muted,
+                    }}
+                  >
+                    {currentTimeLabel} / {durationLabel}
+                  </span>
+                )}
+                {metadata.width > 0 && metadata.height > 0 && (
+                  <span
+                    style={{
+                      fontSize: '11px',
+                      padding: '2px 7px',
+                      borderRadius: '999px',
+                      background: palette.pillBg,
+                      border: `1px solid ${palette.pillBorder}`,
+                      color: palette.muted,
+                    }}
+                  >
+                    {metadata.width} × {metadata.height}
+                  </span>
+                )}
+                {sizeLabel && (
+                  <span
+                    style={{
+                      fontSize: '11px',
+                      padding: '2px 7px',
+                      borderRadius: '999px',
+                      background: palette.pillBg,
+                      border: `1px solid ${palette.pillBorder}`,
+                      color: palette.muted,
+                    }}
+                  >
+                    {sizeLabel}
+                  </span>
+                )}
+                {bufferedPercent > 0 && bufferedPercent < 100 && !errorMsg && (
+                  <span
+                    style={{
+                      fontSize: '11px',
+                      padding: '2px 7px',
+                      borderRadius: '999px',
+                      background: palette.pillBg,
+                      border: `1px solid ${palette.pillBorder}`,
+                      color: palette.muted,
+                    }}
+                  >
+                    Buffered {bufferedPercent}%
+                  </span>
+                )}
+                {isBuffering && !errorMsg && (
+                  <span
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      fontSize: '11px',
+                      color: palette.accentText,
+                    }}
+                  >
+                    <Loader2 size={12} className="spin" />
+                    Loading stream...
+                  </span>
+                )}
+              </div>
             </div>
           </div>
         </div>
 
+        {/* Media Stage */}
         {!mediaUrl ? (
           <div
             style={{
@@ -379,14 +513,24 @@ export default function MediaViewer({ artifact, token, theme = 'dark' }) {
             controls
             preload="metadata"
             loop={loop}
+            muted={isMuted}
             onLoadStart={() => setIsBuffering(true)}
             onWaiting={() => setIsBuffering(true)}
             onCanPlay={() => setIsBuffering(false)}
+            onPlay={() => setIsPlaying(true)}
+            onPause={() => setIsPlaying(false)}
+            onEnded={() => setIsPlaying(false)}
+            onVolumeChange={(e) => setIsMuted(Boolean(e.currentTarget.muted))}
+            onTimeUpdate={(e) => {
+              setCurrentTime(e.currentTarget.currentTime || 0);
+              updateBuffered();
+            }}
+            onProgress={updateBuffered}
             onLoadedMetadata={handleLoadedMetadata}
             onError={handleMediaError}
             style={{
               width: '100%',
-              maxHeight: '480px',
+              maxHeight: '540px',
               borderRadius: '8px',
               background: '#000',
               display: 'block',
@@ -396,35 +540,168 @@ export default function MediaViewer({ artifact, token, theme = 'dark' }) {
             Your browser does not support HTML5 video.
           </video>
         ) : (
-          <audio
-            key={`audio-${reloadKey}-${mediaUrl}`}
-            ref={mediaRef}
-            controls
-            preload="metadata"
-            loop={loop}
-            onLoadStart={() => setIsBuffering(true)}
-            onWaiting={() => setIsBuffering(true)}
-            onCanPlay={() => setIsBuffering(false)}
-            onLoadedMetadata={handleLoadedMetadata}
-            onError={handleMediaError}
-            style={{ width: '100%', marginTop: '8px', display: 'block' }}
-            src={mediaUrl}
+          <div
+            style={{
+              background: palette.stageBg,
+              border: `1px solid ${palette.cardBorder}`,
+              borderRadius: '10px',
+              padding: '24px 20px 18px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '16px',
+            }}
           >
-            Your browser does not support HTML5 audio.
-          </audio>
+            {/* Lightweight reactive equalizer stage */}
+            <div
+              style={{
+                height: '64px',
+                display: 'flex',
+                alignItems: 'flex-end',
+                justifyContent: 'center',
+                gap: '6px',
+              }}
+            >
+              {EQ_BAR_HEIGHTS.map((h, i) => (
+                <div
+                  key={i}
+                  style={{
+                    width: '6px',
+                    height: isPlaying ? `${Math.max(20, ((h + ((Math.floor(currentTime * 4) + i * 7) % 35)) % 95))}%` : `${Math.round(h * 0.45)}%`,
+                    borderRadius: '999px',
+                    background: isPlaying ? palette.accentText : palette.muted,
+                    opacity: isPlaying ? 0.9 : 0.4,
+                    transition: 'height 0.18s ease, background 0.2s ease',
+                  }}
+                />
+              ))}
+            </div>
+            <audio
+              key={`audio-${reloadKey}-${mediaUrl}`}
+              ref={mediaRef}
+              controls
+              preload="metadata"
+              loop={loop}
+              muted={isMuted}
+              onLoadStart={() => setIsBuffering(true)}
+              onWaiting={() => setIsBuffering(true)}
+              onCanPlay={() => setIsBuffering(false)}
+              onPlay={() => setIsPlaying(true)}
+              onPause={() => setIsPlaying(false)}
+              onEnded={() => setIsPlaying(false)}
+              onVolumeChange={(e) => setIsMuted(Boolean(e.currentTarget.muted))}
+              onTimeUpdate={(e) => {
+                setCurrentTime(e.currentTarget.currentTime || 0);
+                updateBuffered();
+              }}
+              onProgress={updateBuffered}
+              onLoadedMetadata={handleLoadedMetadata}
+              onError={handleMediaError}
+              style={{ width: '100%', display: 'block' }}
+              src={mediaUrl}
+            >
+              Your browser does not support HTML5 audio.
+            </audio>
+          </div>
         )}
 
+        {/* Stream Buffer Bar */}
+        {mediaUrl && !errorMsg && bufferedPercent > 0 && (
+          <div
+            style={{
+              marginTop: '10px',
+              height: '3px',
+              width: '100%',
+              background: palette.trackBg,
+              borderRadius: '999px',
+              overflow: 'hidden',
+            }}
+            title={`Stream buffered: ${bufferedPercent}%`}
+          >
+            <div
+              style={{
+                height: '100%',
+                width: `${bufferedPercent}%`,
+                background: palette.accentText,
+                opacity: 0.65,
+                transition: 'width 0.25s ease',
+              }}
+            />
+          </div>
+        )}
+
+        {/* Playback Toolbar */}
         <div
           style={{
-            marginTop: '18px',
+            marginTop: '16px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
             flexWrap: 'wrap',
-            gap: '10px',
+            gap: '8px',
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              onClick={() => handleSkip(-10)}
+              title="Skip back 10s (Left Arrow)"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '5px',
+                padding: '6px 10px',
+                borderRadius: '8px',
+                background: palette.btnBg,
+                border: `1px solid ${palette.btnBorder}`,
+                color: palette.title,
+                fontSize: '12px',
+                fontWeight: 500,
+                cursor: 'pointer',
+              }}
+            >
+              <RotateCcw size={13} /> -10s
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSkip(10)}
+              title="Skip forward 10s (Right Arrow)"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '5px',
+                padding: '6px 10px',
+                borderRadius: '8px',
+                background: palette.btnBg,
+                border: `1px solid ${palette.btnBorder}`,
+                color: palette.title,
+                fontSize: '12px',
+                fontWeight: 500,
+                cursor: 'pointer',
+              }}
+            >
+              +10s <RotateCw size={13} />
+            </button>
+            <button
+              type="button"
+              onClick={handleToggleMute}
+              title="Toggle Mute (M)"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '5px',
+                padding: '6px 10px',
+                borderRadius: '8px',
+                background: isMuted ? palette.btnActiveBg : palette.btnBg,
+                border: `1px solid ${isMuted ? palette.btnActiveBorder : palette.btnBorder}`,
+                color: isMuted ? palette.accentText : palette.title,
+                fontSize: '12px',
+                fontWeight: 500,
+                cursor: 'pointer',
+              }}
+            >
+              {isMuted ? <VolumeX size={13} /> : <Volume2 size={13} />}
+              {isMuted ? 'Muted' : 'Audio'}
+            </button>
             <ModernSelect
               value={playbackRate}
               onChange={(val) => setPlaybackRate(val)}
@@ -437,7 +714,7 @@ export default function MediaViewer({ artifact, token, theme = 'dark' }) {
             <button
               type="button"
               onClick={() => setLoop((prev) => !prev)}
-              title="Toggle Loop"
+              title="Toggle Loop (L)"
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -476,6 +753,29 @@ export default function MediaViewer({ artifact, token, theme = 'dark' }) {
               >
                 <PictureInPicture2 size={13} />
                 PiP
+              </button>
+            )}
+            {isVideo && !errorMsg && metadata.width > 0 && (
+              <button
+                type="button"
+                onClick={handleSnapshot}
+                title="Capture Current Frame (PNG)"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '6px 12px',
+                  borderRadius: '8px',
+                  background: palette.btnBg,
+                  border: `1px solid ${palette.btnBorder}`,
+                  color: palette.title,
+                  fontSize: '12px',
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                }}
+              >
+                <Camera size={13} />
+                Frame
               </button>
             )}
           </div>
