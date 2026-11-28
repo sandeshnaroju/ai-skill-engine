@@ -14,6 +14,8 @@ from .presentations import _parse_pptx
 from .cad import _parse_cad_2d, _parse_cad_3d
 from .engineering import _parse_gis, _parse_engineering_data, _parse_diagram
 from .pcb import _parse_pcb_file, parse_eda_file
+from .bcf import parse_bcf_archive
+from .pointcloud import parse_point_cloud
 from .code import _parse_code_file
 from .media import _parse_image_file
 
@@ -99,11 +101,42 @@ def import_file_to_artifact_data(filepath: str, title: Optional[str] = None, exp
         content, blocks = _parse_cad_2d(filepath, display_filename, ext)
 
     # ─────────────────────────────────────────────────────────────────────────
-    # 5. 3D Models (.step, .stp, .stl, .obj, .iges, .igs, .ifc, .glb, .gltf)
+    # 5a. IFC BIM 3D Models (.ifc) — streamed to web-ifc WASM via media_url
     # ─────────────────────────────────────────────────────────────────────────
-    elif ext in (".step", ".stp", ".stl", ".obj", ".iges", ".igs", ".ifc", ".glb", ".gltf"):
+    elif ext == ".ifc":
+        artifact_type = "ifc_bim"
+        media_url = f"/api/v1/files/download/{filename}"
+        schema = "IFC"
+        try:
+            with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+                head = f.read(4096)
+                m = re.search(r"FILE_SCHEMA\s*\(\s*\(\s*'([^']+)'", head)
+                if m:
+                    schema = m.group(1)
+        except Exception:
+            pass
+        import json as _json
+        content = _json.dumps({"format": "ifc_bim", "filename": display_filename, "schema": schema})
+        blocks = [{
+            "block_key": "ifc_summary",
+            "title": f"IFC BIM Model: {display_filename} ({schema})",
+            "content": content,
+            "order_index": 0,
+        }]
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # 5. 3D Models (.step, .stp, .stl, .obj, .iges, .igs, .glb, .gltf)
+    # ─────────────────────────────────────────────────────────────────────────
+    elif ext in (".step", ".stp", ".stl", ".obj", ".iges", ".igs", ".glb", ".gltf"):
         artifact_type = "cad_3d"
         content, blocks = _parse_cad_3d(filepath, display_filename, ext)
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # 5b. Point Clouds & Reality Capture (.ply, .las, .laz)
+    # ─────────────────────────────────────────────────────────────────────────
+    elif ext in (".ply", ".las", ".laz"):
+        artifact_type = "point_cloud"
+        content, media_url, blocks = parse_point_cloud(filepath, display_filename, filename, ext)
 
     # ─────────────────────────────────────────────────────────────────────────
     # 6. Geospatial Maps (.geojson, .kml, .kmz, .shp)
@@ -130,7 +163,23 @@ def import_file_to_artifact_data(filepath: str, title: Optional[str] = None, exp
             content, blocks = _parse_pcb_file(filepath, display_filename, ext)
 
     # ─────────────────────────────────────────────────────────────────────────
-    # 7. Industrial / Logic / Engineering (.l5x, .l5k, .xer, .s7p, .m, .slx)
+    # 7. BIM Collaboration Format (.bcf, .bcfzip)
+    # ─────────────────────────────────────────────────────────────────────────
+    elif ext in (".bcf", ".bcfzip"):
+        artifact_type = "bcf"
+        content, blocks = parse_bcf_archive(filepath, display_filename)
+        media_url = f"/api/v1/files/download/{filename}"
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # 7b. Piping Isometrics (.pcf, .idf)
+    # ─────────────────────────────────────────────────────────────────────────
+    elif ext in (".pcf", ".idf"):
+        artifact_type = "piping_iso"
+        language = "text"
+        content, blocks = _parse_code_file(filepath, display_filename, language)
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # 7c. Industrial / Logic / Engineering (.l5x, .l5k, .xer, .s7p, .m, .slx)
     # ─────────────────────────────────────────────────────────────────────────
     elif ext in (".l5x", ".l5k", ".xer", ".s7p", ".m", ".slx"):
         artifact_type = "engineering_data"
@@ -179,6 +228,36 @@ def import_file_to_artifact_data(filepath: str, title: Optional[str] = None, exp
         artifact_type = "code" if not artifact_type or artifact_type == "document" else artifact_type
         language = infer_code_language(display_filename)
         content, blocks = _parse_code_file(filepath, display_filename, language)
+
+        # Auto-detect Microsoft Project XML schedules (.xml containing <Project and <Tasks>)
+        if ext == ".xml" and artifact_type in ("code", "xer"):
+            head_sample = content[:8000]
+            if "<Project" in head_sample and ("<Tasks" in head_sample or "schemas.microsoft.com/project" in head_sample):
+                artifact_type = "xer"
+
+        # Auto-detect DEXPI P&ID Proteus XML (1.x <PlantModel> or 2.0 <Model>)
+        if ext == ".xml" and artifact_type in ("code", "dexpi"):
+            head_sample = content[:12000]
+            is_dexpi_v1 = "<PlantModel" in head_sample and (
+                "Proteus" in head_sample
+                or "DEXPI" in head_sample
+                or "<PipingNetworkSystem" in head_sample
+                or "<Equipment" in head_sample
+                or "<ShapeCatalogue" in head_sample
+            )
+            is_dexpi_v2 = "<Model" in head_sample and (
+                "dexpi.org" in head_sample
+                or "Plant/PlantModel" in head_sample
+                or "Core/EngineeringModel" in head_sample
+            )
+            if is_dexpi_v1 or is_dexpi_v2:
+                artifact_type = "dexpi"
+
+        # Auto-detect LandXML Civil & Earthworks (.xml containing <LandXML)
+        if ext == ".xml" and artifact_type in ("code", "landxml"):
+            head_sample = content[:12000]
+            if "<LandXML" in head_sample:
+                artifact_type = "landxml"
 
         # Auto-detect Smart P&ID JSON files and link companion uploaded image if present (even if explicit_type was 'pcb')
         if ext == ".json" and artifact_type in ("code", "pandid", "pcb", "diagram", "document"):

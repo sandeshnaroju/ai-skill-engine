@@ -14,7 +14,8 @@
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-router-dom": "^7.18.2",
-    "three": "^0.185.1"
+    "three": "^0.185.1",
+    "web-ifc": "^0.0.81"
   },
   "devDependencies": {
     "@types/react": "^18.2.15",

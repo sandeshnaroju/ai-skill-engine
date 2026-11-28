@@ -107,10 +107,18 @@ def run_open_or_update_artifact(db, args: dict, tenant, session_id: str) -> dict
             artifact_type = "audio"
         elif fn.endswith((".mp4", ".webm", ".mov")):
             artifact_type = "video"
+        elif fn.endswith((".pcf", ".idf")):
+            artifact_type = "piping_iso"
+        elif fn.endswith((".bcf", ".bcfzip")):
+            artifact_type = "bcf"
         elif fn.endswith((".dwg", ".dxf")):
             artifact_type = "cad_2d"
-        elif fn.endswith((".step", ".stp", ".iges", ".igs", ".ifc", ".stl", ".obj", ".glb", ".gltf")):
+        elif fn.endswith(".ifc"):
+            artifact_type = "ifc_bim"
+        elif fn.endswith((".step", ".stp", ".iges", ".igs", ".stl", ".obj", ".glb", ".gltf")):
             artifact_type = "cad_3d"
+        elif fn.endswith((".ply", ".las", ".laz")):
+            artifact_type = "point_cloud"
         elif fn.endswith((".geojson", ".kml", ".kmz", ".shp")):
             artifact_type = "gis"
         elif fn.endswith((".vsdx", ".vsd")):
@@ -119,6 +127,10 @@ def run_open_or_update_artifact(db, args: dict, tenant, session_id: str) -> dict
             artifact_type = "engineering_data"
         elif fn.endswith((".pandid.json", "_pandid.json", ".pid.json", "_pid.json")):
             artifact_type = "pandid"
+        elif fn.endswith((".dexpi", ".dexpi.xml")):
+            artifact_type = "dexpi"
+        elif fn.endswith(".landxml"):
+            artifact_type = "landxml"
         elif fn.endswith((".pcb.json", ".kicad_pcb", ".gbr", ".gerber", ".drl", ".dsn")):
             artifact_type = "pcb"
         elif fn.endswith((".py", ".js", ".jsx", ".ts", ".tsx", ".html", ".css", ".json", ".sql", ".sh")):

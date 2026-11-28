@@ -22,11 +22,15 @@ import {
   Users,
   Check,
   X,
-  Package
+  Package,
+  TrendingUp
 } from 'lucide-react';
 import { parseXer, parseXerAsync } from './xerParser';
+import { isMspProjectXml, parseMspXml } from './mspXmlParser';
 import LookaheadView from './LookaheadView';
 import IwpKanbanBoard from './iwp/IwpKanbanBoard';
+import ManagementVisibilityView from './ManagementVisibilityView';
+import WorkforcePlanningView from './WorkforcePlanningView';
 import ModernSelect from './ModernSelect';
 
 const AVAILABLE_COLUMNS = [
@@ -103,10 +107,17 @@ export default function XerProjectViewer({ fullContent, artifact, filename = 'sc
   // Selected raw table for tables explorer
   const [selectedRawTable, setSelectedRawTable] = useState('PROJECT');
 
-  // Parse state (fast sync for < 500KB; non-blocking chunked streaming for 20MB+)
+  // Parse state (auto-detects MS Project XML or Primavera P6 XER; async chunked streaming for 20MB+)
   const [parseState, setParseState] = useState(() => {
     if (!fullContent) {
       return { isParsing: false, percent: 100, currentTable: '', data: parseXer('') };
+    }
+    if (isMspProjectXml(fullContent)) {
+      try {
+        return { isParsing: false, percent: 100, currentTable: 'Complete', data: parseMspXml(fullContent) };
+      } catch (e) {
+        return { isParsing: false, percent: 100, currentTable: '', data: parseXer('') };
+      }
     }
     if (fullContent.length < 500000) {
       try {
@@ -122,6 +133,16 @@ export default function XerProjectViewer({ fullContent, artifact, filename = 'sc
     let isCancelled = false;
     if (!fullContent) {
       setParseState({ isParsing: false, percent: 100, currentTable: '', data: parseXer('') });
+      return;
+    }
+
+    if (isMspProjectXml(fullContent)) {
+      try {
+        const mspData = parseMspXml(fullContent);
+        setParseState({ isParsing: false, percent: 100, currentTable: 'Complete', data: mspData });
+      } catch (err) {
+        setParseState({ isParsing: false, percent: 100, currentTable: '', data: parseXer('') });
+      }
       return;
     }
 
@@ -499,7 +520,7 @@ export default function XerProjectViewer({ fullContent, artifact, filename = 'sc
             }}
           >
             <Calendar size={14} />
-            <span>PRIMAVERA P6 SCHEDULE</span>
+            <span>{xerData.sourceFormat === 'msp_xml' ? 'MICROSOFT PROJECT SCHEDULE' : 'PRIMAVERA P6 SCHEDULE'}</span>
           </div>
 
           <span style={{ fontSize: '0.85rem', fontWeight: 650, color: isDark ? '#f8fafc' : '#0f172a' }}>
@@ -513,14 +534,16 @@ export default function XerProjectViewer({ fullContent, artifact, filename = 'sc
         </div>
 
         {/* View Switcher Tabs */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', background: isDark ? 'rgba(0,0,0,0.3)' : 'rgba(0,0,0,0.05)', padding: '3px', borderRadius: '8px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '3px', background: isDark ? 'rgba(0,0,0,0.3)' : 'rgba(0,0,0,0.05)', padding: '3px', borderRadius: '8px' }}>
           {[
             { id: 'gantt', label: 'Activities & Gantt', icon: Calendar },
-            { id: 'lookahead', label: 'Lookahead Planner (3WL / 6WL / 12WL)', icon: Clock },
-            { id: 'iwp_packs', label: 'IWP Digital Packs', icon: Package },
-            { id: 'wbs', label: 'WBS Hierarchy', icon: Layers },
+            { id: 'lookahead', label: 'Lookahead', icon: Clock },
+            { id: 'iwp_packs', label: 'IWP Packs', icon: Package },
+            { id: 'cost_evm', label: 'Cost & EVM', icon: TrendingUp },
+            { id: 'workforce', label: 'Workforce Load', icon: Users },
+            { id: 'wbs', label: 'WBS', icon: Layers },
             { id: 'resources', label: 'Resources', icon: Users },
-            { id: 'tables', label: 'P6 Tables Explorer', icon: TableIcon }
+            { id: 'tables', label: 'P6 Tables', icon: TableIcon }
           ].map(tab => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
@@ -531,13 +554,14 @@ export default function XerProjectViewer({ fullContent, artifact, filename = 'sc
                 style={{
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '6px',
-                  padding: '5px 12px',
+                  gap: '5px',
+                  padding: '5px 9px',
                   borderRadius: '6px',
                   border: 'none',
-                  fontSize: '0.76rem',
+                  fontSize: '0.73rem',
                   fontWeight: 600,
                   cursor: 'pointer',
+                  whiteSpace: 'nowrap',
                   background: isActive ? '#f97316' : 'transparent',
                   color: isActive ? '#ffffff' : (isDark ? '#94a3b8' : '#64748b'),
                   transition: 'all 0.15s ease'
@@ -646,11 +670,11 @@ export default function XerProjectViewer({ fullContent, artifact, filename = 'sc
       </div>
 
       {/* ── 3. MAIN WORKSPACE CONTENT ── */}
-      <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
 
         {/* ── TAB 1: ACTIVITIES & GANTT VIEW ── */}
         {activeTab === 'gantt' && (
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             {/* Filter & Column Bar */}
             <div
               style={{
@@ -1213,6 +1237,14 @@ export default function XerProjectViewer({ fullContent, artifact, filename = 'sc
               </div>
             )}
           </div>
+        )}
+
+        {activeTab === 'cost_evm' && (
+          <ManagementVisibilityView xerData={xerData} filename={filename} isDark={isDark} />
+        )}
+
+        {activeTab === 'workforce' && (
+          <WorkforcePlanningView xerData={xerData} filename={filename} isDark={isDark} />
         )}
 
         {/* ── TAB 4: RAW P6 TABLES EXPLORER ── */}
