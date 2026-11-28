@@ -212,10 +212,10 @@ Use this skill whenever generating, modifying, or refining digital artifacts for
 8. **Geospatial & Infrastructure Maps (`.geojson`, `.kml`, `.shp`)**:
    - Set `artifact_type="gis"`.
    - For `.geojson`: Emit a valid GeoJSON `FeatureCollection` with geographic features (`Point`, `LineString`, `Polygon`, `MultiPolygon`) and rich properties for interactive layer inspection.
-9. **Industrial Automation & Project Controls (`.l5x`, `.m`, `.s7p`, `.xer`)**:
+9. **Industrial Automation & Project Controls (`.l5x`, `.m`, `.s7p`, `.xer`, MS Project `.xml`)**:
    - Set `artifact_type="engineering_data"`.
    - For Rockwell Studio 5000 / ControlLogix (`.l5x`): Emit valid RSLogix XML containing `<RSLogix5000Content>`, `<Controller>`, `<Tags>`, and `<Routines>`.
-   - For Primavera P6 (`.xer`): Emit valid P6 exchange format tables (`%T`, `%F`, `CALENDAR`, `TASK`, `PROJWBS`).
+   - For Primavera P6 (`.xer`) and Microsoft Project XML (MSPDI `<Project><Tasks>`): Pass raw `.xer` or MS Project `.xml` directly (never convert to Markdown/SVG).
 10. **Raster Images & Generated Visuals (`.png`, `.jpg`, `.jpeg`, `.webp`)**:
    - Set `artifact_type="image"`.
    - **When an image is generated via `multimodal_analyst__generate_image`**: ALWAYS call `artifact_editor__open_uploaded_file_as_artifact(file_path="<sandbox_output_path>", title="<title>", artifact_type="image")`. This registers the generated image and opens it in the Canvas Artifact Editor with interactive zoom, pan, rotation, and high-resolution export controls.
@@ -237,6 +237,8 @@ Use this skill whenever generating, modifying, or refining digital artifacts for
    - Set `artifact_type="bcf"` via `open_uploaded_file_as_artifact` for `.bcf` / `.bcfzip` issue coordination archives.
 17. **Point Clouds & Reality Capture (`.ply`, `.las`, `.laz`)**:
    - Set `artifact_type="point_cloud"` via `open_uploaded_file_as_artifact` (or raw ASCII `.ply` in `open_or_update_artifact`).
+18. **IFC BIM 3D Models (`.ifc`)**:
+   - Set `artifact_type="ifc_bim"` via `open_uploaded_file_as_artifact` (or raw `.ifc` STEP-21 text in `open_or_update_artifact`), rather than `"cad_3d"`.
 
 ---
 
