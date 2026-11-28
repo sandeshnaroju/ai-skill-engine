@@ -125,7 +125,7 @@ def export_artifact(artifact: SessionArtifact, target_format: str = None) -> Tup
         buf = compile_to_xlsx(artifact)
         return buf.read(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", f"{base_name}.xlsx"
 
-    elif ext == "pptx" or artifact.artifact_type == "presentation":
+    elif ext == "pptx" or (artifact.artifact_type == "presentation" and ext not in ("pdf", "html", "md", "txt")):
         buf = compile_to_pptx(artifact)
         return buf.read(), "application/vnd.openxmlformats-officedocument.presentationml.presentation", f"{base_name}.pptx"
 

@@ -24,14 +24,26 @@ def infer_artifact_type(filename: str) -> str:
         return "audio"
     elif fn.endswith((".mp4", ".webm", ".mov", ".mkv")):
         return "video"
+    elif fn.endswith((".pcf", ".idf")):
+        return "piping_iso"
+    elif fn.endswith((".bcf", ".bcfzip")):
+        return "bcf"
     elif fn.endswith((".dwg", ".dxf")):
         return "cad_2d"
-    elif fn.endswith((".step", ".stp", ".iges", ".igs", ".ifc", ".stl", ".obj", ".glb", ".gltf")):
+    elif fn.endswith(".ifc"):
+        return "ifc_bim"
+    elif fn.endswith((".step", ".stp", ".iges", ".igs", ".stl", ".obj", ".glb", ".gltf")):
         return "cad_3d"
+    elif fn.endswith((".ply", ".las", ".laz")):
+        return "point_cloud"
     elif fn.endswith((".geojson", ".kml", ".kmz", ".shp")):
         return "gis"
     elif fn.endswith((".pandid.json", ".pid.json")):
         return "pandid"
+    elif fn.endswith((".dexpi", ".dexpi.xml")):
+        return "dexpi"
+    elif fn.endswith(".landxml"):
+        return "landxml"
     elif fn.endswith((".pcb.json", ".kicad_pcb", ".gbr", ".gerber", ".gtl", ".gbl", ".gts", ".gbs", ".gto", ".gbo", ".gko", ".drl", ".dsn")):
         return "pcb"
     elif fn.endswith((".vsdx", ".vsd")):

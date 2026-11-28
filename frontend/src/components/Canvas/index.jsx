@@ -24,7 +24,18 @@ import XerViewer from './XerViewer';
 import IwpDossierViewer from './XerViewer/iwp/IwpDossierViewer';
 import PcbViewer from './PcbViewer';
 import SmartPidViewer from './SmartPidViewer';
+import PipingIsoViewer from './PipingIsoViewer';
+import BcfViewer from './BcfViewer';
+import DexpiViewer from './DexpiViewer';
+import PointCloudViewer from './PointCloudViewer';
+import LandXmlViewer from './LandXmlViewer';
+import IfcViewer from './IfcViewer';
 import { isSmartPidPayload } from './SmartPidViewer/pidParser';
+import { isMspProjectXml } from './XerViewer/mspXmlParser';
+import { isPcfOrIdf } from './PipingIsoViewer/pcfIdfParser';
+import { isBcfPayload } from './BcfViewer/bcfParser';
+import { isDexpiXml } from './DexpiViewer/dexpiParser';
+import { isLandXml } from './LandXmlViewer/landxmlParser';
 import BlockHistoryModal from './BlockHistoryModal';
 import './canvas.css';
 
@@ -681,11 +692,18 @@ function CanvasInner({ isEmbed = false, artifactId: propArtifactId, token: propT
     }
 
     if (
+      type === 'ifc_bim' ||
+      /\.ifc$/i.test(filename)
+    ) {
+      return 'ifc_bim';
+    }
+
+    if (
       type === 'cad_3d' ||
       type === 'cad' ||
       type === 'step' ||
       type === 'stl' ||
-      /\.(step|stp|iges|igs|ifc|stl|obj|glb|gltf)$/i.test(filename)
+      /\.(step|stp|iges|igs|stl|obj|glb|gltf)$/i.test(filename)
     ) {
       return 'cad_3d';
     }
@@ -716,8 +734,48 @@ function CanvasInner({ isEmbed = false, artifactId: propArtifactId, token: propT
     }
 
     if (
+      type === 'landxml' ||
+      /\.landxml$/i.test(filename) ||
+      (filename.endsWith('.xml') && isLandXml(artifact?.full_content || (blocks && blocks[0]?.content) || '', filename))
+    ) {
+      return 'landxml';
+    }
+
+    if (
+      type === 'point_cloud' ||
+      /\.(ply|las|laz)$/i.test(filename)
+    ) {
+      return 'point_cloud';
+    }
+
+    if (
+      type === 'dexpi' ||
+      /\.(dexpi|dexpi\.xml)$/i.test(filename) ||
+      (filename.endsWith('.xml') && isDexpiXml(artifact?.full_content || (blocks && blocks[0]?.content) || '', filename))
+    ) {
+      return 'dexpi';
+    }
+
+    if (
+      type === 'bcf' ||
+      /\.(bcf|bcfzip)$/i.test(filename) ||
+      isBcfPayload(artifact?.full_content || (blocks && blocks[0]?.content) || '', filename)
+    ) {
+      return 'bcf';
+    }
+
+    if (
+      type === 'piping_iso' ||
+      /\.(pcf|idf)$/i.test(filename) ||
+      isPcfOrIdf(artifact?.full_content || (blocks && blocks[0]?.content) || '', filename)
+    ) {
+      return 'piping_iso';
+    }
+
+    if (
       type === 'xer' ||
-      /\.(xer)$/i.test(filename)
+      /\.(xer)$/i.test(filename) ||
+      (filename.endsWith('.xml') && isMspProjectXml(artifact?.full_content || (blocks && blocks[0]?.content) || ''))
     ) {
       return 'xer';
     }
@@ -768,10 +826,22 @@ function CanvasInner({ isEmbed = false, artifactId: propArtifactId, token: propT
         return <Compass size={15} />;
       case 'cad_3d':
         return <Box size={15} />;
+      case 'ifc_bim':
+        return <Box size={15} />;
       case 'xer':
         return <Calendar size={15} />;
       case 'iwp':
         return <Box size={15} />;
+      case 'piping_iso':
+        return <Compass size={15} />;
+      case 'bcf':
+        return <Box size={15} />;
+      case 'dexpi':
+        return <Cpu size={15} />;
+      case 'point_cloud':
+        return <Box size={15} />;
+      case 'landxml':
+        return <MapPin size={15} />;
       case 'pandid':
         return <Cpu size={15} />;
       case 'gis':
@@ -1058,7 +1128,7 @@ function CanvasInner({ isEmbed = false, artifactId: propArtifactId, token: propT
         </aside>
 
         {/* Viewport Stage */}
-        <main className={`canvas-stage ${['cad_2d', 'cad_3d', 'gis', 'logic', 'xer', 'iwp', 'pandid', 'image', 'pdf'].includes(artType) ? 'canvas-stage-full' : ''}`}>
+        <main className={`canvas-stage ${['cad_2d', 'cad_3d', 'ifc_bim', 'point_cloud', 'landxml', 'gis', 'logic', 'xer', 'iwp', 'pandid', 'dexpi', 'piping_iso', 'bcf', 'image', 'pdf'].includes(artType) ? 'canvas-stage-full' : ''}`}>
           {artType === 'document' && (
             <PagedDocViewer
               artifact={artifact}
@@ -1169,6 +1239,15 @@ function CanvasInner({ isEmbed = false, artifactId: propArtifactId, token: propT
             />
           )}
 
+          {artType === 'ifc_bim' && (
+            <IfcViewer
+              fullContent={artifact?.full_content || (blocks && blocks.length ? blocks.map(b => b.content || '').join('\n') : '')}
+              artifact={artifact}
+              filename={artifact?.filename || 'model.ifc'}
+              theme={theme}
+            />
+          )}
+
           {artType === 'gis' && (
             <GisViewer
               fullContent={artifact?.full_content || (blocks && blocks.length ? blocks.map(b => b.content || '').join('\n') : '')}
@@ -1201,6 +1280,50 @@ function CanvasInner({ isEmbed = false, artifactId: propArtifactId, token: propT
               fullContent={artifact?.full_content || (blocks && blocks.length ? blocks.map(b => b.content || '').join('\n') : '')}
               artifact={artifact}
               filename={artifact?.filename || 'package.iwp.json'}
+              theme={theme}
+            />
+          )}
+
+          {artType === 'bcf' && (
+            <BcfViewer
+              fullContent={artifact?.full_content || (blocks && blocks.length ? blocks.map(b => b.content || '').join('\n') : '')}
+              artifact={artifact}
+              filename={artifact?.filename || 'coordination.bcfzip'}
+              theme={theme}
+            />
+          )}
+
+          {artType === 'dexpi' && (
+            <DexpiViewer
+              fullContent={artifact?.full_content || (blocks && blocks.length ? blocks.map(b => b.content || '').join('\n') : '')}
+              artifact={artifact}
+              filename={artifact?.filename || 'pid.xml'}
+              theme={theme}
+            />
+          )}
+
+          {artType === 'point_cloud' && (
+            <PointCloudViewer
+              fullContent={artifact?.full_content || (blocks && blocks.length ? blocks.map(b => b.content || '').join('\n') : '')}
+              artifact={artifact}
+              filename={artifact?.filename || 'scan.ply'}
+              theme={theme}
+            />
+          )}
+
+          {artType === 'landxml' && (
+            <LandXmlViewer
+              fullContent={artifact?.full_content || (blocks && blocks.length ? blocks.map(b => b.content || '').join('\n') : '')}
+              artifact={artifact}
+              filename={artifact?.filename || 'site.xml'}
+              theme={theme}
+            />
+          )}
+
+          {artType === 'piping_iso' && (
+            <PipingIsoViewer
+              fullContent={artifact?.full_content || (blocks && blocks.length ? blocks.map(b => b.content || '').join('\n') : '')}
+              filename={artifact?.filename || 'isometric.pcf'}
               theme={theme}
             />
           )}

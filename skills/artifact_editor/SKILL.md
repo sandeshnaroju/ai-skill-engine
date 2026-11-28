@@ -16,7 +16,7 @@ tools:
           description: File name with extension (e.g. main.py, agreement.docx, pitch_deck.pptx, model.xlsx, drawing.dxf, part.step, map.geojson, schedule.xer).
         artifact_type:
           type: string
-          enum: ["code", "document", "spreadsheet", "presentation", "diagram_svg", "image", "audio", "video", "cad_2d", "cad_3d", "gis", "pcb", "pandid", "diagram", "engineering_data"]
+          enum: ["code", "document", "spreadsheet", "presentation", "diagram_svg", "image", "audio", "video", "cad_2d", "cad_3d", "ifc_bim", "point_cloud", "gis", "pcb", "pandid", "dexpi", "landxml", "piping_iso", "bcf", "diagram", "engineering_data"]
           description: Category of artifact.
         language:
           type: string
@@ -48,7 +48,7 @@ tools:
           description: Optional display title for the Canvas header.
         artifact_type:
           type: string
-          enum: ["code", "document", "spreadsheet", "presentation", "pdf", "image", "cad_2d", "cad_3d", "gis", "pcb", "pandid", "diagram", "engineering_data", "audio", "video"]
+          enum: ["code", "document", "spreadsheet", "presentation", "pdf", "image", "cad_2d", "cad_3d", "ifc_bim", "point_cloud", "gis", "pcb", "pandid", "dexpi", "landxml", "piping_iso", "bcf", "diagram", "engineering_data", "audio", "video"]
           description: Optional explicit artifact type override.
       required:
         - filename
@@ -226,6 +226,17 @@ Use this skill whenever generating, modifying, or refining digital artifacts for
    - Use `artifact_type="pandid"` and `filename="<name>.pandid.json"` whenever the user pastes Smart P&ID JSON + image, an external P&ID extraction skill returns JSON for an uploaded P&ID image, or you generate Smart P&ID JSON.
    - **CRITICAL — Always Attach the User's P&ID Image**: Whenever the user provides or uploads an image, you **MUST** pass that image's URL (e.g. `/api/v1/files/download/<image_filename>` or the pasted `data:image/...` / URL) via `media_url` on `open_or_update_artifact` (AND set `"image_url"` inside the JSON). NEVER open a P&ID with JSON alone when an image was provided by the user.
    - Required JSON schema: `{"title": "...", "document_no": "...", "pandid_no": "...", "image_url": "/api/v1/files/download/<image_filename>", "symbols": [{"id": "n1", "name": "instrument", "tag_no": "FI-1024", "x0": 0, "y0": 0, "x1": 40, "y1": 40, "svg": "<svg ...>...</svg>"}], "tags": [{"id": "t1", "text": "...", "x0": 0, "y0": 0, "x1": 40, "y1": 20, "symbol_id": "n1"}], "line_numbers": [{"id": "l1", "text": "...", "x0": 0, "y0": 0, "x1": 80, "y1": 20}], "connectors": [{"id": "c1", "text": "...", "x0": 0, "y0": 0, "x1": 60, "y1": 20, "symbol_id": "n11"}], "connections": []}`.
+13. **Piping Isometrics (`.pcf`, `.idf`)**:
+   - Set `artifact_type="piping_iso"` and `filename="<name>.pcf"` (or `.idf`).
+   - **NEVER convert `.pcf` or `.idf` files into SVG (`diagram_svg`) or HTML!** Pass the raw `.pcf`/`.idf` text directly into `open_or_update_artifact` (or use `open_uploaded_file_as_artifact`), so the built-in 3D Isometric Viewer renders the 3D piping, spools, welds, and MTO schedules.
+14. **DEXPI Intelligent P&IDs (`.xml`, `.dexpi`, `.dexpi.xml`)**:
+   - Set `artifact_type="dexpi"` for DEXPI 1.x (`<PlantModel>`) or DEXPI 2.0 (`<Model>`) XML files. Never convert DEXPI XML into SVG; pass the raw XML directly.
+15. **LandXML Civil & Earthworks (`.xml`, `.landxml`)**:
+   - Set `artifact_type="landxml"` for `<LandXML>` files. Pass the raw XML directly for 3D TIN terrain, Cut/Fill, Alignments, and Pipe Networks.
+16. **BIM Collaboration Format (`.bcf`, `.bcfzip`)**:
+   - Set `artifact_type="bcf"` via `open_uploaded_file_as_artifact` for `.bcf` / `.bcfzip` issue coordination archives.
+17. **Point Clouds & Reality Capture (`.ply`, `.las`, `.laz`)**:
+   - Set `artifact_type="point_cloud"` via `open_uploaded_file_as_artifact` (or raw ASCII `.ply` in `open_or_update_artifact`).
 
 ---
 
